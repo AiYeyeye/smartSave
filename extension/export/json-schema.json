@@ -1,0 +1,33 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Markora bookmark export v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "schemaVersion", "generatedAt", "roots"],
+  "properties": {
+    "format": { "const": "markora.bookmarks" },
+    "schemaVersion": { "const": 1 },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "roots": { "type": "array", "items": { "$ref": "#/definitions/folder" } }
+  },
+  "definitions": {
+    "folder": {
+      "type": "object", "additionalProperties": false,
+      "required": ["type", "id", "title", "children"],
+      "properties": {
+        "type": { "const": "folder" }, "id": { "type": "string", "minLength": 1 },
+        "title": { "type": "string" }, "path": { "type": "array", "items": { "type": "string" } },
+        "children": { "type": "array", "items": { "oneOf": [{ "$ref": "#/definitions/folder" }, { "$ref": "#/definitions/bookmark" }] } }
+      }
+    },
+    "bookmark": {
+      "type": "object", "additionalProperties": false,
+      "required": ["type", "id", "title", "url"],
+      "properties": {
+        "type": { "const": "bookmark" }, "id": { "type": "string", "minLength": 1 },
+        "title": { "type": "string" }, "path": { "type": "array", "items": { "type": "string" } },
+        "url": { "type": "string" }
+      }
+    }
+  }
+}

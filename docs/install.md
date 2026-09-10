@@ -1,0 +1,20 @@
+# Local Windows candidate installation (release BLOCKED)
+
+This is an unpublished 0.1.0 source candidate, not an accepted trial release. No account, telemetry service, default provider, sample bookmarks or browser installation is required by the product. Do not use daily profiles for validation.
+
+## Build and identify
+Use Node >=22.12 and package manager pnpm 11.7.0: `pnpm --dir extension install --frozen-lockfile`, then `lint`, `typecheck`, `test --maxWorkers=2`, `test:integration`, `build`, `release:source`. Run `release:ready` separately: it must currently exit nonzero. `extension/release-candidate.json` inventories each dist file and source file with SHA256 and byte count plus the lock hash. No Git commit is invented for the unborn repository. Rebuild and compare inventories (excluding machine-specific license inventory paths); this run does not establish byte-for-byte reproducibility across environments. Keep the whole `extension/dist` directory together; no publication or ZIP upload is performed.
+
+## Future manual installation only
+Create a new isolated Chrome/Edge profile, do not sign in or import user data. On Windows, open `chrome://extensions` or `edge://extensions`, enable Developer mode, choose Load unpacked (localized browser label may differ), select `extension/dist`. Record full Windows/build and browser version, actual extension ID, candidate inventory hash and extension errors. Pin/open 智栏; the toolbar title is `打开智栏`, backed by a user-gesture `sidePanel.open`, not a popup. The shortcut has no default key: configure it explicitly and check conflicts in that isolated profile. No browser was launched here.
+
+The manifest advertises Chrome114, but the actual toolbar uses `sidePanel.open` introduced in116. **Owner01 source compatibility blocker:** reconcile the advertised floor with an approved tested matrix; do not interpret116 as the accepted minimum. Optional `getLayout` is feature-detected (140+) and does not establish a product minimum. Edge minimum and actual production Chrome/Edge compatibility are not accepted. Historical Chrome153 probe results are not production installation evidence.
+
+## Export setup
+Create your own dedicated test directory and disposable JSON output file. In 导出, choose 包含目录 and optional 排除子树. `下载 JSON`, `下载 HTML`, `下载 Markdown` are manual downloads. For automatic JSON only, read the overwrite notice, check `我同意专用输出覆盖规则`, click `选择专用 JSON 文件`, then `授权并启用所选文件`. Browser picker/permission controls are browser-owned: record actual names and choice, never promise a permanent grant. External edits to this dedicated file are overwritten on next update; put notes elsewhere, consumers must read only. No directory-wide permission or other-file overwrite is intended. `刷新输出状态` reads durable status; command acknowledgement alone is not success. Use `重新授权并补写当前快照` after loss of permission, or `停止自动输出`. Unsupported picker/handle/IDB disables auto action honestly. Never expect updates while the browser is closed.
+
+## Upgrade/uninstall
+Keep the same unpacked location and identity when testing reload/upgrade; verify the actual ID. Stop new tasks and automatic output first. Keep evidence/journals and copies of the authorized output outside the installation directory. Uninstall removes extension-local settings, remembered key, rules, handles, drafts and recovery records; reinstall does not recover them. Native bookmarks remain browser-owned and are not deliberately deleted by uninstall. Exported external files remain. Do not uninstall/clear extension storage as an unknown-operation recovery technique. See [recovery](recovery.md) before rollback.
+
+## Candidate identity boundary
+The inventory's `sourceFiles` covers `extension/` excluding node_modules, dist and the generated release-candidate.json; it is not a repository-wide Git snapshot. `sourceInventoryHash` and `artifactInventoryHash` hash the JSON arrays of path/byte/SHA256 entries, not a ZIP. See task12 validation.md for exact paths, candidate-file hash and command logs. Documentation is outside that source inventory; do not treat its digest as a signature or provenance attestation.

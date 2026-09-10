@@ -1,0 +1,41 @@
+{
+  "manifest_version": 3,
+  "name": "智栏 · 书签助手",
+  "version": "0.1.0",
+  "description": "智栏工程基础：四种界面风格与原生侧栏外壳。",
+  "minimum_chrome_version": "114",
+  "optional_host_permissions": [
+    "https://*/*",
+    "http://*/*"
+  ],
+  "permissions": [
+    "sidePanel",
+    "bookmarks",
+    "storage",
+    "activeTab",
+    "scripting",
+    "contextMenus"
+  ],
+  "background": {
+    "service_worker": "service-worker.js",
+    "type": "module"
+  },
+  "side_panel": {
+    "default_path": "panel/index.html"
+  },
+  "options_ui": {
+    "page": "options/index.html",
+    "open_in_tab": true
+  },
+  "action": {
+    "default_title": "打开智栏"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src https: http:"
+  },
+  "commands": {
+    "save-current-page": {
+      "description": "Save current page with Zhilan"
+    }
+  }
+}
