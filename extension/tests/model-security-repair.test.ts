@@ -133,3 +133,20 @@ it('request byte boundary counts final multibyte adapter envelope exactly', asyn
   const tooSmall = new ModelTransport({ fetch: fetcher, contains: async () => true }, authority, { requestBytes: bytes - 1, responseBytes: 1024 });
   expect(await tooSmall.run(candidate)).toMatchObject({ reason: 'payload-too-large' }); tooSmall.dispose(); expect(fetcher).toHaveBeenCalledTimes(2);
 });
+it('saving unchanged settings keeps revision, disk and subscribers untouched; a real change still rotates', async () => {
+  const { d, store } = await setup(); const listener = vi.fn(); store.subscribe(listener); const before = await store.snapshot(); const written = JSON.stringify(d.data);
+  expect((await store.save(config, privacy, 'key-a', true)).revision).toBe(before.revision);
+  expect(await store.snapshot()).toEqual(before); expect(JSON.stringify(d.data)).toBe(written); expect(listener).not.toHaveBeenCalled();
+  await store.save(config, privacy, 'key-a', false);
+  expect((await store.snapshot()).revision).not.toBe(before.revision); expect(listener).toHaveBeenCalledOnce(); expect(JSON.stringify(d.data)).not.toContain('key-a');
+});
+it('credential deletion that cannot persist neither clears the session nor announces a deletion', async () => {
+  const d = disk(); let fail = false;
+  const store = new SettingsStore({ ...d.storage, set: async (value: Record<string, unknown>) => { if (fail) throw Error('quota'); await d.storage.set(value); } }, d.lock);
+  await store.load(); await store.save(config, privacy, 'key-a', true); const listener = vi.fn(); store.subscribe(listener); const before = await store.snapshot();
+  fail = true; await expect(store.clearCredential()).rejects.toThrow('settings-unavailable');
+  expect(await store.snapshot()).toEqual(before); expect(store.credential()).toBe('key-a'); expect(listener).not.toHaveBeenCalled();
+  fail = false; const other = d.store(); await other.load(); await other.savePrivacy({ ...privacy, fullUrl: true });
+  await expect(store.clearCredential()).rejects.toThrow('settings-unavailable');
+  expect(listener).not.toHaveBeenCalled(); expect((await store.snapshot()).key).toBe('key-a'); expect(JSON.stringify(d.data)).toContain('key-a');
+});

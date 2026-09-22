@@ -56,3 +56,27 @@ it('retains skipped coverage when applying and clearing the preview', async () =
   await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('恢复未完整：保留 / 跳过 1 项'));
   expect(screen.queryByRole('region', { name: '恢复预览' })).not.toBeInTheDocument();
 });
+it('preview consent and risk consent are independent: checking one never unlocks the other', async () => {
+  const { confirmSchema } = await import('../schemas/messages');
+  const ref = { installationId: 'i', nativeId: 'root', kind: 'folder' };
+  const proposal = confirmSchema.parse({ version: 1, type: 'confirmMutation', requestId: 'apply', installationId: 'i', epoch: 'e', observedRevision: 0, scope: ref, before: [], command: { type: 'create', parent: ref, title: 'Restored' }, recovery: { sourceRequestId: 'source', mode: 'undo', conflicts: [] } });
+  const source = { schemaVersion: 1, requestId: 'source', request: { ...proposal, requestId: 'source', recovery: undefined }, affected: [], steps: [], mapping: {} };
+  render(createElement(RecoveryWorkbench, { send: async raw => {
+    const message = raw as { type: string; requestId: string };
+    if (message.type === 'recoveryList') return { status: 'ready', requestId: message.requestId, records: [source], destinations: [] };
+    if (message.type === 'recoveryPreview') return { status: 'preview', requestId: message.requestId, proposal, conflicts: [], warning: 'Safe items only' };
+    throw Error('no write may be sent while consent is being toggled');
+  } }));
+  fireEvent.click(screen.getByRole('button', { name: '读取恢复记录' }));
+  fireEvent.click(await screen.findByRole('button', { name: '预览撤销本批次' }));
+  const apply = await screen.findByRole('button', { name: '应用恢复预览' });
+  fireEvent.click(screen.getByRole('button', { name: '人工核对后隔离未知尝试' }));
+  const confirmRisk = screen.getByRole('button', { name: '确认' });
+  expect(apply).toBeDisabled(); expect(confirmRisk).toBeDisabled();
+  fireEvent.click(screen.getByRole('checkbox', { name: '确认以上影响范围' }));
+  expect(apply).toBeEnabled(); expect(confirmRisk).toBeDisabled();
+  fireEvent.click(screen.getByRole('checkbox', { name: '我已核对并理解风险' }));
+  expect(confirmRisk).toBeEnabled();
+  fireEvent.click(screen.getByRole('checkbox', { name: '确认以上影响范围' }));
+  expect(apply).toBeDisabled(); expect(confirmRisk).toBeEnabled();
+});

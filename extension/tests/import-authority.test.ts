@@ -23,7 +23,7 @@ async function setup(fault = 0, change = 'privacy', name = 'zhilan-operations') 
   const checkpoint: ImportCheckpoint = { schemaVersion: 1, id: 'import', revision: 0, installationId: 'install', root, items, diagnostics: [], classified: [{ sourceOrdinal: 0, folderId: 'inner', title: 'Source' }, { sourceOrdinal: 1, folderId: 'unused', title: 'Source' }], newFolders: [{ id: 'outer', parentId: 'existing', title: 'Outer' }, { id: 'inner', parentId: 'outer', title: 'Inner' }, { id: 'unused', parentId: 'bar', title: 'Unused' }], phase: 'classified', runtime: { version: 2, stage: 'classification', format: 'txt', sourceItems: items.map(i => i.item), candidates: [], mappedGroups: [], mappedItems: [], contextDigest: await importContextDigest(context, root), semanticDigest: await importContextDigest(context, root, true) } };
   await checkpoints.put(checkpoint, null);
   const authority = new ImportAuthority(settingsStore, projection, checkpoints, 'test');
-  const sender = { id: 'test', url: 'chrome-extension://test/panel/index.html' }; const token = authority.open(sender);
+  const sender = { id: 'test', url: 'chrome-extension://test/options/index.html' }; const token = authority.open(sender);
   let calls = 0;
   const find = (id: string): chrome.bookmarks.BookmarkTreeNode | undefined => { const stack = [...tree]; while (stack.length) { const n = stack.pop()!; if (n.id === id) return n; stack.push(...n.children ?? []); } };
   const writer: BookmarkWriter = { create: async details => {
@@ -60,6 +60,8 @@ it('real coordinator imports nested selected rows only and retains exact frozen 
   await h.checkpoints.put({ ...checkpoint, revision: 2, phase: 'finished' }, 1);
   const raw = await new Promise<unknown>(resolve => { const open = h.factory.open('zhilan-operations'); open.onsuccess = () => { const db = open.result; const tx = db.transaction(['operations', 'importCheckpoints']); const a = tx.objectStore('operations').getAll(); const b = tx.objectStore('importCheckpoints').getAll(); tx.oncomplete = () => { resolve([a.result, b.result]); db.close(); }; }; });
   for (const forbidden of [h.token, 'importContext', 'previewId', 'apiKey']) expect(JSON.stringify(raw)).not.toContain(forbidden);
+  const [[journal]] = raw as [Record<string, unknown>[], unknown[]];
+  expect(journal).toMatchObject({ schemaVersion: 2, final: { nodes: expect.any(Array) } }); expect(JSON.stringify(journal!.steps)).not.toMatch(/"before"|"expectedAfter"|"after"/);
   const restarted = new MutationCoordinator(h.projection, h.writer, h.operations, 'test');
   expect((await restarted.submit(h.request, h.sender)).status).toBe('completed'); expect(h.calls()).toBe(3);
   expect((await restarted.submit({ ...h.request, importBinding: { ...h.request.importBinding!, checkpointId: 'swapped' } }, h.sender)).reason).toBe('request-id-conflict');
@@ -85,7 +87,7 @@ it('last authority await invalidation and plan/sender tampering fail closed', as
   vi.spyOn(h.authority, 'validate').mockImplementation(async (...args) => { const valid = await validate(...args); if (++count === 3) h.invalidate(); return valid; });
   expect((await h.coordinator.submit(h.request, h.sender)).status).toBe('failed'); expect(h.calls()).toBe(0);
   const other = await setup(); expect((await other.coordinator.submit({ ...other.request, importBinding: { ...other.request.importBinding!, selectedSourceOrdinals: [1] } }, other.sender)).status).toBe('rejected');
-  expect((await other.coordinator.submit(other.request, { ...other.sender, url: 'chrome-extension://test/options/index.html' })).status).toBe('rejected'); expect(other.calls()).toBe(0);
+  expect((await other.coordinator.submit(other.request, { ...other.sender, url: 'chrome-extension://test/panel/index.html' })).status).toBe('rejected'); expect(other.calls()).toBe(0);
 });
 it('atomic handoff quota abort retains classification and no orphan applying checkpoint', async () => {
   const h = await setup();
@@ -111,6 +113,7 @@ it('restart immediately after atomic handoff has actionable 05 row and cannot re
   expect(listing.status).toBe('ready');
   if (listing.status !== 'ready') throw Error('not ready');
   expect(listing.records[0]!.requestId).toBe(h.request.requestId); expect(listing.records[0]!.steps.every(s => s.state === 'planned')).toBe(true);
+  expect(listing.records[0]!.schemaVersion).toBe(2); expect(listing.records[0]!.backup?.nodes).toEqual(tree.nodes);
 });
 it('finished checkpoint requires exact journal plan and binding, not just successful root', async () => {
   const h = await setup(); await h.coordinator.submit(h.request, h.sender);
@@ -173,6 +176,7 @@ it('custom journal without atomic import capability rejects before checkpoint or
   const journal = { all: () => h.operations.all(), put: (record: Parameters<typeof h.operations.put>[0]) => h.operations.put(record) };
   const coordinator = new MutationCoordinator(h.projection, h.writer, journal, 'test', undefined, undefined, h.authority);
   await expect(coordinator.registerImportPreview(h.authority.open(h.sender), 'import', 0, h.selection, h.sender)).rejects.toThrow('import-persistence-owner-mismatch');
+  expect((await coordinator.submit(h.request, h.sender)).reason).toBe('import-persistence-owner-mismatch');
   expect(await h.checkpoints.get('import')).toEqual(h.checkpoint);
   expect(await h.operations.all()).toEqual([]); expect(h.calls()).toBe(0);
 });

@@ -74,22 +74,41 @@ export class SettingsStore {
   async save(config: ModelConfig, privacy: ModelSettingsValue['privacy'], key: string, remember: boolean) {
     const route = parseModelEndpoint(config).identity;
     const value = settingsSchema.parse({ version: 1, config, privacy, revision: crypto.randomUUID() });
+    const credential = remember && key ? { route, key } : undefined;
+    try {
+      return await this.lock(async () => {
+        const envelope = await this.read();
+        if (envelope.settings.revision !== this.value.revision) throw Error('settings-conflict');
+        // A save that changes nothing (e.g. a connection test) keeps revision and authority: no lease revocation, no cancelled requests.
+        if (JSON.stringify({ ...envelope.settings, revision: '' }) === JSON.stringify({ ...value, revision: '' }) && JSON.stringify(envelope.credential) === JSON.stringify(credential) && key === this.credential()) return structuredClone(this.value);
+        await this.storage.set({ modelSecurity: { version: 2, settings: value, ...(credential ? { credential } : {}) } });
+        this.value = value; this.session = { revision: value.revision, route, key }; this.changed();
+        return structuredClone(value);
+      });
+    } catch { throw Error('settings-unavailable-or-conflict'); }
+  }
+  async savePrivacy(privacy: ModelSettingsValue['privacy']) {
     try {
       await this.lock(async () => {
-        if ((await this.read()).settings.revision !== this.value.revision) throw Error('settings-conflict');
-        await this.storage.set({ modelSecurity: { version: 2, settings: value, ...(remember && key ? { credential: { route, key } } : {}) } });
-        this.value = value; this.session = { revision: value.revision, route, key }; this.changed();
+        const envelope = await this.read();
+        if (envelope.settings.revision !== this.value.revision) throw Error('settings-conflict');
+        const settings = settingsSchema.parse({ version: 1, ...(envelope.settings.config ? { config: envelope.settings.config } : {}), privacy, revision: crypto.randomUUID() });
+        await this.storage.set({ modelSecurity: { version: 2, settings, ...(envelope.credential ? { credential: envelope.credential } : {}) } });
+        this.value = settings;
+        if (this.session) this.session = { ...this.session, revision: settings.revision };
+        this.changed();
       });
-      return structuredClone(value);
+      return structuredClone(this.value);
     } catch { throw Error('settings-unavailable-or-conflict'); }
   }
   async clearCredential() {
-    this.session = undefined; this.changed();
     try { await this.lock(async () => {
       const envelope = await this.read();
       if (envelope.settings.revision !== this.value.revision) throw Error('settings-conflict');
       const settings = { ...envelope.settings, revision: crypto.randomUUID() };
       await this.storage.set({ modelSecurity: { version: 2, settings } }); this.value = settings;
+      // Only a durable, CAS-successful write may clear the session and announce deletion; a failed write keeps the truth visible.
+      this.session = undefined; this.changed();
     }); } catch { throw Error('settings-unavailable'); }
   }
   dispose() { this.session = undefined; this.changed(); this.stopStorageListener(); this.listeners.clear(); }

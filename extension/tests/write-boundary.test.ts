@@ -1,10 +1,28 @@
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { IDBFactory } from 'fake-indexeddb';
 import { MutationCoordinator } from '../background/mutation-coordinator';
-import { OperationsStore } from '../persistence/operations';
+import { OperationsStore, operationSchema, type OperationRecord } from '../persistence/operations';
+import { applyTouched } from '../domain/mutation-effect';
 import { TreeProjection } from '../background/tree-projection';
 import type { BookmarkSource } from '../adapters/bookmarks-read';
 import type { BookmarkWriter } from '../adapters/bookmarks-write';
+
+/** The v1 shape of a v2 record: replays each receipt's touched delta to rebuild the full before/expectedAfter/after trees the old journal persisted per step. */
+function legacyEquivalent(record: OperationRecord): OperationRecord {
+  if (record.schemaVersion !== 2) throw Error('v2-record-expected');
+  let before = record.backup?.nodes ?? record.request.before;
+  const steps = record.steps.map(({ step, state, returnedNativeId, touched }) => {
+    if (state !== 'receipt' || !touched) return { step, state, returnedNativeId };
+    const after = applyTouched(before, touched); const entry = { step, state, returnedNativeId, before, expectedAfter: after, after }; before = after; return entry;
+  });
+  return operationSchema.parse({ schemaVersion: 1, requestId: record.requestId, request: record.request, affected: record.affected, createdAt: record.createdAt, backup: record.backup, quarantine: record.quarantine, mapping: record.mapping, result: record.result, steps });
+}
+function seedRaw(factory: IDBFactory, name: string, value: unknown) {
+  return new Promise<void>(resolve => { const open = factory.open(name, 1); open.onupgradeneeded = () => open.result.createObjectStore('operations', { keyPath: 'requestId' }); open.onsuccess = () => { const db = open.result; const tx = db.transaction('operations', 'readwrite'); tx.objectStore('operations').put(value); tx.oncomplete = () => { db.close(); resolve(); }; }; });
+}
+function readRaw(factory: IDBFactory, name: string) {
+  return new Promise<Record<string, unknown>[]>(resolve => { const open = factory.open(name); open.onsuccess = () => { const db = open.result; const tx = db.transaction('operations'); const read = tx.objectStore('operations').getAll(); tx.oncomplete = () => { db.close(); resolve(read.result); }; }; });
+}
 
 async function setup() {
   let tree: chrome.bookmarks.BookmarkTreeNode[] = [{ syncing: false, id: '0', title: '', children: [{ syncing: false, id: 'bar', parentId: '0', title: 'Bar', children: [{ syncing: false, id: 'a', parentId: 'bar', title: 'Old', url: 'https://example.test/' }] }] }];
@@ -20,7 +38,7 @@ async function setup() {
   const coordinator = new MutationCoordinator(projection, writer, store, 'test');
   const snapshot = await projection.fresh();
   const message = { version: 1, type: 'confirmMutation', requestId: 'one', epoch: snapshot.epoch, installationId: snapshot.installationId, observedRevision: snapshot.observedRevision, scope: snapshot.nodes.find(n => n.ref.nativeId === 'bar')!.ref, before: snapshot.nodes, command: { type: 'update', target: snapshot.nodes.find(n => n.ref.nativeId === 'a')!.ref, changes: { title: 'New' } } };
-  const sender = { id: 'test', url: 'chrome-extension://test/panel/index.html' };
+  const sender = { id: 'test', url: 'chrome-extension://test/options/index.html' };
   return { coordinator, message, sender, store, projection, writer, source, writes: () => writes, tree: () => tree, replace: (value: typeof tree) => { tree = value; } };
 }
 it('validates sender then journals, reads back and deduplicates a confirmed edit', async () => {
@@ -360,7 +378,8 @@ it.each(['completed', 'interrupted'] as const)('strips historical envelopes on r
   const store = new OperationsStore(factory, name);
   await h.coordinator.submit(h.message, h.sender);
   const record = (await h.store.all())[0]!;
-  if (state === 'interrupted') { delete record.result; record.steps[0]!.state = 'intent'; delete record.steps[0]!.after; }
+  if (record.schemaVersion !== 2) throw Error('v2-record-expected');
+  if (state === 'interrupted') { delete record.result; record.steps[0]!.state = 'intent'; delete record.steps[0]!.afterDigest; delete record.steps[0]!.touched; delete record.final; }
   const legacy = { ...record, request: { ...record.request, saveContext: 'old-context', previewId: 'old-preview', futureEnvelopeField: 'must-not-persist' } };
   // Seed raw historical bytes, bypassing today's schema and writer.
   await new Promise<void>(resolve => { const open = factory.open(name, 1); open.onupgradeneeded = () => open.result.createObjectStore('operations', { keyPath: 'requestId' }); open.onsuccess = () => { const db = open.result; const tx = db.transaction('operations', 'readwrite'); tx.objectStore('operations').put(legacy); tx.oncomplete = () => { db.close(); resolve(); }; }; });
@@ -416,4 +435,66 @@ it.each(['mode', 'sourceRequestId', 'conflicts'] as const)('compares retained hi
   expect((await owner.submit({ ...h.message, recovery, saveContext: 'expired', previewId: 'expired' }, h.sender)).status).toBe('completed');
   expect((await owner.submit({ ...h.message, recovery: changed }, h.sender)).reason).toBe('request-id-conflict');
   expect(h.writes()).toBe(1);
+});
+
+/** Eight bounded creates under the scope folder; each native create reports the index the effect model expects. */
+function eightCreates(h: Awaited<ReturnType<typeof setup>>) {
+  h.writer.create = async details => { const parent = h.tree()[0]!.children![0]!; const node = { ...details, id: `created-${parent.children!.length}`, index: parent.children!.length, syncing: false }; parent.children!.push(node); return node; };
+  const operations = Array.from({ length: 8 }, (_, i) => ({ id: `create-${i}`, dependsOn: [] as string[], command: { type: 'create', parent: h.message.scope, title: `Bookmark ${i}`, url: `https://batch.test/${i}` } }));
+  return { ...h.message, command: { type: 'batch', operations, selectedOperationIds: operations.map(o => o.id) } };
+}
+it('v2 journal keeps per-step digests plus touched deltas and one final snapshot, never three full trees per step', async () => {
+  const h = await setup(); const factory = new IDBFactory(); const store = new OperationsStore(factory, 'v2-envelope');
+  const puts: OperationRecord[] = [];
+  const journal = { all: () => store.all(), get: (id: string) => store.get(id), put: async (record: OperationRecord) => { puts.push(structuredClone(record)); await store.put(record); } };
+  const owner = new MutationCoordinator(h.projection, h.writer, journal, 'test');
+  expect(await owner.submit(eightCreates(h), h.sender)).toMatchObject({ status: 'completed', completedSteps: 8 });
+  const [raw] = await readRaw(factory, 'v2-envelope');
+  expect(raw).toMatchObject({ schemaVersion: 2 }); expect(JSON.stringify(raw!.steps)).not.toMatch(/"before"|"expectedAfter"|"after"/);
+  for (const step of raw!.steps as Record<string, unknown>[]) {
+    expect(step).toMatchObject({ state: 'receipt', beforeDigest: expect.stringMatching(/^[a-f0-9]{64}$/), expectedAfterDigest: expect.stringMatching(/^[a-f0-9]{64}$/), afterDigest: expect.stringMatching(/^[a-f0-9]{64}$/) });
+    expect((step.touched as unknown[]).length).toBeGreaterThan(0); expect((step.touched as unknown[]).length).toBeLessThan(4);
+  }
+  expect((raw!.final as { nodes: unknown[] }).nodes).toHaveLength(11);
+  // Crash-safety protocol keeps its three durable points per step; only the payload shrank.
+  const first = puts.flatMap(r => r.schemaVersion === 2 && !r.result && r.steps[0]!.state !== 'planned' ? [r.steps[0]!] : []);
+  expect(first.map(s => [s.state, !!s.beforeDigest, !!s.expectedAfterDigest, !!s.afterDigest, !!s.touched]).slice(0, 3)).toEqual([['intent', true, false, false, false], ['intent', true, true, false, false], ['receipt', true, true, true, true]]);
+  expect(puts.filter(r => r.schemaVersion === 2 && r.final).map(r => r.steps.filter(s => s.state === 'receipt').length)).toEqual([8, 8]);
+  const record = (await store.all())[0]!; const legacy = legacyEquivalent(record);
+  expect(legacy.schemaVersion === 1 && legacy.steps.every(s => s.before && s.expectedAfter && s.after)).toBe(true);
+  const [v2, v1] = [JSON.stringify(record).length, JSON.stringify(legacy).length];
+  expect(v2).toBeLessThan(v1 / 2); expect(v2).toBeGreaterThan(0);
+  console.info(`[write-boundary] 8-step batch footprint: v2=${v2} bytes, v1-equivalent=${v1} bytes, ratio=${(v2 / v1).toFixed(3)}`);
+});
+it('seeded v1 full-tree record stays readable, reconcilable and cleanable, and still dedupes without replay', async () => {
+  const h = await setup(); const factory = new IDBFactory(); const name = 'legacy-v1';
+  expect((await h.coordinator.submit(h.message, h.sender)).status).toBe('completed');
+  const legacy = legacyEquivalent((await h.store.all())[0]!);
+  await seedRaw(factory, name, legacy);
+  const store = new OperationsStore(factory, name);
+  const loaded = (await store.all())[0]!; expect(loaded).toEqual(legacy); expect(loaded.schemaVersion).toBe(1);
+  const restarted = new MutationCoordinator(h.projection, h.writer, store, 'test');
+  expect((await restarted.submit(h.message, h.sender)).status).toBe('completed');
+  expect(await restarted.submit({ version: 1, type: 'reconcileMutation', requestId: 'one' }, h.sender)).toMatchObject({ status: 'completed', evidence: [{ stepIndex: 0, state: 'checkpointed', nativeId: 'a', currentMatchesReceipt: true }] });
+  await store.cleanup('one');
+  const [raw] = await readRaw(factory, name);
+  expect(raw).toMatchObject({ schemaVersion: 1, backup: undefined }); expect(JSON.stringify(raw)).not.toMatch(/"before":\[\{|"expectedAfter"|"after"/);
+  expect((await restarted.submit(h.message, h.sender)).status).toBe('completed');
+  expect((await new MutationCoordinator(h.projection, h.writer, store, 'test').submit(h.message, h.sender)).status).toBe('completed');
+  expect(h.writes()).toBe(1);
+});
+it('reads the whole journal once per coordinator, then resolves each run by primary key; journals without get fall back to all', async () => {
+  const h = await setup(); const all = vi.spyOn(h.store, 'all'); const get = vi.spyOn(h.store, 'get');
+  for (const [i, requestId] of ['first', 'second', 'third'].entries()) {
+    const snapshot = await h.projection.fresh();
+    const message = { ...h.message, requestId, epoch: snapshot.epoch, observedRevision: snapshot.observedRevision, before: snapshot.nodes, command: { ...h.message.command, changes: { title: `Title ${i}` } } };
+    expect((await h.coordinator.submit(message, h.sender)).status).toBe('completed');
+  }
+  expect((await h.coordinator.submit({ version: 1, type: 'mutationStatus', requestId: 'missing' }, h.sender)).reason).toBe('request-not-found');
+  // The first run indexes with all(); the three later runs (two new requests, one status lookup) resolve by primary key only.
+  expect(all).toHaveBeenCalledTimes(1); expect(get).toHaveBeenCalledTimes(3); expect(h.writes()).toBe(3);
+  const fallback = vi.fn(() => h.store.all());
+  const legacyJournal = new MutationCoordinator(h.projection, h.writer, { all: fallback, put: record => h.store.put(record) }, 'test');
+  for (const requestId of ['first', 'missing']) await legacyJournal.submit({ version: 1, type: 'reconcileMutation', requestId }, h.sender);
+  expect(fallback.mock.calls.length).toBeGreaterThanOrEqual(2);
 });

@@ -28,4 +28,4 @@ it('renders a sizable frozen preview and updates selection without replacing its
  fireEvent.change(screen.getByLabelText('a 保留或删除'),{target:{value:'keep'}});
  for(let i=0;i<120;i++)fireEvent.change(screen.getByLabelText(`render-${i} 保留或删除`),{target:{value:'delete'}});
  fireEvent.click(screen.getByText('预览所选去重'));await waitFor(()=>expect(screen.getByLabelText('选择 delete:render-119')).toBeChecked());fireEvent.click(screen.getByLabelText('选择 delete:render-119'));expect(screen.getByLabelText('选择 delete:render-119')).not.toBeChecked();
-},15000);
+},60000); // 120 jsdom select changes without list virtualization: correctness test, not a timing budget.

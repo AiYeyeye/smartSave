@@ -9,9 +9,11 @@ import type { BookmarkWriter } from '../adapters/bookmarks-write';
 import { preflight, type Step } from '../domain/preflight';
 import type { TreeSnapshot } from '../domain/node-reference';
 import { confirmSchema, durableMutationRequestSchema, mutationMessageSchema, trustedMutationSender, type MutationResult } from '../schemas/messages';
-import { operationRecord, operationResult, type OperationJournal, type OperationRecord } from '../persistence/operations';
-import { sameTree, expectedAfter } from '../domain/mutation-effect';
+import { operationRecord, operationResult, type OperationJournal, type OperationRecord, type OperationRecordV2 } from '../persistence/operations';
+import { sameTree, expectedAfter, touchedNodes, treeDigest } from '../domain/mutation-effect';
 import type { TreeProjection } from './tree-projection';
+/** Gate facts per known requestId; rebuilt from every full read, updated after every put. */
+type JournalIndex = Map<string, { unsettled: boolean; quarantine?: OperationRecord['quarantine'] }>;
 
 
 export class MutationCoordinator {
@@ -61,6 +63,16 @@ export class MutationCoordinator {
   private cacheResult(record: OperationRecord, result: MutationResult) {
     this.volatile.set(record.requestId, { result, semantics: this.requestSemantics(record.request) });
   }
+  private known?: JournalIndex;
+  private remember(record: OperationRecord) { this.known?.set(record.requestId, { unsettled: (!record.result || record.result.needsReconcile) && !record.quarantine, quarantine: record.quarantine }); }
+  private reindex(records: OperationRecord[]): JournalIndex { this.known = new Map(); records.forEach(r => this.remember(r)); return this.known; }
+  /** First use reads and validates the whole journal once; later runs resolve one primary key. Journals without get(), and every explicit re-read (quarantine, reconcile, recovery), rebuild the index so externally added records still gate. */
+  private async lookup(requestId: string): Promise<{ existing?: OperationRecord; known: JournalIndex }> {
+    if (this.known && this.journal.get) { const existing = await this.journal.get(requestId); if (existing) this.remember(existing); return { existing, known: this.known }; }
+    const records = await this.journal.all();
+    return { existing: records.find(r => r.requestId === requestId), known: this.reindex(records) };
+  }
+  private async save(record: OperationRecord) { await this.journal.put(record); this.remember(record); }
   constructor(private projection: Pick<TreeProjection, 'fresh'> & Partial<Pick<TreeProjection, 'invalidatePreviews'>>, private writer: BookmarkWriter, private journal: OperationJournal, private extensionId: string, private validateSaveContext: (request: ConfirmMutation) => boolean = request => !request.saveContext && !request.requestId.startsWith('save:'), private organizerAuthority?: OrganizerAuthority, private importAuthority?: ImportAuthority) {}
   submit(raw: unknown, sender: { id?: string; url?: string; tab?: unknown }): Promise<MutationResult> {
     const parsed = mutationMessageSchema.safeParse(raw);
@@ -79,7 +91,7 @@ export class MutationCoordinator {
     const task = this.queue.then(async (): Promise<RecoveryResponse> => {
       try {
         if (message.type === 'recoveryDiscard') { this.recoveryPreviews.delete(message.proposalRequestId); this.previews.delete(message.proposalRequestId); return { status: 'cleaned', requestId: message.requestId }; }
-        const records = await this.journal.all();
+        const records = await this.journal.all(); this.reindex(records);
         if (message.type === 'recoveryList') {
           const estimate = await globalThis.navigator?.storage?.estimate?.().catch(() => undefined);
           return { status: 'ready', requestId: message.requestId, records, destinations: (await this.projection.fresh()).nodes.filter(n => n.childrenWritable), usage: estimate?.usage, quota: estimate?.quota };
@@ -94,7 +106,7 @@ export class MutationCoordinator {
         }
         const tree = await this.projection.fresh();
         const preview = message.mode === 'copy'
-          ? prepareRecoveryCopy(record, tree, message.destination!, message.selectedNativeIds ?? [])
+          ? prepareRecoveryCopy(record, tree, message.destination, message.selectedNativeIds ?? [])
           : prepareRecovery(record, tree, message.mode, records);
         let proposal: ConfirmMutation | undefined;
         if (preview.command.operations.length) {
@@ -118,9 +130,8 @@ export class MutationCoordinator {
       if (message.type === 'confirmMutation' && cached.semantics !== this.requestSemantics(message)) return rejected('request-id-conflict');
       return cached.result;
     }
-    let records: OperationRecord[];
-    try { records = await this.journal.all(); } catch { this.blocked = true; return rejected('journal-unavailable-or-unsupported'); }
-    const existing = records.find(r => r.requestId === message.requestId);
+    let existing: OperationRecord | undefined; let known: JournalIndex;
+    try { ({ existing, known } = await this.lookup(message.requestId)); } catch { this.blocked = true; return rejected('journal-unavailable-or-unsupported'); }
     if (existing && message.type === 'confirmMutation' && this.requestSemantics(existing.request) !== this.requestSemantics(message)) return rejected('request-id-conflict');
     if (existing && message.type === 'quarantineMutation') {
       if (existing.quarantine) return this.reconcile(existing);
@@ -129,8 +140,8 @@ export class MutationCoordinator {
         const fresh = await this.projection.fresh();
         existing.result ??= operationResult(existing, 'unknown', 'interrupted-review-required');
         existing.quarantine = { acknowledgedAt: new Date().toISOString(), epoch: fresh.epoch, observedRevision: fresh.observedRevision };
-        await this.journal.put(existing);
-        await this.journal.all();
+        await this.save(existing);
+        this.reindex(await this.journal.all());
         this.projection.invalidatePreviews?.();
         this.recoveryPreviews.clear();
         this.blocked = false;
@@ -153,10 +164,10 @@ export class MutationCoordinator {
       this.recoveryPreviews.delete(message.requestId);
       if (JSON.stringify(preview) !== JSON.stringify(confirmSchema.parse({ ...message, previewId: undefined }))) return rejected('recovery-preview-required');
     }
-    if (this.blocked || records.some(r => (!r.result || r.result.needsReconcile) && !r.quarantine)) return rejected('reconciliation-required');
-    if (records.some(r => r.quarantine && r.quarantine.epoch === message.epoch && message.observedRevision <= r.quarantine.observedRevision)) return rejected('fresh-preview-required-after-quarantine');
+    if (this.blocked || [...known.values()].some(r => r.unsettled)) return rejected('reconciliation-required');
+    if ([...known.values()].some(r => r.quarantine && r.quarantine.epoch === message.epoch && message.observedRevision <= r.quarantine.observedRevision)) return rejected('fresh-preview-required-after-quarantine');
     let initial: TreeSnapshot;
-    let record: OperationRecord;
+    let record: OperationRecordV2;
     try {
       initial = await this.projection.fresh();
       const plan = preflight(message, initial);
@@ -165,9 +176,12 @@ export class MutationCoordinator {
       return this.finish(operationRecord(message, [], []), 'rejected', 'preflight-conflict');
     }
     if (message.importBinding) {
-      try { const handoff = await this.importAuthority!.authorizeHandoff(message, sender); await this.journal.handoffImport!(handoff.checkpoint, record, handoff.expectedRevision); } catch { return rejected('import-checkpoint-freeze-failed'); }
+      // Explicit capability check: a journal without atomic handoff is not the import persistence owner.
+      const { importAuthority, journal } = this;
+      if (!importAuthority || !journal.handoffImport) return rejected('import-persistence-owner-mismatch');
+      try { const handoff = await importAuthority.authorizeHandoff(message, sender); await journal.handoffImport(handoff.checkpoint, record, handoff.expectedRevision); this.remember(record); } catch { return rejected('import-checkpoint-freeze-failed'); }
     }
-    else { try { await this.journal.put(record); } catch { this.blocked = true; return rejected('backup-or-intent-failed'); } }
+    else { try { await this.save(record); } catch { this.blocked = true; return rejected('backup-or-intent-failed'); } }
     let expected = initial;
     for (const entry of record.steps) {
       if (this.cancellations.delete(record.requestId)) return this.finish(record, record.steps.some(s => s.state === 'receipt') ? 'partial' : 'failed', 'cancelled-remaining-not-issued');
@@ -186,8 +200,9 @@ export class MutationCoordinator {
           if (url !== undefined && record.request.recovery?.mode !== 'copy' && current.nodes.some(n => n.url === url)) throw Error('duplicate-url');
         }
         if (step.type === 'remove') { const id = step.id; if (current.nodes.find(n => n.ref.nativeId === id)?.childrenIds.length !== 0) throw Error('not-empty'); }
-        entry.before = current.nodes; entry.state = 'intent';
-        await this.journal.put(record);
+        // Full trees stay in memory for the comparisons below; the journal keeps only their digests plus the touched delta.
+        entry.beforeDigest = await treeDigest(current.nodes); entry.state = 'intent';
+        await this.save(record);
         // Journal await is another race window: revalidate after durable intent, immediately before API.
         const latest = await this.projection.fresh();
         if (latest.observedRevision !== current.observedRevision || latest.epoch !== current.epoch || !sameTree(current.nodes, latest.nodes)) throw Error('changed-after-intent');
@@ -219,14 +234,15 @@ export class MutationCoordinator {
         const returned = await this.issue(step);
         if (returned) entry.returnedNativeId = returned.id;
         const after = expectedAfter(current, step, returned);
-        entry.expectedAfter = after;
+        entry.expectedAfterDigest = await treeDigest(after);
         // Persist returned identity before readback; a crash before this commit remains unclaimed.
-        await this.journal.put(record);
+        await this.save(record);
         const observed = await this.projection.fresh();
         if (observed.epoch !== current.epoch || observed.installationId !== current.installationId || observed.observedRevision - current.observedRevision > 1 || !sameTree(after, observed.nodes)) throw Error('readback-conflict');
-        entry.after = observed.nodes; entry.state = 'receipt';
+        entry.afterDigest = await treeDigest(observed.nodes); entry.touched = touchedNodes(current.nodes, observed.nodes); entry.state = 'receipt';
         if (step.type === 'create' && returned) record.mapping[step.temporaryId] = returned.id;
-        await this.journal.put(record);
+        if (entry === record.steps.at(-1)) record.final = { nodes: observed.nodes };
+        await this.save(record);
         expected = observed;
       } catch {
         // API rejection can be ambiguous too. Never claim it proves no native change.
@@ -244,7 +260,7 @@ export class MutationCoordinator {
   }
   private async finish(record: OperationRecord, status: MutationResult['status'], reason?: string): Promise<MutationResult> {
     record.result = operationResult(record, status, reason);
-    try { await this.journal.put(record); } catch {
+    try { await this.save(record); } catch {
       this.blocked = true;
       record.result = operationResult(record, 'unknown', 'journal-checkpoint-failed');
     }
@@ -255,19 +271,22 @@ export class MutationCoordinator {
     if (record.result && !explicit) return record.result;
     let current: TreeSnapshot | undefined;
     try { current = await this.projection.fresh(); } catch { /* Report unavailable evidence, never issue a write. */ }
+    const lineage = current !== undefined && current.installationId === record.request.installationId;
+    // v1 kept every step's after tree; v2 compares one digest of the current tree with each receipt digest.
+    const digest = lineage && record.schemaVersion === 2 ? await treeDigest(current!.nodes) : undefined;
+    const proven = record.schemaVersion === 1 ? record.steps.map(s => lineage && !!s.after && sameTree(s.after, current!.nodes)) : record.steps.map(s => !!digest && s.afterDigest === digest);
     const evidence: NonNullable<MutationResult['evidence']> = record.steps.map((entry, stepIndex) => ({
       stepIndex,
       state: entry.state === 'receipt' ? 'checkpointed' : entry.state === 'planned' ? 'not-issued' : 'unknown',
       nativeId: entry.returnedNativeId ?? (entry.step.type === 'create' ? undefined : entry.step.id),
-      currentMatchesReceipt: !!(current && current.installationId === record.request.installationId && entry.after && sameTree(entry.after, current.nodes)),
+      currentMatchesReceipt: proven[stepIndex]!,
     }));
-    const last = record.steps.at(-1);
-    if (record.steps.length && record.steps.every(s => s.state === 'receipt') && last?.after && current && current.installationId === record.request.installationId && sameTree(last.after, current.nodes)) {
+    if (record.steps.length && record.steps.every(s => s.state === 'receipt') && proven.at(-1)) {
       const candidate = { ...operationResult(record, 'completed', 'reconciled-from-receipts'), evidence };
       try {
-        await this.journal.put({ ...record, result: candidate });
+        await this.save({ ...record, result: candidate });
         // Re-enable only after rereading every record successfully; other unknowns still block run().
-        await this.journal.all(); this.blocked = false;
+        this.reindex(await this.journal.all()); this.blocked = false;
         this.cacheResult(record, candidate);
         return candidate;
       } catch {

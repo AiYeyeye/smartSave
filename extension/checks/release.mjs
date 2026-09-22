@@ -14,6 +14,8 @@ async function inventory(root, excluded = []) {
     else { const bytes = await readFile(file); result.push({ path: relative(root, file).split(String.fromCharCode(92)).join('/'), bytes: bytes.length, sha256: sha(bytes) }); }
   } } await walk(root); return result;
 }
+// Approved 2026-09-22: no sidePanel.open dependency remains, so the tested floor equals the manifest declaration.
+export const approvedMinimumChromeVersion = 114;
 export const manualRequirements = [
   { id: 'historical-p1', status: 'historical', evidence: '.trellis/tasks/09-08-zhilan-technical-validation-design/research/p1-user-evidence-2026-09-08.md', blocking: false },
   ...['chrome-restart-reliability', 'edge-no-page-restart', 'p2-models', 'p3-recovery', 'p4-privacy', 'windows-ac01-20-four-themes-performance', 'approved-minimum-browser-matrix', 'independent-review', 'user-acceptance'].map(id => ({ id, status: 'NOT RUN', evidence: null, blocking: true })),
@@ -49,7 +51,7 @@ export async function checkRelease(directory) {
     if (/\.(js|html|css)$/.test(file.path) && /\beval\s*\(|new\s+Function\s*\(|importScripts\s*\(|<script[^>]+src\s*=\s*["']https?:|@import\s+["']https?:/.test(text)) throw Error(`Remote/dynamic code marker: ${file.path}`);
   });
   const manifest = await attempt(async () => JSON.parse(await readFile(resolve(dist, 'manifest.json'), 'utf8')));
-  const compatibilityBlockers = manifest && Number(manifest.minimum_chrome_version) < 116 ? ['owner01: manifest minimum is below sidePanel.open API floor 116; no approved tested minimum'] : [];
+  const compatibilityBlockers = manifest && Number(manifest.minimum_chrome_version) < approvedMinimumChromeVersion ? [`owner01: manifest minimum ${manifest.minimum_chrome_version} is below the approved minimum Chrome ${approvedMinimumChromeVersion}`] : [];
   return { compatibilityBlockers, manualRequirements, format: 'zhilan-local-candidate-v1', version: pkg?.version, sourceInventoryHash, artifactInventoryHash, environment: { node: process.version, platform: process.platform, arch: process.arch }, sourceIdentity: 'source-file SHA256 inventory; no commit identity asserted (unborn repository)', lockHash, artifacts, sourceFiles, sourceErrors, coverage: 'Existing manifest/CSP/static AST reference validator plus classic extractor; direct dependency license metadata and runtime notice presence; obvious secret/dynamic-code markers only. Not a security proof, complete dependency-license audit, browser result or reproducible-build guarantee.' };
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

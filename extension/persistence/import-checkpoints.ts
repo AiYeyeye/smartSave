@@ -2,7 +2,8 @@ import { z } from 'zod';
 import { nodeRefSchema } from '../domain/node-reference';
 import { openOperationsDatabase } from './operations-database';
 import { batchCommandSchema, importBindingSchema } from '../schemas/messages';
-import { operationSchema } from './operations';
+import { operationSchema } from './operation-schema';
+import { candidateStructure } from '../import/source-candidates';
 
 const spanSchema = z.object({ start: z.number().int().nonnegative(), end: z.number().int().nonnegative() }).strict().refine(s => s.end >= s.start);
 const itemSchema = z.object({
@@ -13,6 +14,8 @@ const itemSchema = z.object({
 const diagnosticSchema = z.discriminatedUnion('reason', [
   z.object({ sourceOrdinal: z.number().int().nonnegative(), reason: z.enum(['invalid-url', 'unsupported-protocol', 'existing-url']) }).strict(),
   z.object({ sourceOrdinal: z.number().int().nonnegative(), reason: z.literal('file-duplicate'), retainedSourceOrdinal: z.number().int().nonnegative() }).strict(),
+  // Count-only summaries: candidate fields ignored because rows were recognized, or structure elements lacking the mapped URL field.
+  z.object({ reason: z.enum(['unmapped-candidates', 'unmapped-elements']), count: z.number().int().positive() }).strict(),
 ]);
 const candidateSchema = z.object({ sourcePath: z.array(z.union([z.string(), z.number().int().nonnegative()])), value: z.string(), sourceSpan: spanSchema }).strict();
 const runtimeSchema = z.object({
@@ -37,8 +40,13 @@ export const importCheckpointSchema = z.object({
   const error = () => context.addIssue({ code: 'custom', message: 'invalid-import-checkpoint' });
   if (value.writePlan && (!value.requestId || value.writePlan.binding.checkpointId !== value.id || value.writePlan.binding.checkpointRevision >= value.revision)) error();
   if (value.runtime?.version === 2 && !value.runtime.semanticDigest) error();
-  if (value.runtime?.stage === 'mapping' && (value.phase !== 'paused' || value.classified.length || value.newFolders.length)) error();
-  if (value.runtime && (new Set(value.runtime.mappedGroups).size !== value.runtime.mappedGroups.length || value.runtime.mappedGroups.length !== value.runtime.mappedItems.length)) error();
+  if (value.runtime?.stage === 'mapping' && (value.phase !== 'paused' || value.classified.length || value.newFolders.length || value.items.length)) error();
+  if (value.runtime) {
+    // A structure may map many rows or none (explicit refusal); every mapped row must still belong to a completed structure or legacy concrete-parent group.
+    const groups = new Set(value.runtime.mappedGroups);
+    if (groups.size !== value.runtime.mappedGroups.length || new Set(value.runtime.mappedItems.map(i => i.sourceOrdinal)).size !== value.runtime.mappedItems.length) error();
+    if (value.runtime.mappedItems.some(i => !i.provenance.sourcePath || (!groups.has(JSON.stringify(candidateStructure(i.provenance.sourcePath).structure)) && !groups.has(JSON.stringify(i.provenance.sourcePath.slice(0, -1)))))) error();
+  }
   if (value.root.kind !== 'folder' || value.root.installationId !== value.installationId) error();
   const items = new Map(value.items.map(i => [i.item.sourceOrdinal, i]));
   if (items.size !== value.items.length || new Set(value.classified.map(i => i.sourceOrdinal)).size !== value.classified.length) error();
@@ -122,13 +130,18 @@ export class ImportCheckpointStore {
           }
           if (value.phase === 'applying') { reason = 'import-checkpoint-recovery-required'; tx.abort(); return; }
           if (value.phase === 'finished') { reason = 'import-checkpoint-recovery-required'; tx.abort(); return; }
-          const mappingTransition = previous?.runtime?.stage === 'mapping' && value.runtime?.stage === 'classification' && !previous.items.length && !previous.diagnostics.length && !previous.classified.length && !value.classified.length;
-          if (previous?.runtime) {
-            const prior = previous.runtime; const next = value.runtime;
-            if (!next || next.version !== prior.version || next.semanticDigest !== prior.semanticDigest || next.contextDigest !== prior.contextDigest || next.format !== prior.format || JSON.stringify(next.sourceItems) !== JSON.stringify(prior.sourceItems) || JSON.stringify(next.candidates) !== JSON.stringify(prior.candidates) || prior.mappedGroups.some(g => !next.mappedGroups.includes(g)) || prior.mappedItems.some(i => !next.mappedItems.some(n => JSON.stringify(i) === JSON.stringify(n))) || (prior.stage === 'classification' && JSON.stringify(prior) !== JSON.stringify(next))) { reason = 'import-checkpoint-conflict'; tx.abort(); return; }
-          } else if (previous && value.runtime) { reason = 'import-checkpoint-conflict'; tx.abort(); return; }
-          // Context changes create a new task; never erase the original source or completed batches.
-          if (previous && (value.installationId !== previous.installationId || JSON.stringify(value.root) !== JSON.stringify(previous.root) || (!mappingTransition && (JSON.stringify(value.items) !== JSON.stringify(previous.items) || JSON.stringify(value.diagnostics) !== JSON.stringify(previous.diagnostics))) || previous.classified.some(row => !value.classified.some(next => JSON.stringify(row) === JSON.stringify(next))) || previous.newFolders.some(folder => !value.newFolders.some(next => JSON.stringify(folder) === JSON.stringify(next))))) { reason = 'import-checkpoint-conflict'; tx.abort(); return; }
+          // Revision CAS already proves lineage; invariants stay O(N) set/length checks, never whole-array serialization per save.
+          const prior = previous?.runtime; const next = value.runtime;
+          const transition = prior?.stage === 'mapping' && next?.stage === 'classification';
+          if (prior) {
+            const groups = new Set(next?.mappedGroups); const mapped = new Set(next?.mappedItems.map(i => i.sourceOrdinal));
+            if (!next || next.version !== prior.version || next.semanticDigest !== prior.semanticDigest || next.contextDigest !== prior.contextDigest || next.format !== prior.format || next.sourceItems.length !== prior.sourceItems.length || next.candidates.length !== prior.candidates.length || prior.mappedGroups.some(g => !groups.has(g)) || prior.mappedItems.some(i => !mapped.has(i.sourceOrdinal)) || (prior.stage === 'classification' && (next.stage !== 'classification' || next.mappedGroups.length !== prior.mappedGroups.length || next.mappedItems.length !== prior.mappedItems.length))) { reason = 'import-checkpoint-conflict'; tx.abort(); return; }
+          } else if (previous && next) { reason = 'import-checkpoint-conflict'; tx.abort(); return; }
+          // Context changes create a new task; source rows appear once (creation or mapping transition), diagnostics only grow while mapping, progress only grows.
+          if (previous) {
+            const classified = new Set(value.classified.map(r => r.sourceOrdinal)); const folders = new Set(value.newFolders.map(f => f.id));
+            if (value.installationId !== previous.installationId || JSON.stringify(value.root) !== JSON.stringify(previous.root) || (transition ? value.classified.length > 0 : value.items.length !== previous.items.length) || (prior?.stage === 'mapping' ? value.diagnostics.length < previous.diagnostics.length : value.diagnostics.length !== previous.diagnostics.length) || previous.classified.some(row => !classified.has(row.sourceOrdinal)) || previous.newFolders.some(folder => !folders.has(folder.id))) { reason = 'import-checkpoint-conflict'; tx.abort(); return; }
+          }
           if (previous && JSON.stringify(previous.sourceCheckpoint) !== JSON.stringify(value.sourceCheckpoint)) { reason = 'import-checkpoint-conflict'; tx.abort(); return; }
           if (!previous && value.sourceCheckpoint) {
             const source = store.get(value.sourceCheckpoint.id);

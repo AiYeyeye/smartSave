@@ -1,10 +1,23 @@
 import { expect, it } from 'vitest';
 import { IDBFactory } from 'fake-indexeddb';
 import { MutationCoordinator } from '../background/mutation-coordinator';
-import { OperationsStore } from '../persistence/operations';
+import { OperationsStore, operationSchema, type OperationRecord } from '../persistence/operations';
 import { TreeProjection } from '../background/tree-projection';
 import type { BookmarkWriter } from '../adapters/bookmarks-write';
 import { prepareRecovery } from '../domain/undo';
+import { prepareRecoveryCopy } from '../domain/recovery-copy';
+import { applyTouched } from '../domain/mutation-effect';
+
+/** The v1 shape of a v2 record: replays each receipt's touched delta to rebuild the full before/expectedAfter/after trees the old journal persisted per step. */
+function legacyEquivalent(record: OperationRecord): OperationRecord {
+  if (record.schemaVersion !== 2) throw Error('v2-record-expected');
+  let before = record.backup?.nodes ?? record.request.before;
+  const steps = record.steps.map(({ step, state, returnedNativeId, touched }) => {
+    if (state !== 'receipt' || !touched) return { step, state, returnedNativeId };
+    const after = applyTouched(before, touched); const entry = { step, state, returnedNativeId, before, expectedAfter: after, after }; before = after; return entry;
+  });
+  return operationSchema.parse({ schemaVersion: 1, requestId: record.requestId, request: record.request, affected: record.affected, createdAt: record.createdAt, backup: record.backup, quarantine: record.quarantine, mapping: record.mapping, result: record.result, steps });
+}
 
 async function setup() {
   const tree: chrome.bookmarks.BookmarkTreeNode[] = [{ id: '0', title: '', syncing: false, children: [{ id: 'bar', parentId: '0', title: 'Bar', syncing: false, children: [{ id: 'a', parentId: 'bar', title: 'A', url: 'https://a.test/', syncing: false }, { id: 'b', parentId: 'bar', title: 'B', url: 'https://b.test/', syncing: false }] }] }];
@@ -210,7 +223,8 @@ it.each(['target-reorder', 'survivor-reorder', 'insertion', 'missing-evidence', 
   if (scenario === 'survivor-reorder') await h.writer.move('c', { parentId: 'beta', index: 0 });
   if (scenario === 'insertion') await h.writer.create({ parentId: 'beta', title: 'New', url: 'https://new.test/' });
   if (scenario === 'missing-evidence') {
-    const record = (await h.store.all())[0]!; record.steps.at(-1)!.after = record.steps.at(-1)!.after!.filter(n => n.ref.nativeId !== 'beta'); await h.store.put(record);
+    const record = (await h.store.all())[0]!; if (record.schemaVersion !== 2 || !record.final) throw Error('v2-final-expected');
+    record.final = { nodes: record.final.nodes.filter(n => n.ref.nativeId !== 'beta') }; await h.store.put(record);
   }
   const p = await h.owner.recovery({ version: 1, type: 'recoveryPreview', requestId: 'drift', sourceRequestId: 'batch', mode: 'undo' }, h.sender);
   expect(p.status).toBe('preview'); if (p.status !== 'preview') throw Error('missing');
@@ -317,4 +331,22 @@ it('places against a newly restored sole sibling rather than treating its tempor
   expect(p.proposal.command.operations.find(o => o.id === 'undo-move-a')?.dependsOn).toContain('restore-b');
   expect((await h.owner.submit(p.proposal, h.sender)).status).toBe('completed');
   expect(h.find('bar').children!.map(n => n.title)).toEqual(['A', 'B']);
+});
+it.each(['undo', 'merge', 'copy'] as const)('%s preview is identical for a v2 record and its v1 full-tree equivalent, including an interrupted batch', async mode => {
+  const h = await setup();
+  for (const id of ['beta', 'gamma']) h.find('bar').children!.push({ id, parentId: 'bar', title: id, syncing: false, children: [] });
+  const command = { type: 'batch', selectedOperationIds: ['move', 'remove'], operations: [{ id: 'move', dependsOn: [], command: { type: 'move', target: h.ref('a'), parent: { ...h.ref('beta'), kind: 'folder' }, index: 0 } }, { id: 'remove', dependsOn: [], command: { type: 'remove', target: h.ref('b') } }] };
+  expect((await h.owner.submit(await h.request(command), h.sender)).status).toBe('completed');
+  await h.writer.move('a', { parentId: 'gamma', index: 0 });
+  const record = (await h.store.all())[0]!; if (record.schemaVersion !== 2 || !record.final) throw Error('v2-final-expected');
+  const tree = await h.projection.fresh();
+  const preview = (r: OperationRecord) => mode === 'copy' ? prepareRecoveryCopy(r, tree, { ...h.ref('bar'), kind: 'folder' }, ['a', 'b']) : prepareRecovery(r, tree, mode);
+  const modern = preview(record); expect(preview(legacyEquivalent(record))).toEqual(modern);
+  if (mode === 'undo') { expect(modern.conflicts).toEqual([{ nativeId: 'a', reason: 'later-change-or-missing' }]); expect(modern.command.operations.map(o => o.command.type)).toEqual(['create']); }
+  if (mode === 'merge') { expect(modern.command.operations.map(o => o.id)).toEqual(['restore-b']); expect(modern.conflicts.some(c => c.nativeId === 'a')).toBe(true); }
+  if (mode === 'copy') expect(modern.command.operations).toHaveLength(2);
+  // Without the final snapshot, v2 rebuilds the last receipt tree from touched deltas: same preview as the retained trees.
+  const interrupted: OperationRecord = { ...record, final: undefined, result: undefined, steps: [record.steps[0]!, { ...record.steps[1]!, state: 'intent', afterDigest: undefined, touched: undefined }] };
+  expect(preview(interrupted)).toEqual(preview(legacyEquivalent(interrupted)));
+  if (mode === 'undo') expect(preview(interrupted).conflicts.map(c => c.reason)).toEqual(['operation-not-proven', 'later-change-or-missing']);
 });

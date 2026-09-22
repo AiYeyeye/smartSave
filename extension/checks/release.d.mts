@@ -15,6 +15,7 @@ export interface ReleaseResult {
   lockHash?: string;
   coverage: string;
 }
+export const approvedMinimumChromeVersion: number;
 export const manualRequirements: ManualRequirement[];
 export function checkRelease(directory: string): Promise<ReleaseResult>;
 export function releaseGate(result: Pick<ReleaseResult, 'sourceErrors'> & Partial<Pick<ReleaseResult, 'compatibilityBlockers'>>): string[];

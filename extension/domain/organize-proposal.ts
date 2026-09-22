@@ -20,7 +20,8 @@ export function organizeCandidates(tree: TreeSnapshot, rootId: string, privacy: 
   const nodes = scopeNodes(tree, rootId);
   return JSON.parse(serializeAiPayload(tree, privacy, { task: 'organize', rootId, itemIds: nodes.filter(n => !n.readOnly && n.ref.nativeId !== rootId).map(n => n.ref.nativeId), folderIds: nodes.filter(n => n.childrenWritable).map(n => n.ref.nativeId) })) as Parameters<typeof parseModelOutput>[1];
 }
-export function organizeProposal(tree: TreeSnapshot, rootId: string, raw: unknown, privacy: AiPrivacy = { fullUrl: true, bodyEnabled: false, excludedFolders: [] }): OrganizeProposal {
+// privacy is mandatory: a caller that forgets the configured exclusions must fail to compile, never silently expose them.
+export function organizeProposal(tree: TreeSnapshot, rootId: string, raw: unknown, privacy: AiPrivacy): OrganizeProposal {
   const context = organizeCandidates(tree, rootId, privacy);
   const output = parseModelOutput(raw, context);
   if (!('merges' in output)) throw Error('invalid-output');

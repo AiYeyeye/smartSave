@@ -26,8 +26,9 @@ export const EXPORT_RESOURCE_LIMITS = Object.freeze({ nodes: 50_000, depth: 64, 
 export class ExportProjectionError extends Error {
   constructor(readonly code: 'scope-invalid-or-stale' | 'resource') { super(`export-${code}`); this.name = 'ExportProjectionError'; }
 }
-const reject = (): never => { throw new ExportProjectionError('scope-invalid-or-stale'); };
-const resource = (): never => { throw new ExportProjectionError('resource'); };
+// Function declarations (not arrow consts) so TypeScript narrows after `if (bad) reject();` via the never return type.
+function reject(): never { throw new ExportProjectionError('scope-invalid-or-stale'); }
+function resource(): never { throw new ExportProjectionError('resource'); }
 const byteLength = (text: string) => new TextEncoder().encode(text).byteLength;
 
 function validateTree(tree: TreeSnapshot): void {
@@ -44,16 +45,16 @@ function validateTree(tree: TreeSnapshot): void {
     const node = nodes.get(id);
     if (!node || reached.has(id) || node.parentId !== parentId || node.ref.installationId !== tree.installationId) reject();
     reached.add(id);
-    if (node!.ref.kind === 'bookmark' && (node!.url === undefined || node!.childrenIds.length)) reject();
-    if (node!.ref.kind === 'folder' && node!.url !== undefined) reject();
-    if (node!.childrenIds.length > EXPORT_RESOURCE_LIMITS.nodes) resource();
+    if (node.ref.kind === 'bookmark' && (node.url === undefined || node.childrenIds.length)) reject();
+    if (node.ref.kind === 'folder' && node.url !== undefined) reject();
+    if (node.childrenIds.length > EXPORT_RESOURCE_LIMITS.nodes) resource();
     // Bound individual strings before encoding/JSON allocation, then the full source proof.
-    for (const value of [id, node!.title, node!.url ?? '', node!.ref.installationId, ...node!.childrenIds]) {
+    for (const value of [id, node.title, node.url ?? '', node.ref.installationId, ...node.childrenIds]) {
       if (value.length > EXPORT_RESOURCE_LIMITS.bytes) resource();
     }
     bytes += byteLength(JSON.stringify(node));
     if (bytes > EXPORT_RESOURCE_LIMITS.bytes) resource();
-    node!.childrenIds.forEach(child => pending.push({ id: child, parentId: id, depth: depth + 1 }));
+    node.childrenIds.forEach(child => pending.push({ id: child, parentId: id, depth: depth + 1 }));
     if (pending.length > EXPORT_RESOURCE_LIMITS.nodes) resource();
   }
   if (reached.size !== nodes.size || byteLength(JSON.stringify(tree)) > EXPORT_RESOURCE_LIMITS.bytes) resource();

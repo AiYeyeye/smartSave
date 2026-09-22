@@ -24,7 +24,7 @@ async function setup() {
   const coordinator = new MutationCoordinator(projection, writer, store, 'test');
   const snapshot = await projection.fresh();
   const message = { version: 1, type: 'confirmMutation', requestId: 'one', epoch: snapshot.epoch, installationId: snapshot.installationId, observedRevision: snapshot.observedRevision, scope: snapshot.nodes.find(n => n.ref.nativeId === 'bar')!.ref, before: snapshot.nodes, command: { type: 'update', target: snapshot.nodes.find(n => n.ref.nativeId === 'a')!.ref, changes: { title: 'New' } } };
-  const sender = { id: 'test', url: 'chrome-extension://test/panel/index.html' };
+  const sender = { id: 'test', url: 'chrome-extension://test/options/index.html' };
   return { factory, coordinator, message, sender, store, projection, writer, source, writes: () => writes, tree: () => tree, replace: (value: typeof tree) => { tree = value; } };
 }
 afterEach(() => vi.unstubAllGlobals());
@@ -104,9 +104,10 @@ it('restart drops unexecuted authority and interrupted records never replay', as
   expect((await restored.submit(h.request, h.sender)).status).toBe('rejected');
   await h.coordinator.submit(h.request, h.sender);
   const record = (await h.store.all())[0]!;
+  if (record.schemaVersion !== 2) throw Error('v2-record-expected');
   delete record.result;
   record.steps[0]!.state = 'intent';
-  delete record.steps[0]!.after;
+  delete record.steps[0]!.afterDigest; delete record.steps[0]!.touched; delete record.final;
   await h.store.put(record);
   const restarted = new MutationCoordinator(h.projection, h.writer, h.store, 'test');
   expect((await restarted.submit(h.request, h.sender)).status).toBe('unknown');

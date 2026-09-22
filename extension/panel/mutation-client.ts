@@ -1,10 +1,11 @@
 import { confirmSchema, mutationResultSchema, type ConfirmMutation, type MutationResult } from '../schemas/messages';
 export type SendMutation = (request: ConfirmMutation) => Promise<unknown>;
+// An explicit worker reply without a usable proposal never issued a native write, so it is a retryable rejection; any lastError may already have reached the worker and stays unknown.
 export const sendMutation: SendMutation = request => new Promise((resolve, reject) => {
   chrome.runtime.sendMessage({ type: 'registerMutationPreview', request }, (registered: unknown) => {
-    if (chrome.runtime.lastError || !registered || typeof registered !== 'object' || !('proposal' in registered)) { reject(Error('preview-unavailable')); return; }
-    const proposal = confirmSchema.safeParse(registered.proposal);
-    if (!proposal.success) { reject(Error('preview-unavailable')); return; }
+    if (chrome.runtime.lastError) { reject(Error('transport-unavailable')); return; }
+    const proposal = confirmSchema.safeParse(registered && typeof registered === 'object' && 'proposal' in registered ? registered.proposal : undefined);
+    if (!proposal.success) { resolve({ requestId: request.requestId, status: 'rejected', needsReconcile: false, completedSteps: 0, remainingSteps: 0, reason: 'preview-unavailable' } satisfies MutationResult); return; }
     chrome.runtime.sendMessage(proposal.data, (response: unknown) => {
     if (chrome.runtime.lastError) reject(Error('transport-unavailable')); else resolve(response);
     });

@@ -3,27 +3,42 @@ import type { TreeSnapshot } from '../domain/node-reference';
 import { preflight } from '../domain/preflight';
 import type { Command, ConfirmMutation, MutationResult } from '../schemas/messages';
 import { ImpactConfirmDialog } from '../ui/ImpactConfirmDialog';
+import { Select } from '../ui/Select';
 import { prepareMove, prepareMutation } from './TreeDragController';
 import { submitMutation, type SendMutation } from './mutation-client';
 
-type Mode = 'bookmark' | 'folder' | 'edit' | 'move' | 'delete';
+export type Mode = 'bookmark' | 'folder' | 'edit' | 'move' | 'delete';
 type Draft = { mode: Mode; snapshot: TreeSnapshot; selectedId: string; title: string; url: string; parentId: string; index: number; folderTitle: string; newFolder: boolean };
 export function MutationFeedback({ result }: { result: MutationResult }) {
-  const labels = { completed: '已完成', rejected: '已拒绝，请重新选择并确认', failed: '失败，未完成', partial: '部分完成，后续操作已停止', unknown: '结果未知，请检查操作记录，勿重复提交' };
+  const labels = { completed: '已完成', rejected: '已拒绝，未执行任何写入；请重新预览后再提交', failed: '失败，未完成', partial: '部分完成，后续操作已停止', unknown: '结果未知，请检查操作记录，勿重复提交' };
   return <p role={result.status === 'completed' ? 'status' : 'alert'}>{labels[result.status]} · 已完成 {result.completedSteps} 步 / 剩余 {result.remainingSteps} 步{result.needsReconcile && ' · 需要协调检查'}<small>请求编号：{result.requestId}</small></p>;
 }
-export function BookmarkActions({ snapshot, selectedId, send, interactionBlocked = false, onInteractionChange }: { snapshot: TreeSnapshot; selectedId: string | undefined; send?: SendMutation; interactionBlocked?: boolean; onInteractionChange?: (active: boolean) => void }) {
+export function BookmarkActions({ snapshot, selectedId, send, interactionBlocked = false, onInteractionChange, hideCommands = false, initialMode }: { snapshot: TreeSnapshot; selectedId: string | undefined; send?: SendMutation; interactionBlocked?: boolean; onInteractionChange?: (active: boolean) => void; hideCommands?: boolean; initialMode?: Mode }) {
   const [draft, setDraft] = useState<Draft>();
   const [result, setResult] = useState<MutationResult>();
   const [busy, setBusy] = useState(false);
   const lock = useRef(false);
+  const started = useRef('');
+  const form = useRef<HTMLFormElement>(null);
   useEffect(() => { onInteractionChange?.(!!draft || busy); }, [draft, busy, onInteractionChange]);
   const selected = snapshot.nodes.find(n => n.ref.nativeId === selectedId);
+  useEffect(() => {
+    if (!draft || draft.mode === 'delete') return;
+    const node = form.current;
+    if (node && typeof node.scrollIntoView === 'function') node.scrollIntoView({ block: 'nearest' });
+    node?.querySelector<HTMLElement>('input,select,textarea')?.focus();
+  }, [draft?.mode, draft?.selectedId]);
   function begin(mode: Mode) {
     if (!selected || lock.current || interactionBlocked) return;
+    if ((mode === 'edit' || mode === 'move' || mode === 'delete') && selected.readOnly) return;
     setResult(undefined);
     setDraft({ mode, snapshot: structuredClone(snapshot), selectedId: selected.ref.nativeId, title: mode === 'edit' ? selected.title : '', url: mode === 'edit' ? selected.url ?? '' : '', parentId: mode === 'move' ? '' : selected.ref.nativeId, index: 0, folderTitle: '', newFolder: false });
   }
+  useEffect(() => {
+    const key = initialMode && selectedId ? `${selectedId}:${initialMode}` : '';
+    if (key && initialMode && started.current !== key) { started.current = key; begin(initialMode); }
+    if (!key) started.current = '';
+  }, [initialMode, selectedId]);
   function requestFor(d: Draft): ConfirmMutation {
     const node = d.snapshot.nodes.find(n => n.ref.nativeId === d.selectedId)!;
     let command: Command;
@@ -59,22 +74,24 @@ export function BookmarkActions({ snapshot, selectedId, send, interactionBlocked
   }
   const deleteCount = descendants.size;
   const disabled = busy || !!draft || interactionBlocked;
+  const destination = draft ? draft.snapshot.nodes.find(n => n.ref.nativeId === draft.selectedId) : selected;
   return <section className="bookmark-actions" aria-label="书签操作">
-    <p className="hint">{selected ? `已选择：${selected.title || '无标题'}` : '选择一项后管理；移动也可使用键盘表单。'}</p>
+    {hideCommands && draft && (draft.mode === 'bookmark' || draft.mode === 'folder') && <p className="hint">目标目录：{destination?.title || '无标题'}</p>}
+    {!hideCommands && <><p className="hint">{selected ? `已选择：${selected.title || '无标题'}` : '选择一项后管理；移动也可使用键盘表单。'}</p>
     <div className="actions">
       <button disabled={disabled || !selected?.childrenWritable} onClick={() => begin('bookmark')}>新建书签</button>
       <button disabled={disabled || !selected?.childrenWritable} onClick={() => begin('folder')}>新建目录</button>
       <button disabled={disabled || !selected || selected.readOnly} onClick={() => begin('edit')}>编辑 / 重命名</button>
       <button disabled={disabled || !selected || selected.readOnly} onClick={() => begin('move')}>移动</button>
       <button disabled={disabled || !selected || selected.readOnly} onClick={() => begin('delete')}>删除</button>
-    </div>
-    {draft && draft.mode !== 'delete' && <form className="surface" onSubmit={event => { event.preventDefault(); void confirm(); }}>
+    </div></>}
+    {draft && draft.mode !== 'delete' && <form ref={form} className="surface" onSubmit={event => { event.preventDefault(); void confirm(); }}>
       {draft.mode !== 'move' ? <>
         <label className="field">标题<input value={draft.title} disabled={busy} onChange={event => patch({ title: event.target.value })} /></label>
         {(draft.mode === 'bookmark' || (draft.mode === 'edit' && draft.snapshot.nodes.find(n => n.ref.nativeId === draft.selectedId)?.ref.kind === 'bookmark')) && <label className="field">网址<input value={draft.url} disabled={busy} onChange={event => patch({ url: event.target.value })} /></label>}
         {draft.mode === 'bookmark' && <><label className="check"><input type="checkbox" checked={draft.newFolder} onChange={event => patch({ newFolder: event.target.checked })} />在新目录中创建书签</label>{draft.newFolder && <label className="field">新目录名称<input value={draft.folderTitle} onChange={event => patch({ folderTitle: event.target.value })} /></label>}</>}
       </> : <>
-        <label className="field">目标目录<select value={draft.parentId} onChange={event => patch({ parentId: event.target.value, index: 0 })}><option value="">请选择目录</option>{draft.snapshot.nodes.filter(n => n.childrenWritable).map(n => <option key={n.ref.nativeId} value={n.ref.nativeId}>{n.title || '根目录'}（{n.ref.nativeId}）</option>)}</select></label>
+        <label className="field">目标目录<Select value={draft.parentId} onChange={event => patch({ parentId: event.target.value, index: 0 })}><option value="">请选择目录</option>{draft.snapshot.nodes.filter(n => n.childrenWritable).map(n => <option key={n.ref.nativeId} value={n.ref.nativeId}>{n.title || '根目录'}（{n.ref.nativeId}）</option>)}</Select></label>
         <label className="field">目标位置（从 0 开始）<input type="number" min="0" step="1" value={draft.index} onChange={event => patch({ index: Number(event.target.value) })} /></label>
       </>}
       {invalid && <p role="alert">{invalid}</p>}

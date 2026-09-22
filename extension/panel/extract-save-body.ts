@@ -5,6 +5,9 @@ export interface ExtractionBoundary {
   inject(tabId: number): Promise<{ frameId: number; documentId?: string }[]>;
   message(tabId: number, message: unknown, documentId: string): Promise<unknown>;
 }
+/** One response contract for the content script reply and the worker reply to the panel: exact page URL, at most 1500 code points, never truncated here. */
+export const saveBodySchema = (url: string) => z.object({ status: z.literal('ready'), url: z.literal(url), snippet: z.string().refine(text => Array.from(text).length <= 1500) });
+export type SaveBody = z.infer<ReturnType<typeof saveBodySchema>>;
 export async function extractSaveBody(page: SavePage, current: () => SavePage | undefined, boundary: ExtractionBoundary): Promise<string> {
   const valid = () => { if (current()?.token !== page.token) throw Error('stale-page'); };
   valid();
@@ -18,7 +21,7 @@ export async function extractSaveBody(page: SavePage, current: () => SavePage | 
     valid();
     const response = await boundary.message(page.tabId, { type: 'zhilan-extract-current-page', url: page.url }, documentId);
     valid();
-    return z.object({ status: z.literal('ready'), url: z.literal(page.url), snippet: z.string().refine(text => Array.from(text).length <= 1500) }).parse(response).snippet;
+    return saveBodySchema(page.url).parse(response).snippet;
   } finally {
     // Even cancellation while injection awaited removes the dormant listener in that exact document.
     if (documentId) await boundary.message(page.tabId, { type: 'zhilan-cancel-extraction' }, documentId).catch(() => {});

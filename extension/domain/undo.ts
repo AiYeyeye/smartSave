@@ -1,11 +1,12 @@
 import { placeRecoveryMoves } from './recovery-placement';
+import { finalNodes } from './mutation-effect';
 import type { OperationRecord } from '../persistence/operations';
 import type { TreeSnapshot, NodeRef } from './node-reference';
 import { sameNode, validateUrl, type SnapshotNode } from './preflight';
 import type { z } from 'zod';
-import type { batchCommandSchema, singleCommandSchema } from '../schemas/messages';
+import type { singleCommandSchema } from '../schemas/messages';
+import type { RecoveryPreview } from './recovery-preview';
 type SingleCommand = z.infer<typeof singleCommandSchema>;
-export type RecoveryPreview = { command: z.infer<typeof batchCommandSchema>; conflicts: { nativeId: string; reason: string }[] };
 
 /** Recovery is a proposal only. Applying it always goes through normal confirmation/preflight. */
 export function prepareRecovery(record: OperationRecord, tree: TreeSnapshot, mode: 'undo' | 'merge', history: OperationRecord[] = []): RecoveryPreview {
@@ -13,7 +14,7 @@ export function prepareRecovery(record: OperationRecord, tree: TreeSnapshot, mod
   const current = new Map(tree.nodes.map(n => [n.ref.nativeId, n]));
   const backup = record.backup?.nodes ?? record.request.before;
   const old = new Map(backup.map(n => [n.ref.nativeId, n]));
-  const final = new Map((record.steps.filter(s => s.state === 'receipt').at(-1)?.after ?? []).map(n => [n.ref.nativeId, n]));
+  const final = new Map(finalNodes(record).map(n => [n.ref.nativeId, n]));
   const priorRestorations = new Map<string, string>();
   for (const recovery of history) {
     if (recovery.request.recovery?.sourceRequestId !== record.requestId || recovery.request.recovery.mode === 'copy') continue;

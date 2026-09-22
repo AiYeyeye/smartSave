@@ -1,7 +1,7 @@
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { IDBFactory } from 'fake-indexeddb';
 import { ImportCheckpointStore, type ImportCheckpoint } from '../persistence/import-checkpoints';
-import { OperationsStore, operationRecord } from '../persistence/operations';
+import { OperationsStore, operationRecord, type OperationRecord } from '../persistence/operations';
 import { openOperationsDatabase } from '../persistence/operations-database';
 import { parseImport } from '../import/parsers';
 import { TreeProjection } from '../background/tree-projection';
@@ -23,7 +23,8 @@ it('migrates seeded v1 evidence, then uses actual OperationsStore and coordinato
   const projection = new TreeProjection({ read: async () => [{ id: '0', title: '', syncing: false, children: [{ id: 'bar', parentId: '0', title: 'Bar', syncing: false, children: [] }] }], listen: () => () => {} }, async () => 'install', 'epoch');
   projection.start(); const tree = await projection.fresh();
   const request = { version: 1 as const, type: 'confirmMutation' as const, requestId: 'unknown', installationId: 'install', epoch: 'epoch', observedRevision: tree.observedRevision, scope: tree.nodes.find(n => n.ref.nativeId === 'bar')!.ref, before: tree.nodes, command: { type: 'create' as const, parent: tree.nodes.find(n => n.ref.nativeId === 'bar')!.ref, title: 'Unknown', url: 'https://unknown.test/' } };
-  const record = operationRecord(request, [{ type: 'create', parentId: 'bar', title: 'Unknown', url: 'https://unknown.test/', temporaryId: '$created' }], tree.nodes);
+  // A genuine v1 row (planned steps carry no trees in either version), seeded below into a v1 database.
+  const record: OperationRecord = { ...operationRecord(request, [{ type: 'create', parentId: 'bar', title: 'Unknown', url: 'https://unknown.test/', temporaryId: '$created' }], tree.nodes), schemaVersion: 1 };
   record.steps[0]!.state = 'intent';
   const db = await rawDatabase(factory, 1);
   await new Promise<void>((resolve, reject) => { const tx = db.transaction('operations', 'readwrite'); tx.objectStore('operations').put(record); tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error); }); db.close();
@@ -34,7 +35,7 @@ it('migrates seeded v1 evidence, then uses actual OperationsStore and coordinato
   let writes = 0; const fail = async (): Promise<never> => { writes++; throw Error('must not issue'); };
   const writer: BookmarkWriter = { create: fail, update: fail, move: fail, remove: fail };
   const owner = new MutationCoordinator(projection, writer, operations, 'test');
-  const sender = { id: 'test', url: 'chrome-extension://test/panel/index.html' };
+  const sender = { id: 'test', url: 'chrome-extension://test/options/index.html' };
   expect((await owner.submit(request, sender)).status).toBe('unknown');
   expect((await owner.submit({ version: 1, type: 'reconcileMutation', requestId: 'unknown' }, sender)).status).toBe('unknown');
   expect(writes).toBe(0); expect((await operations.all())[0]!.backup).toEqual(record.backup);
@@ -83,4 +84,23 @@ it('rejects future database versions without deleting or upgrading their records
   await expect(new OperationsStore(factory).all()).rejects.toThrow('unsupported-journal');
   await expect(new ImportCheckpointStore(factory).all()).rejects.toThrow('unsupported-journal');
   const unchanged = await rawDatabase(factory, 4); expect(unchanged.version).toBe(4); expect([...unchanged.objectStoreNames]).toEqual(['operations']); unchanged.close();
+});
+it('progress saves rely on revision CAS plus cheap set/length invariants, never whole-array serialization', async () => {
+  const factory = new IDBFactory(); const store = new ImportCheckpointStore(factory);
+  const items = parseImport(new TextEncoder().encode(Array.from({ length: 3000 }, (_, i) => `https://example.test/${i}`).join('\n')), 'txt').items;
+  const base: ImportCheckpoint = { ...checkpoint(), items: items.map(item => ({ item, titleLocked: false })), runtime: { version: 2, semanticDigest: 'a'.repeat(64), contextDigest: 'b'.repeat(64), stage: 'classification', format: 'txt', candidates: [], sourceItems: items, mappedGroups: [], mappedItems: [] } };
+  const classified = (count: number) => items.slice(0, count).map(item => ({ sourceOrdinal: item.sourceOrdinal, folderId: 'bar', title: '' }));
+  await store.put(base, null);
+  const big = (value: unknown): boolean => Array.isArray(value) ? value.length >= 100 : !!value && typeof value === 'object' && Object.values(value).some(big);
+  const spy = vi.spyOn(JSON, 'stringify');
+  await store.put({ ...base, revision: 1, classified: classified(1500) }, 0);
+  await store.put({ ...base, revision: 2, classified: classified(3000), phase: 'classified' }, 1);
+  const calls = spy.mock.calls.map(([value]) => value); spy.mockRestore();
+  expect(calls.filter(big)).toEqual([]); expect(calls.length).toBeLessThan(20);
+  expect((await store.get('import'))!.classified).toHaveLength(3000);
+  // The cheap invariants still refuse shrinking progress, replaced source rows and runtime drift after classification began.
+  await expect(store.put({ ...base, revision: 3, classified: classified(2999) }, 2)).rejects.toThrow('conflict');
+  await expect(store.put({ ...base, revision: 3, items: [...base.items, { item: { ...items[0]!, sourceOrdinal: 3000 }, titleLocked: false }], classified: classified(3000) }, 2)).rejects.toThrow('conflict');
+  await expect(store.put({ ...base, revision: 3, classified: classified(3000), phase: 'classified', runtime: { ...base.runtime!, mappedGroups: ['["*"]'] } }, 2)).rejects.toThrow('conflict');
+  expect((await store.get('import'))!.revision).toBe(2);
 });

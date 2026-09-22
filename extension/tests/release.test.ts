@@ -39,10 +39,13 @@ it.each(['csp', 'notice', 'lock', 'classic', 'asset'])('rejects %s corruption', 
  if (defect === 'asset') await writeFile(join(root, 'dist/panel/index.html'), '<script src="missing.js"></script>');
  expect((await checkRelease(root)).sourceErrors.length).toBeGreaterThan(0);
 });
-it('keeps source compatibility and every missing manual as distinct ready blockers', async () => {
- const result = await checkRelease(await fixture());
- expect(result.sourceErrors).toEqual([]); expect(result.compatibilityBlockers).toHaveLength(1);
- const blockers = releaseGate(result);
- expect(blockers).toContain(result.compatibilityBlockers[0]);
+it('accepts the approved minimum 114 and keeps a lower manifest floor plus every missing manual as distinct ready blockers', async () => {
+ const root = await fixture(); const result = await checkRelease(root);
+ expect(result.sourceErrors).toEqual([]); expect(result.compatibilityBlockers).toEqual([]);
+ const path = join(root, 'dist/manifest.json'); const manifest = JSON.parse(await readFile(path, 'utf8')); manifest.minimum_chrome_version = '110'; await writeFile(path, JSON.stringify(manifest));
+ const lowered = await checkRelease(root);
+ expect(lowered.compatibilityBlockers).toHaveLength(1); expect(lowered.compatibilityBlockers[0]).toContain('110'); expect(lowered.compatibilityBlockers[0]).toContain('114');
+ const blockers = releaseGate(lowered);
+ expect(blockers).toContain(lowered.compatibilityBlockers[0]);
  for (const id of ['chrome-restart-reliability','edge-no-page-restart','p2-models','p3-recovery','p4-privacy']) expect(blockers).toContain(`${id}: NOT RUN`);
 });

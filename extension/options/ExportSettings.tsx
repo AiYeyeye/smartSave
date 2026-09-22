@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createExportProjection, type ExportScope } from '../domain/export-projection';
 import type { NodeRef, TreeState } from '../domain/node-reference';
 import { fileOutputAncestry } from '../domain/file-output-scope';
@@ -28,7 +28,9 @@ export function ExportSettings({ visible }: { visible: boolean }) {
   const revision = useRef(0);
   const mounted = useRef(true);
   const [message, setMessage] = useState('请选择导出目录；导出排除与 AI 设置相互独立。');
-  const supported = typeof (window as PickerWindow).showSaveFilePicker === 'function' && typeof indexedDB !== 'undefined';
+  const framed = typeof window !== 'undefined' && window.top !== window;
+  const panelDocument = typeof location !== 'undefined' && /panel\/index\.html$/.test(location.pathname);
+  const supported = !framed && !panelDocument && typeof (window as PickerWindow).showSaveFilePicker === 'function' && typeof indexedDB !== 'undefined';
   async function refresh() {
     const version = ++revision.current;
     try {
@@ -44,11 +46,14 @@ export function ExportSettings({ visible }: { visible: boolean }) {
     // The store is page-local and stable; refresh is never an automatic writer.
   }, [store]);
   const folders = tree.status === 'ready' ? tree.snapshot.nodes.filter(n => n.ref.kind === 'folder' && n.parentId !== undefined) : [];
-  let scopeError = '';
-  try {
-    if (tree.status !== 'ready') throw Error('loading');
-    createExportProjection(tree.snapshot, scope, new Date().toISOString());
-  } catch { scopeError = '范围无效或书签尚未就绪：请明确选择现有目录，不会自动替换已删除的根。'; }
+  const snapshot = tree.status === 'ready' ? tree.snapshot : undefined;
+  // Projection validation walks the whole tree; recompute only when the snapshot identity or the scope changes, not on every render.
+  const scopeError = useMemo(() => {
+    try {
+      if (!snapshot) throw Error('loading');
+      createExportProjection(snapshot, scope, new Date().toISOString()); return '';
+    } catch { return '范围无效或书签尚未就绪：请明确选择现有目录，不会自动替换已删除的根。'; }
+  }, [snapshot, scope]);
   function toggle(field: keyof ExportScope, ref: NodeRef, checked: boolean) {
     setScope(old => ({ ...old, [field]: checked ? [...old[field], ref] : old[field].filter(value => !sameRef(value, ref)) }));
   }

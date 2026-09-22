@@ -1,6 +1,6 @@
 import type { OperationRecord } from '../persistence/operations';
 import type { NodeRef, TreeSnapshot } from './node-reference';
-import type { RecoveryPreview } from './undo';
+import type { RecoveryPreview } from './recovery-preview';
 import { validateUrl } from './preflight';
 export function prepareRecoveryCopy(record: OperationRecord, tree: TreeSnapshot, destination: NodeRef, selectedNativeIds: string[]): RecoveryPreview {
   const parent = tree.nodes.find(n => n.ref.nativeId === destination.nativeId && n.ref.installationId === destination.installationId && n.ref.kind === destination.kind);

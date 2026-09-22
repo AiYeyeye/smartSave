@@ -112,7 +112,7 @@ it('prepared UI deletion consumes real durable owner and preserves late children
   const projection = { fresh: async () => structuredClone(current) };
   const coordinator = new MutationCoordinator(projection, writer, store, 'test');
   const request = prepareMutation(tree, { type: 'deleteSubtree', target: tree.nodes[1]!.ref });
-  const sender = { id: 'test', url: 'chrome-extension://test/panel/index.html' };
+  const sender = { id: 'test', url: 'chrome-extension://test/options/index.html' };
   const result = await submitMutation(request, r => coordinator.submit(r, sender));
   expect(result.status).toBe('unknown'); expect(remove).toHaveBeenCalledTimes(1);
   expect(current.nodes.some(n => n.ref.nativeId === 'late')).toBe(true);
@@ -133,11 +133,12 @@ it('drag uses private node data only, previews once, and invalidated target cann
   const sendMessage = vi.fn();
   vi.stubGlobal('chrome', { runtime: { sendMessage }, storage: { local: { get: async () => ({ 'tree.expanded.i.r': true, 'tree.expanded.i.f': true }) }, onChanged: { addListener: vi.fn(), removeListener: vi.fn() } } });
   const user = userEvent.setup(); const view = render(createElement(TreeRows, { snapshot: tree }));
-  const source = await screen.findByRole('button', { name: '选择 Book' });
+  const source = (await screen.findByRole('button', { name: 'Book' })).closest('.bookmark-label')!;
+  vi.spyOn(screen.getByRole('button', { name: 'Other' }).closest('.bookmark-row')!, 'getBoundingClientRect').mockReturnValue({ top: 0, height: 40 } as DOMRect);
   const transfer = { clearData: vi.fn(), setData: vi.fn(), effectAllowed: '' };
   fireEvent.dragStart(source, { dataTransfer: transfer });
   expect(transfer.setData).toHaveBeenCalledExactlyOnceWith('application/x-zhilan-node', 'b');
-  fireEvent.drop(screen.getByRole('button', { name: 'Other' }), { dataTransfer: transfer });
+  fireEvent(screen.getByRole('button', { name: 'Other' }), new MouseEvent('dragover', { bubbles: true, clientY: 20 })); fireEvent.drop(screen.getByRole('button', { name: 'Other' }), { dataTransfer: transfer });
   expect(screen.getByRole('button', { name: '确认移动' })).toBeVisible(); expect(sendMessage).not.toHaveBeenCalled();
   view.rerender(createElement(TreeRows, { snapshot: { ...tree, nodes: tree.nodes.filter(n => n.ref.nativeId !== 'g') } }));
   await user.click(screen.getByRole('button', { name: '确认移动' }));
@@ -149,18 +150,29 @@ it('existing link opens only on click/Enter; unsupported URL has no executable o
   vi.stubGlobal('chrome', { storage: { local: { get: async () => ({ 'tree.expanded.i.r': true, 'tree.expanded.i.f': true }) }, onChanged: { addListener: vi.fn(), removeListener: vi.fn() } } });
   const open = vi.spyOn(window, 'open').mockReturnValue(null); const user = userEvent.setup();
   const view = render(createElement(TreeRows, { snapshot: tree }));
-  const button = await screen.findByRole('button', { name: '打开' }); expect(open).not.toHaveBeenCalled();
+  const button = await screen.findByRole('button', { name: 'Book' }); expect(open).not.toHaveBeenCalled();
   button.focus(); await user.keyboard('{Enter}'); expect(open).toHaveBeenCalledTimes(1);
   const historical = structuredClone(tree); historical.nodes[3]!.url = 'javascript:alert(1)';
   view.rerender(createElement(TreeRows, { snapshot: historical }));
-  expect(screen.queryByRole('button', { name: '打开' })).toBeNull(); expect(view.container.querySelector('[href]')).toBeNull();
-  expect(screen.getByText('此协议不支持打开')).toBeVisible();
+  expect(screen.queryByRole('button', { name: 'Book' })).toBeNull(); expect(view.container.querySelector('[href]')).toBeNull();
+  await user.click(screen.getByRole('button', { name: 'Book 操作' }));
+  expect(screen.getByRole('menuitem', { name: '此协议不支持打开' })).toBeDisabled();
   open.mockRestore(); view.unmount(); vi.unstubAllGlobals();
 });
 it('does not display a contradictory completed response as success', async () => {
   const { submitMutation } = await import('../panel/mutation-client');
   const request = prepareMove(tree, 'b', 'g', 0);
   expect(await submitMutation(request, async () => ({ requestId: request.requestId, status: 'completed', needsReconcile: true, completedSteps: 0, remainingSteps: 1 }))).toMatchObject({ status: 'unknown' });
+});
+it('rejected preview wrote nothing, so the panel invites a fresh preview instead of forbidding resubmission', async () => {
+  const send = vi.fn(async request => ({ requestId: request.requestId, status: 'rejected', needsReconcile: false, completedSteps: 0, remainingSteps: 0, reason: 'preview-unavailable' }));
+  const user = userEvent.setup(); render(createElement(BookmarkActions, { snapshot: tree, selectedId: 'f', send }));
+  await user.click(screen.getByRole('button', { name: '新建目录' }));
+  await user.type(screen.getByRole('textbox', { name: '标题' }), 'New');
+  await user.click(screen.getByRole('button', { name: '确认保存' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('已拒绝，未执行任何写入；请重新预览后再提交'); expect(screen.getByRole('alert')).not.toHaveTextContent('勿重复提交');
+  expect(screen.getByRole('button', { name: '新建目录' })).toBeEnabled();
+  await user.click(screen.getByRole('button', { name: '新建目录' })); expect(screen.getByRole('textbox', { name: '标题' })).toHaveValue(''); expect(screen.queryByRole('alert')).toBeNull(); expect(send).toHaveBeenCalledTimes(1);
 });
 it.each(['新建目录', '新建书签'])('submits %s only after explicit confirmation and prevents repeated pending submit', async label => {
   let resolve!: (value: unknown) => void;
@@ -180,14 +192,34 @@ it('form draft and drag confirmation are mutually exclusive panel interactions',
   const sendMessage = vi.fn();
   vi.stubGlobal('chrome', { runtime: { sendMessage }, storage: { local: { get: async () => ({ 'tree.expanded.i.r': true, 'tree.expanded.i.f': true }) }, onChanged: { addListener: vi.fn(), removeListener: vi.fn() } } });
   const user = userEvent.setup(); const view = render(createElement(TreeRows, { snapshot: tree }));
-  const source = await screen.findByRole('button', { name: '选择 Book' });
-  await user.click(source); await user.click(screen.getByRole('button', { name: '编辑 / 重命名' }));
+  const source = (await screen.findByRole('button', { name: 'Book' })).closest('.bookmark-label')!;
+  await user.click(screen.getByRole('button', { name: 'Book 操作' }));
+  await user.click(screen.getByRole('menuitem', { name: '编辑 / 重命名' }));
+  vi.spyOn(screen.getByRole('button', { name: 'Other' }).closest('.bookmark-row')!, 'getBoundingClientRect').mockReturnValue({ top: 0, height: 40 } as DOMRect);
   const transfer = { clearData: vi.fn(), setData: vi.fn(), effectAllowed: '' };
-  fireEvent.dragStart(source, { dataTransfer: transfer }); fireEvent.drop(screen.getByRole('button', { name: 'Other' }), { dataTransfer: transfer });
+  fireEvent.dragStart(source, { dataTransfer: transfer }); fireEvent(screen.getByRole('button', { name: 'Other' }), new MouseEvent('dragover', { bubbles: true, clientY: 20 })); fireEvent.drop(screen.getByRole('button', { name: 'Other' }), { dataTransfer: transfer });
   expect(transfer.setData).not.toHaveBeenCalled(); expect(screen.queryByRole('button', { name: '确认移动' })).toBeNull();
   await user.click(screen.getByRole('button', { name: '取消' }));
-  fireEvent.dragStart(source, { dataTransfer: transfer }); fireEvent.drop(screen.getByRole('button', { name: 'Other' }), { dataTransfer: transfer });
-  expect(screen.getByRole('button', { name: '编辑 / 重命名' })).toBeDisabled();
-  expect(screen.getByRole('button', { name: '确认移动' })).toBeVisible(); expect(sendMessage).not.toHaveBeenCalled();
+  fireEvent.dragStart(source, { dataTransfer: transfer }); fireEvent(screen.getByRole('button', { name: 'Other' }), new MouseEvent('dragover', { bubbles: true, clientY: 20 })); fireEvent.drop(screen.getByRole('button', { name: 'Other' }), { dataTransfer: transfer });
+  expect(screen.getByRole('button', { name: '确认移动' })).toBeVisible();
+  await user.click(screen.getByRole('button', { name: 'Book 操作' }));
+  await user.click(screen.getByRole('menuitem', { name: '编辑 / 重命名' }));
+  expect(screen.queryByRole('textbox', { name: '标题' })).toBeNull();
+  expect(sendMessage).not.toHaveBeenCalled();
   view.unmount(); vi.unstubAllGlobals();
+});
+
+it('resolves all drop placements with shared lightweight index/cycle rules', async () => {
+  const { resolveDropTarget } = await import('../panel/TreeDragController');
+  const byId = new Map(tree.nodes.map(node => [node.ref.nativeId, node]));
+  expect(resolveDropTarget(byId, 'f', 'g', 'after')).toEqual({ parentId: 'r', index: 1 });
+  expect(resolveDropTarget(byId, 'g', 'f', 'before')).toEqual({ parentId: 'r', index: 0 });
+  expect(resolveDropTarget(byId, 'b', 'g', 'inside')).toEqual({ parentId: 'g', index: 0 });
+  expect(resolveDropTarget(byId, 'b', 'g', 'before')).toEqual({ parentId: 'r', index: 1 });
+  expect(resolveDropTarget(byId, 'b', 'f', 'inside')).toEqual({ parentId: 'f', index: 0 });
+  for (const [source, target, placement] of [['r', 'g', 'inside'], ['f', 'b', 'before'], ['f', 'f', 'inside'], ['b', 'r', 'before']] as const) {
+    expect(resolveDropTarget(byId, source, target, placement)).toBeUndefined();
+  }
+  const frozen = new Map(byId); frozen.set('g', { ...byId.get('g')!, childrenWritable: false });
+  expect(resolveDropTarget(frozen, 'b', 'g', 'inside')).toBeUndefined();
 });

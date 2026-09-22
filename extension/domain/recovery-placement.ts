@@ -1,7 +1,7 @@
 import type { NodeRef, TreeSnapshot } from './node-reference';
 import type { SnapshotNode } from './single-plan';
 import { planBatch } from './batch-plan';
-import type { RecoveryPreview } from './undo';
+import type { RecoveryPreview } from './recovery-preview';
 
 type InverseMove = { id: string; target: NodeRef; parent: NodeRef; before: SnapshotNode; dependsOn: string[] };
 
