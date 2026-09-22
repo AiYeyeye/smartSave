@@ -9,18 +9,30 @@ export const themes = [
 ] as const;
 type Theme = (typeof themes)[number]['id'];
 const ThemeContext = createContext<{ theme: Theme; setTheme: (theme: Theme) => void } | null>(null);
+export const THEME_OVERLAY_ID = 'theme-overlay';
 
 export function ThemeProvider({ children }: PropsWithChildren) {
-  // Deliberately page-session only: no storage, URL or system preference source.
   const [theme, setTheme] = useState<Theme>('stationery');
   return <ThemeContext.Provider value={{ theme, setTheme }}>
-    <div className="theme-root" data-theme={theme}>{children}</div>
+    <div className="theme-root" data-theme={theme}>
+      {children}
+      <div id={THEME_OVERLAY_ID} className="theme-overlay" />
+    </div>
   </ThemeContext.Provider>;
 }
 
-export function ThemePicker() {
+export function overlayHost() {
+  return document.getElementById(THEME_OVERLAY_ID) ?? document.body;
+}
+
+export function useTheme() {
   const context = useContext(ThemeContext);
-  if (!context) throw new Error('ThemePicker requires ThemeProvider');
+  if (!context) throw new Error('useTheme requires ThemeProvider');
+  return context;
+}
+
+export function ThemePicker() {
+  const context = useTheme();
   return <fieldset className="theme-picker"><legend>界面风格</legend>
     {themes.map(({ id, name }) => <label key={id} className="theme-choice">
       <input type="radio" name="appearance" checked={context.theme === id} onChange={() => context.setTheme(id)} />

@@ -59,7 +59,7 @@ function setup(failure: 'get' | 'set' | 'setAccessLevel') {
   startTreeService();
   return {
     storage, getTree, recover: () => { failing = false; }, persisted: () => installationId,
-    connect(url = 'chrome-extension://test/panel/index.html', id = 'test') {
+    connect(url = 'chrome-extension://test/options/index.html', id = 'test') {
       const messages: { version: number; state: TreeState }[] = [];
       const onMessage = event<(message: unknown) => void>();
       const onDisconnect = event<() => void>();
@@ -69,9 +69,13 @@ function setup(failure: 'get' | 'set' | 'setAccessLevel') {
   };
 }
 
-it.each(['panel/index.html', 'options/index.html'])('publishes authoritative tree to exact trusted %s', async page => {
-  const harness = setup('get'); harness.recover(); const port = harness.connect(`chrome-extension://test/${page}`);
+it('publishes authoritative tree to exact trusted options page', async () => {
+  const harness = setup('get'); harness.recover(); const port = harness.connect('chrome-extension://test/options/index.html');
   await vi.waitFor(() => expect(port.state()?.status).toBe('ready'));
+});
+it('does not publish tree to unbound panel URL', async () => {
+  const harness = setup('get'); harness.recover(); const port = harness.connect('chrome-extension://test/panel/index.html');
+  await vi.waitFor(() => expect(harness.getTree).toHaveBeenCalled()); expect(port.state()).toBeUndefined();
 });
 it.each(['https://evil.test/options/index.html', 'chrome-extension://test/options/index.html?forged', 'chrome-extension://test/other.html'])('rejects untrusted read consumer %s', async url => {
   const harness = setup('get'); harness.recover(); const port = harness.connect(url);

@@ -6,18 +6,23 @@ import { startOrganizerAuthority } from './organizer-authority';
 import { startSaveEntrypoints } from './save-entrypoints';
 import { startTreeService } from './tree-service';
 import { startMutationService } from './mutation-service';
-function configurePanel() {
-  void chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch((error: unknown) => {
-    console.error('智栏侧栏入口配置失败', error);
-  });
-}
-chrome.runtime.onInstalled.addListener(configurePanel);
-chrome.runtime.onStartup.addListener(configurePanel);
-// Reassert the single custom toolbar owner on every worker evaluation, including wakeups.
-configurePanel();
-const validateSaveContext = startSaveEntrypoints(() => coordinator?.purgeSavePreviews());
+import { startSidebarHost } from './sidebar-host';
+import { extractSaveBodyForUi } from './extract-coordinator';
+import { trustedMutationSender } from './ui-identity';
+
+const host = startSidebarHost();
+const { validateSaveContext, livePageForSender } = startSaveEntrypoints(() => coordinator?.purgeSavePreviews(), (tab, capture) => host.show(tab, capture));
 const projection = startTreeService();
 startFileOutput(projection);
 const settings = new SettingsStore(chrome.storage.local);
 const persistence = new ImportPersistenceStore();
 const coordinator = startMutationService(projection, validateSaveContext, startOrganizerAuthority(settings), startImportAuthority(settings, projection, persistence.importCheckpoints), persistence);
+
+chrome.runtime.onMessage.addListener((message, sender, reply) => {
+  if (!message || typeof message !== 'object' || !('type' in message) || message.type !== 'extractSaveBody') return false;
+  if (!trustedMutationSender(sender, chrome.runtime.id)) return false;
+  const page = livePageForSender(sender);
+  if (!page) { reply({ status: 'error', reason: 'no-live-save' }); return false; }
+  void extractSaveBodyForUi(sender, page, () => livePageForSender(sender)).then(reply).catch(error => reply({ status: 'error', reason: String(error && (error as Error).message) }));
+  return true;
+});

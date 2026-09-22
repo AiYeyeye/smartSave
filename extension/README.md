@@ -15,7 +15,7 @@ pnpm --dir extension test:integration
 pnpm --dir extension build
 ```
 
-`extension/dist` 是唯一加载目录。构建输出 panel/options 页面及静态 ES module service worker；声明 `sidePanel`、`bookmarks`、`storage`、`activeTab`、`scripting`、`contextMenus` 权限；可选主机声明 `https://*/*` 和 `http://*/*`，没有必需 host_permissions。实际模型主机授权按用户配置申请。可在**用户授权的隔离 Chrome/Edge profile**中加载解压扩展，并从工具栏打开侧栏、扩展详情打开选项。manifest 声明 Chrome 114；主动打开侧栏 API 从 Chrome 116 引入，所以该声明并非全部功能的最低可用版本承诺。未启动日常浏览器。
+`extension/dist` 是唯一加载目录。构建输出 panel/options 页面及静态 ES module service worker；声明 `sidePanel`、`bookmarks`、`storage`、`activeTab`、`scripting`、`contextMenus`、`favicon` 权限；可选主机声明 `https://*/*` 和 `http://*/*`，没有必需 host_permissions。实际模型主机授权按用户配置申请。可在**用户授权的隔离 Chrome/Edge profile**中加载解压扩展，并从工具栏打开侧栏、扩展详情打开选项。manifest 声明 Chrome 114；主动打开侧栏 API 从 Chrome 116 引入，所以该声明并非全部功能的最低可用版本承诺。未启动日常浏览器。
 
 外观在侧栏设置区与独立选项页可调；每个打开的页面仅保留自身会话主题，关闭重开回到第三种，不跨页面同步。页面草稿仅内存；手动收藏与 CRUD 通过唯一写入内核确认执行。所有功能未接入状态明确标注，没有安装演示书签。
 

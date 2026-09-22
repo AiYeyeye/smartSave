@@ -1,5 +1,6 @@
 import { createElement } from 'react';
 import { render, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, expect, it, vi } from 'vitest';
 import { ModelSettings } from '../options/ModelSettings';
 import { SettingsStore } from '../persistence/settings';
@@ -28,4 +29,33 @@ it('unmounting settings preserves the page-owned session credential and subscrib
   store.dispose();
   expect(listeners.size).toBe(0);
   expect((await store.snapshot()).key).toBe('');
+});
+it('privacy drill-in persists without a model endpoint and does not invent a route', async () => {
+  const data: Record<string, unknown> = {};
+  const store = new SettingsStore({ get: async key => ({ [key]: data[key] }), set: async value => { Object.assign(data, value); }, remove: async key => { delete data[key]; }, setAccessLevel: async () => {} }, run => run());
+  await store.load();
+  const user = userEvent.setup();
+  const view = render(createElement(ModelSettings, { store, fields: 'privacy' }));
+  await user.click(view.getByRole('checkbox', { name: /发送完整网址/ }));
+  await user.click(view.getByRole('button', { name: '保存隐私设置' }));
+  await waitFor(async () => expect((await store.snapshot()).privacy.fullUrl).toBe(false));
+  expect((await store.snapshot()).config).toBeUndefined();
+  expect(JSON.stringify(data.modelSecurity)).not.toContain('openai');
+  view.unmount();
+});
+it('preset changes are draft-only, clear credentials, and retain custom protocol paths', async () => {
+  const user = userEvent.setup();
+  const view = render(createElement(ModelSettings, { fields: 'model' }));
+  await user.type(view.getByLabelText('API Key'), 'old-service-key');
+  await user.click(view.getByRole('checkbox', { name: /明确记住/ }));
+  await user.selectOptions(view.getByLabelText('模型服务'), 'deepseek');
+  expect(view.getByLabelText('API Key')).toHaveValue('');
+  expect(view.getByRole('checkbox', { name: /明确记住/ })).not.toBeChecked();
+  expect(view.getByLabelText('服务基础地址')).toHaveValue('https://api.deepseek.com');
+  expect(view.getByLabelText('模型名称')).toHaveValue('deepseek-chat');
+  await user.selectOptions(view.getByLabelText('预设模型'), '');
+  await user.type(view.getByLabelText('模型名称'), 'custom-id');
+  expect(view.getByLabelText('模型名称')).toHaveValue('custom-id');
+  expect(view.getByRole('status')).toHaveTextContent('尚未保存');
+  view.unmount();
 });

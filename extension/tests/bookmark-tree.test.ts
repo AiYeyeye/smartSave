@@ -17,12 +17,13 @@ it('renders native titles and URLs only as text, retains expansion across themes
   await user.click(screen.getByRole('button', { name: 'Root只读' }));
   for (const name of ['轻盈原生', '温润纸感', '清爽文具（默认）', '深色精密']) {
     await user.click(screen.getByRole('radio', { name }));
-    expect(screen.getByText('javascript:alert(1)')).toBeVisible();
     expect(screen.getByText('<script>unsafe</script>')).toBeVisible();
+    expect(screen.queryByText('javascript:alert(1)')).toBeNull();
   }
   expect(first.container.querySelector('script')).toBeNull(); expect(screen.queryByRole('link')).toBeNull();
   first.unmount(); const second = render(createElement(TreeRows, { snapshot }));
-  expect(await screen.findByText('javascript:alert(1)')).toBeVisible();
+  expect(await screen.findByText('<script>unsafe</script>')).toBeVisible();
+  expect(screen.queryByText('javascript:alert(1)')).toBeNull();
   second.unmount(); vi.unstubAllGlobals();
 });
 it('records a synthetic 5000-bookmark expanded DOM baseline, not a browser performance gate', async () => {

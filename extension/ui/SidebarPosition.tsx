@@ -1,36 +1,34 @@
 import { useEffect, useState } from 'react';
 
+const HOST = 'zhilan.host.geometry';
+
 export function SidebarPosition() {
-  const [refresh, setRefresh] = useState(0);
-  const [status, setStatus] = useState('正在读取位置…');
+  const [side, setSide] = useState<'left' | 'right'>('right');
+  const [width, setWidth] = useState(320);
   useEffect(() => {
-    let current = true;
-    const panel = typeof chrome === 'undefined' ? undefined : chrome.sidePanel as unknown as { getLayout?: () => Promise<unknown> };
-    async function read() {
-      if (typeof panel?.getLayout !== 'function') {
-        setStatus('无法读取位置：浏览器未提供此接口（Chrome 140+ 支持读取）。');
-        return;
-      }
-      setStatus('正在读取位置…');
-      try {
-        const result = await panel.getLayout();
-        if (!current) return;
-        const side = result && typeof result === 'object' && 'side' in result ? result.side : undefined;
-        setStatus(side === 'left' ? '当前位置：左侧' : side === 'right' ? '当前位置：右侧' : '无法读取位置：浏览器返回了未知布局。');
-      } catch {
-        if (current) setStatus('无法读取位置：浏览器拒绝了读取，请重试。');
-      }
-    }
-    void read();
-    return () => { current = false; };
-  }, [refresh]);
-  const edge = /Edg\//.test(navigator.userAgent);
-  const chromeBrowser = /Chrome\//.test(navigator.userAgent) && !edge;
+    if (typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) return;
+    chrome.runtime.sendMessage({ type: HOST, action: 'status' }, (response: unknown) => {
+      if (!response || typeof response !== 'object') return;
+      if ('side' in response && (response.side === 'left' || response.side === 'right')) setSide(response.side);
+      if ('width' in response && typeof response.width === 'number') setWidth(response.width);
+    });
+  }, []);
+  function apply(next: { side?: 'left' | 'right'; width?: number; close?: boolean }) {
+    if (next.side) setSide(next.side);
+    if (next.width) setWidth(next.width);
+    if (typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) return;
+    chrome.runtime.sendMessage({ type: HOST, action: 'set', ...next });
+  }
   return <section aria-label="侧栏位置"><h3>侧栏位置</h3>
-    <p role="status">{status}</p><button onClick={() => setRefresh(value => value + 1)}>刷新位置</button>
-    <p className="hint">位置由浏览器控制，智栏只能读取，不能更改。</p>
-    {chromeBrowser ? <p className="hint">Chrome：打开浏览器设置 → 外观，查找侧边栏位置选项。更改后点击“刷新位置”；具体选项以当前版本为准。</p>
-      : edge ? <p className="hint">Edge：请在浏览器设置中查看侧栏相关选项。官方文档未确认可切换左右位置，智栏不保证存在该选项。</p>
-        : <p className="hint">请查看浏览器的侧栏设置；不同浏览器和版本提供的选项不同。</p>}
+    <p role="status">当前位置：{side === 'left' ? '左侧' : '右侧'} · {width}px</p>
+    <div className="actions">
+      <button type="button" onClick={() => apply({ side: 'left' })}>左侧</button>
+      <button type="button" onClick={() => apply({ side: 'right' })}>右侧</button>
+      <button type="button" onClick={() => apply({ width: 320 })}>窄</button>
+      <button type="button" onClick={() => apply({ width: 380 })}>中</button>
+      <button type="button" onClick={() => apply({ width: 480 })}>宽</button>
+      <button type="button" onClick={() => apply({ close: true })}>关闭侧栏</button>
+    </div>
+    <p className="hint">位置由智栏控制，不使用浏览器原生侧栏。关闭会移除此页上的侧栏。</p>
   </section>;
 }

@@ -11,11 +11,14 @@ describe('foundation appearance and context', () => {
     const user = userEvent.setup();
     const { container } = render(createElement(App, { page: 'panel' }));
     expect(container.querySelector('[data-theme="stationery"]')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '搜索' }));
     await user.type(screen.getByRole('searchbox'), '保留搜索');
-    await user.click(screen.getByRole('button', { name: '外观设置' }));
+    await user.click(screen.getByRole('button', { name: '更多操作' }));
+    await user.click(screen.getByRole('menuitem', { name: '设置' }));
+    await user.click(screen.getByRole('button', { name: /外观/ }));
     for (const name of ['轻盈原生', '温润纸感', '清爽文具（默认）', '深色精密']) {
       await user.click(screen.getByRole('radio', { name }));
-      expect(screen.getByRole('searchbox')).toHaveValue('保留搜索');
+      expect(screen.getByRole('searchbox', { hidden: true })).toHaveValue('保留搜索');
       expect(screen.getByRole('radio', { name })).toBeChecked();
     }
     expect(network).not.toHaveBeenCalled();
@@ -25,20 +28,21 @@ describe('foundation appearance and context', () => {
   it('exposes keyboard-operable appearance settings and resets only on a new page session', async () => {
     const user = userEvent.setup();
     const first = render(createElement(App, { page: 'options' }));
+    await user.click(screen.getByRole('button', { name: /外观/ }));
     const native = screen.getByRole('radio', { name: '轻盈原生' });
     native.focus();
     await user.keyboard(' ');
     expect(native).toBeChecked();
     first.unmount();
     render(createElement(App, { page: 'options' }));
+    await user.click(screen.getByRole('button', { name: /外观/ }));
     expect(screen.getByRole('radio', { name: '清爽文具（默认）' })).toBeChecked();
     expect(screen.getByText(/仅在当前页面会话生效/)).toBeVisible();
   });
   it('does not invent current-page data or installed example bookmarks', async () => {
-    const user = userEvent.setup();
     render(createElement(App, { page: 'panel' }));
     expect(screen.getByText('尚未连接书签')).toBeVisible();
-    await user.click(screen.getByRole('button', { name: '收藏当前页面' }));
+    expect(screen.queryByRole('button', { name: '收藏当前页面' })).not.toBeInTheDocument();
     expect(screen.queryByRole('region', { name: '收藏确认卡' })).not.toBeInTheDocument();
   });
 });

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>智栏 layout preview</title>
+<style>
+:root { font: 14px/1.55 sans-serif; }
+* { box-sizing: border-box; }
+body { margin: 0; background: #ddd; }
+.frame { overflow: hidden; background: var(--bg); color: var(--text); min-height: 100vh; display: flex; flex-direction: column; }
+.theme-root { --bg:#F8F9FC; --surface:#FFFFFF; --text:#292F3D; --muted:#5C6578; --accent:#5368E8; --line:#D9DEEB; --pad:16px; }
+[data-theme="native"] { --bg:#F7F8FA; --text:#20242C; --accent:#356AE6; --line:#DCE1E8; --pad:15px; }
+[data-theme="paper"] { --bg:#F6F3EC; --text:#342F2A; --accent:#55725B; --line:#DED8CC; --pad:18px; }
+[data-theme="precision"] { --bg:#181A1F; --text:#E7E9EE; --accent:#8DAAFF; --line:#444B59; --pad:15px; }
+.brand { display:flex; gap:9px; align-items:center; padding:13px var(--pad); position:sticky; top:0; background:var(--bg); border-bottom:1px solid var(--line); }
+.brand h1 { flex:1; font-size:17px; margin:0; }
+.brand button { margin-left:0; border:0; background:transparent; color:inherit; }
+.chrome-icon { margin-left:auto; }
+main { flex:1; overflow:auto; padding:12px var(--pad); }
+.row { min-height:37px; display:flex; align-items:center; padding-inline-start: var(--nest, 0px); }
+</style></head>
+<body>
+<div id="root" class="theme-root frame" data-theme="stationery">
+  <header class="brand"><span aria-hidden="true">▱</span><h1>智栏</h1><button class="chrome-icon" aria-label="搜索">⌕</button><button aria-label="更多操作">⋯</button></header>
+  <main>
+    <div class="row">书签栏</div>
+    <div class="row" style="--nest:14px">设计灵感</div>
+    <div class="row" style="--nest:28px">Figma · 团队设计空间</div>
+  </main>
+</div>
+</body></html>

@@ -1,60 +1,78 @@
 import { validateUrl } from '../domain/preflight';
+import { trustedMutationSender } from '../schemas/messages';
+import type { CapturedPage } from './ui-identity';
+import { uiRegistry } from './ui-identity';
 export const SAVE_PORT = 'zhilan.save.v1';
 export interface SavePage { tabId: number; token: string; title: string; url: string }
-export function startSaveEntrypoints(onInvalidated: () => void = () => {}) {
-  const sessions = new Map<number, { page?: SavePage; port?: chrome.runtime.Port; generation: number }>();
+export function startSaveEntrypoints(onInvalidated: () => void = () => {}, show?: (tab: chrome.tabs.Tab | undefined, capture?: CapturedPage) => void) {
+  const sessions = new Map<number, { page?: SavePage; port?: chrome.runtime.Port; generation: number; uiTabId?: number }>();
   const session = (id: number) => { let value = sessions.get(id); if (!value) { value = { generation: 0 }; sessions.set(id, value); } return value; };
   const post = (port: chrome.runtime.Port | undefined, value: unknown) => { try { port?.postMessage(value); } catch { /* Disconnection invalidates via the port lifecycle. */ } };
-  const invalidate = (windowId: number) => { const value = sessions.get(windowId); if (!value) return; value.generation++; value.page = undefined; onInvalidated(); post(value.port, { type: 'invalidated' }); };
-  function capture(tab: chrome.tabs.Tab | undefined, windowId: number) {
-    const value = session(windowId); value.generation++; value.page = undefined; onInvalidated();
-    try {
-      if (tab?.id === undefined || tab.windowId !== windowId || !tab.url) throw Error(); validateUrl(tab.url);
-      value.page = { tabId: tab.id, token: crypto.randomUUID(), url: tab.url, title: tab.title ?? tab.url };
-      post(value.port, { type: 'page', page: value.page });
-    } catch { value.page = undefined; post(value.port, { type: 'error', reason: '当前页面资料不可用；请从扩展工具栏、页面菜单或已配置命名快捷键激活。' }); }
+  const invalidateTab = (tabId: number) => {
+    const value = sessions.get(tabId); if (!value) return;
+    value.generation++; value.page = undefined; onInvalidated(); post(value.port, { type: 'invalidated' });
+    uiRegistry().invalidateCapturedTab(tabId);
+  };
+  function capture(tab: chrome.tabs.Tab | undefined): CapturedPage | undefined {
+    if (tab?.id === undefined || !Number.isInteger(tab.windowId) || !tab.url) return;
+    try { validateUrl(tab.url); } catch { return; }
+    const value = session(tab.id); value.generation++; onInvalidated();
+    value.page = { tabId: tab.id, token: crypto.randomUUID(), url: tab.url, title: tab.title ?? tab.url };
+    post(value.port, { type: 'page', page: value.page });
+    return { tabId: tab.id, windowId: tab.windowId, url: tab.url, title: tab.title ?? tab.url };
   }
-  function activate(tab?: chrome.tabs.Tab) {
+  function activate(tab: chrome.tabs.Tab | undefined, capturePage: boolean) {
     if (tab?.id === undefined || !Number.isInteger(tab.windowId)) return;
-    if (!chrome.sidePanel.open) { post(session(tab.windowId).port, { type: 'error', reason: '浏览器不支持侧栏打开接口，请升级浏览器。' }); return; }
-    capture(tab, tab.windowId);
-    const value = session(tab.windowId); const generation = value.generation;
-    const failed = () => {
-      if (sessions.get(tab.windowId) === value && value.generation === generation) post(value.port, { type: 'error', reason: '侧栏打开失败，请检查浏览器支持。' });
-    };
-    // Capture is synchronous: open stays in the original user gesture, without awaiting initialization.
-    try { void chrome.sidePanel.open({ tabId: tab.id }).catch(failed); } catch { failed(); }
+    if (!capturePage) invalidateTab(tab.id);
+    const captured = capturePage ? capture(tab) : undefined;
+    if (capturePage && !captured) post(session(tab.id).port, { type: 'error', reason: '当前页面资料不可用；请使用页面菜单或已配置命名快捷键激活收藏。' });
+    show?.(tab, captured);
   }
-  chrome.action.onClicked.addListener(activate);
-  chrome.commands.onCommand.addListener((command, tab) => { if (command === 'save-current-page') activate(tab); });
-  chrome.contextMenus.onClicked.addListener((info, tab) => { if (info.menuItemId === 'zhilan-save-page') activate(tab); });
+  chrome.action.onClicked.addListener(tab => activate(tab, false));
+  chrome.commands.onCommand.addListener((command, tab) => { if (command === 'save-current-page') activate(tab, true); });
+  chrome.contextMenus.onClicked.addListener((info, tab) => { if (info.menuItemId === 'zhilan-save-page') activate(tab, true); });
   chrome.runtime.onInstalled.addListener(() => { chrome.contextMenus.create({ id: 'zhilan-save-page', title: '使用智栏收藏当前页面', contexts: ['page'], documentUrlPatterns: ['http://*/*', 'https://*/*'] }, () => { if (chrome.runtime.lastError) console.error('智栏收藏菜单创建失败'); }); });
-  chrome.tabs.onUpdated.addListener((tabId, change, tab) => { if (change.status !== 'loading' && change.url === undefined) return; for (const [id, value] of sessions) if (value.page?.tabId === tabId || (!value.page && tab.active && tab.windowId === id)) invalidate(id); });
-  chrome.tabs.onRemoved.addListener((tabId, info) => { const value = sessions.get(info.windowId); if (value?.page?.tabId === tabId || !value?.page) invalidate(info.windowId); });
-  chrome.tabs.onActivated.addListener(info => invalidate(info.windowId));
-  chrome.windows.onRemoved.addListener(id => { invalidate(id); sessions.delete(id); });
+  chrome.tabs.onUpdated.addListener((tabId, change) => { if (change.status !== 'loading' && change.url === undefined) return; invalidateTab(tabId); });
+  chrome.tabs.onRemoved.addListener(tabId => { invalidateTab(tabId); sessions.delete(tabId); });
   chrome.runtime.onConnect.addListener(port => {
-    if (port.name !== SAVE_PORT || port.sender?.id !== chrome.runtime.id || port.sender.tab !== undefined || port.sender.url !== chrome.runtime.getURL('panel/index.html')) return;
-    let windowId: number | undefined;
-    const owned = () => windowId !== undefined && sessions.get(windowId)?.port === port;
-    port.onDisconnect.addListener(() => { if (!owned()) return; invalidate(windowId!); session(windowId!).port = undefined; });
+    if (port.name !== SAVE_PORT || !port.sender || !trustedMutationSender(port.sender, chrome.runtime.id)) return;
+    let owner: number | undefined;
+    const owned = () => owner !== undefined && sessions.get(owner)?.port === port;
+    port.onDisconnect.addListener(() => { if (!owned()) return; invalidateTab(owner!); session(owner!).port = undefined; });
     port.onMessage.addListener((raw: unknown) => {
       if (!raw || typeof raw !== 'object' || !('type' in raw)) return;
-      if (raw.type === 'register' && windowId === undefined && 'windowId' in raw && typeof raw.windowId === 'number' && Number.isInteger(raw.windowId) && raw.windowId >= 0) {
-        windowId = raw.windowId; const value = session(windowId); const old = value.port; value.port = port;
-        if (old && old !== port) { post(old, { type: 'invalidated' }); old.disconnect(); }
-        if (value.page) post(port, { type: 'page', page: value.page }); return;
+      if (raw.type === 'register') {
+        const attach = () => {
+          const uiTab = port.sender?.tab;
+          const hostUrl = uiTab?.url ?? '';
+          const transferred = uiTab?.id !== undefined && !/^https?:/i.test(hostUrl) ? uiRegistry().takeTransfer(uiTab.id) : undefined;
+          owner = transferred?.tabId ?? (/^https?:/i.test(hostUrl) ? uiTab?.id : undefined);
+          if (owner === undefined) return false;
+          const value = session(owner); const old = value.port; value.port = port; value.uiTabId = uiTab?.id;
+          if (old && old !== port) { post(old, { type: 'invalidated' }); old.disconnect(); }
+          if (value.page) post(port, { type: 'page', page: value.page });
+          return true;
+        };
+        if (attach()) return;
+        const uiTabId = port.sender?.tab?.id;
+        const hostUrl = port.sender?.tab?.url ?? '';
+        if (uiTabId !== undefined && !/^https?:/i.test(hostUrl)) uiRegistry().whenTransferBound(uiTabId, attach);
+        return;
       }
       if (!owned()) return;
-      if (raw.type === 'close') { invalidate(windowId!); return; }
-      if (raw.type === 'current') {
-        const id = windowId!; const value = session(id); const token = ++value.generation;
-        void chrome.tabs.query({ active: true, windowId: id }).then(tabs => { if (owned() && token === value.generation) capture(tabs[0], id); }).catch(() => { if (owned() && token === value.generation) post(port, { type: 'error', reason: '当前标签页查询失败；未采集正文。' }); });
-      }
+      if (raw.type === 'close') { invalidateTab(owner!); return; }
+      if (raw.type === 'current') return;
     });
   });
-  return (request: import('../schemas/messages').ConfirmMutation) => {
-    if (!request.saveContext) return true;
-    return [...sessions.values()].some(value => value.port && value.page?.token === request.saveContext);
+  return {
+    validateSaveContext: (request: import('../schemas/messages').ConfirmMutation) => {
+      if (!request.saveContext) return true;
+      return [...sessions.values()].some(value => value.port && value.page?.token === request.saveContext);
+    },
+    livePageForSender: (sender: chrome.runtime.MessageSender) => {
+      const uiTabId = sender.tab?.id ?? uiRegistry().mountFor(sender, chrome.runtime?.id ?? '')?.tabId;
+      if (uiTabId === undefined) return;
+      return [...sessions.values()].find(s => s.port && s.uiTabId === uiTabId && s.page)?.page;
+    },
   };
 }

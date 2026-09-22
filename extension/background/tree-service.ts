@@ -2,13 +2,14 @@ import { bookmarksRead } from '../adapters/bookmarks-read';
 import { TREE_PORT } from '../domain/node-reference';
 import { installationIdentity } from './installation-identity';
 import { TreeProjection } from './tree-projection';
+import { trustedMutationSender } from '../schemas/messages';
 export function startTreeService() {
   const ensureIdentity = installationIdentity(chrome.storage.local);
   const projection = new TreeProjection(bookmarksRead(chrome.bookmarks), ensureIdentity, crypto.randomUUID());
   projection.start();
   chrome.runtime.onConnect.addListener(port => {
     if (port.name !== TREE_PORT) return;
-    if ( port.sender?.id !== chrome.runtime.id || ![chrome.runtime.getURL('panel/index.html'), chrome.runtime.getURL('options/index.html')].includes(port.sender.url ?? '')) { port.disconnect(); return; }
+    if (!port.sender || !trustedMutationSender(port.sender, chrome.runtime.id)) { port.disconnect(); return; }
     const unsubscribe = projection.subscribe(state => {
       try { port.postMessage({ version: 1, state }); } catch { /* Disconnected port: onDisconnect removes subscription. */ }
     });

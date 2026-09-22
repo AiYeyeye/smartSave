@@ -59,3 +59,25 @@ it('retains edited SaveCard fields and unchecked consent across all four themes'
   for (const radio of screen.getAllByRole('radio')) { fireEvent.click(radio); expect(screen.getByLabelText('收藏标题')).toHaveValue('Edited'); expect(screen.getByLabelText('收藏目标目录')).toHaveValue('f'); expect(screen.getByLabelText('以后此网站默认存到这里')).not.toBeChecked(); }
   expect(send).not.toHaveBeenCalled();
 });
+it('connection suspension retains draft and completed result without rehydrating rules', async () => {
+  const rules = store(); const load = vi.spyOn(rules, 'load');
+  const send = vi.fn(async request => ({ requestId: request.requestId, status: 'completed', completedSteps: 1, remainingSteps: 0, needsReconcile: false }));
+  const props = { page: { title: 'Original', url: 'https://example.test/', token: 'same' }, snapshot: tree, rulesStore: rules, onClose: vi.fn(), send };
+  const view = render(createElement(SaveCard, props));
+  await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('手动'));
+  fireEvent.change(screen.getByLabelText('收藏标题'), { target: { value: 'Draft' } });
+  fireEvent.change(screen.getByLabelText('收藏目标目录'), { target: { value: 'f' } });
+  view.rerender(createElement(SaveCard, { ...props, connectionReady: false }));
+  expect(screen.getByRole('button', { name: '确认收藏保存' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: '请求AI建议' })).toBeDisabled();
+  view.rerender(createElement(SaveCard, { ...props, connectionReady: true }));
+  expect(screen.getByLabelText('收藏标题')).toHaveValue('Draft');
+  expect(screen.getByLabelText('收藏目标目录')).toHaveValue('f');
+  fireEvent.click(screen.getByRole('button', { name: '确认收藏保存' }));
+  await screen.findByRole('button', { name: '关闭结果' });
+  view.rerender(createElement(SaveCard, { ...props, connectionReady: false }));
+  view.rerender(createElement(SaveCard, { ...props, connectionReady: true }));
+  expect(screen.getByRole('button', { name: '确认收藏保存' })).toBeDisabled();
+  expect(send).toHaveBeenCalledTimes(1);
+  expect(load).toHaveBeenCalledTimes(1);
+});

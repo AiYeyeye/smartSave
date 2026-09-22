@@ -37,6 +37,7 @@ async function setup(app = false) {
   }
   const a = handle('a.json'); const picker = vi.fn(async () => a.file); vi.stubGlobal('showSaveFilePicker', picker);
   const view = render(app ? createElement(App, { page: 'options' }) : createElement(ExportSettings, { visible: true }));
+  if (app) fireEvent.click(screen.getByRole('button', { name: /导出与备份/ }));
   await screen.findByRole('checkbox', { name: '导出 Folder' });
   const click = (name: string) => fireEvent.click(screen.getByRole('button', { name }));
   const select = () => { fireEvent.click(screen.getByRole('checkbox', { name: '导出 Folder' })); fireEvent.click(screen.getByRole('checkbox', { name: '我同意专用输出覆盖规则' })); };
@@ -76,7 +77,11 @@ it('manual three formats are user initiated downloads; App navigation and four t
   const create = vi.fn(() => 'blob:synthetic'); const revoke = vi.fn(); vi.stubGlobal('URL', class extends URL { static createObjectURL = create; static revokeObjectURL = revoke; });
   const download = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
   for (const theme of ['轻盈原生', '温润纸感', '清爽文具（默认）', '深色精密']) {
-    fireEvent.click(screen.getByRole('radio', { name: theme })); h.click('导出'); h.click('导出');
+    fireEvent.click(screen.getByRole('button', { name: '返回设置' }));
+    fireEvent.click(screen.getByRole('button', { name: /外观/ }));
+    fireEvent.click(screen.getByRole('radio', { name: theme }));
+    fireEvent.click(screen.getByRole('button', { name: '返回设置' }));
+    fireEvent.click(screen.getByRole('button', { name: /导出与备份/ }));
     expect(screen.getByRole('checkbox', { name: '导出 Folder' })).toBeChecked(); expect(screen.getByRole('checkbox', { name: '我同意专用输出覆盖规则' })).toBeChecked();
   }
   for (const format of ['JSON', 'HTML', 'Markdown']) h.click(`下载 ${format}`);
