@@ -1,22 +1,16 @@
 
 # 智栏 · Markora
 
-- [产品需求 PRD 1.0](docs/PRD-1.0.md)
-- [完整首版 Trellis 任务树（planning）](.trellis/tasks/09-08-zhilan-v1-development/README.md)：1 父任务＋12 子任务，尚未启动正式实现。
-- [四风格交互原型](ui/prototype/README.md)
-- [用户 P1 有界实测证据](.trellis/tasks/09-08-zhilan-technical-validation-design/research/p1-user-evidence-2026-09-08.md)：当前 Chrome 环境无实验页写入成功；重启与 Edge 等仍待验证。
+Chrome / Edge MV3 书签助手：浏览器原生书签是唯一事实源，AI 只产生经校验的数据，写入经唯一内核并留回执。
 
-## Isolated technical experiment
+- [产品需求 PRD 1.0 + 1.1 增补](docs/PRD-1.0.md)：2026-09-22 起主流程为「浏览器原生收藏 → 后台自动分类 → 先写后告知」，第 15 节记录标废条款。
+- [原生收藏自动分类任务树](.trellis/tasks/09-11-zhilan-native-ai-overhaul/prd.md)：R01–R18 与 P00–P08 子任务，尚在 planning。
+- [首版 v1 任务树](.trellis/tasks/09-08-zhilan-v1-development/README.md)：12 个子任务源码基本完成，浏览器/真实模型/P1–P4 运行验收未做。
+- [扩展工程说明](extension/README.md)：构建、检查、证据边界与各切片状态。
+- [四风格交互原型](ui/prototype/README.md)、[隔离文件访问实验](experiments/file-access-probe/README.md)、[用户 P1 实测证据](.trellis/tasks/09-08-zhilan-technical-validation-design/research/p1-user-evidence-2026-09-08.md)。
 
-[智栏 P1 文件访问实验](experiments/file-access-probe/README.md) — unpacked MV3, synthetic JSON only. Real Chrome/Edge feasibility remains pending; not the production extension.
+## 当前状态（2026-09-22）
 
-### Task10 import integration status
-The production panel now exposes a retained Import workbench, real parse Worker/client and existing classification/checkpoint/import-authority/journal owners. See `extension/README.md` and `.trellis/tasks/09-08-zhilan-v1-10-import/validation.md`. Whole10 acceptance is **incomplete**: UI lifecycle matrix and independent review remain; browser/native/provider/user-file/P1–P4 are NOT RUN. Task11 is not implemented by this change.
+工作分支 `review/2026-09-22-design-fixes`。设计审查后的修复已提交：发布门最低 Chrome 114、循环导入与 schema 统一、操作日志 v2、导入映射按结构聚合、模型提示词层与分类策略、Prettier 格式化；宿主切换为工具栏 Popup + 选项页、恢复界面收窄、新鲜度改为版本号加任务依赖范围随后提交。规范见 `.trellis/spec/frontend/index.md` 的状态列。
 
-## UI acceptance repair iteration (2026-09-09; NOT COMPLETE)
-Implemented controller-owned rejection/durable reread vs uncertain handoff states, identifiable skipped source evidence, selected destination binding through compiler/authority/journal, frozen controller command display, and import-only missing-title suggestions. Added actual-owner UI handoff/mapping/manual-load/empty/all-existing tests; preserved the shared persistence owner.
-Final source checks: lint/typecheck pass; units 434/434 in 49 files (--maxWorkers=2, 61.66s); integration 6/6; build/static MV3 pass. Earlier focused43 and full428 passed. New lifecycle fixture initially had optional native title type errors and late teardown callback rejection, then a generated multiline quote parse failure and duplicate text assertion mismatch; corrected and final full run green. Existing Vite chunk/config warnings remain.
-Still incomplete: actual UI all-batches/pause/resume/recover-epoch/root/privacy/cancel/quota/partial acceptance matrix; status/error UX and draft initialization architecture need independent review. Page-memory drafts do not survive an actual browser page reload. This iteration must not be accepted as whole10 completion. Browser/native/provider/user-file/P1–P4/manual NOT RUN. No stage/commit/archive/task11/probes/publish.
-
-## Task11 production export source update
-Panel/options expose retained ExportSettings: independent roots/exclusions, manual JSON/HTML/Markdown and dedicated automatic JSON consent, gesture picker/reauthorization, same-origin IDB handles and worker-only auto writes. Refresh shows durable status; invalid roots require reselection. Final source checks:509 unit,6 integration, lint/typecheck/build pass. See `.trellis/tasks/09-08-zhilan-v1-11-export/validation.md`. Synthetic tests are not real handle proof. Chrome153 historical success/prompt-no-write evidence preserved; remaining Chrome restart/reliability and Edge no-page/restart NOT RUN. Independent review/manual acceptance open; no task12/release claim.
+运行时验收仍未执行：所有单元/集成测试是 jsdom 与真实 Vite 构建，不构成 Chrome/Edge 宿主、真实模型或用户书签数据的证据；`release:ready` 在人工门关闭前始终阻塞。
