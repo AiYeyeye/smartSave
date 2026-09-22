@@ -1,9 +1,14 @@
-export function bookmarkFaviconUrl(pageUrl: string | undefined, runtime?: Pick<typeof chrome.runtime, 'getURL'>): string | undefined {
+export function bookmarkFaviconUrl(
+  pageUrl: string | undefined,
+  runtime?: Pick<typeof chrome.runtime, 'getURL'>,
+): string | undefined {
   if (!pageUrl) return;
   try {
     const parsed = new URL(pageUrl);
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return;
-  } catch { return; }
+  } catch {
+    return;
+  }
   const owner = runtime ?? (typeof chrome !== 'undefined' ? chrome.runtime : undefined);
   if (!owner?.getURL) return;
   const url = new URL(owner.getURL('/_favicon/'));

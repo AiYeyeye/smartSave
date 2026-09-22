@@ -11,7 +11,9 @@ import { PanelChrome, type Workbench } from './PanelChrome';
 import { SettingsNav, type SettingsJump, type SettingsPage } from './SettingsNav';
 
 export function App({ page }: { page: 'panel' | 'options' }) {
-  const [settingsStore] = useState(() => typeof chrome !== 'undefined' && chrome.storage?.local ? new SettingsStore(chrome.storage.local) : undefined);
+  const [settingsStore] = useState(() =>
+    typeof chrome !== 'undefined' && chrome.storage?.local ? new SettingsStore(chrome.storage.local) : undefined,
+  );
   useEffect(() => () => settingsStore?.dispose(), [settingsStore]);
   const [workbench, setWorkbench] = useState<Workbench>(page === 'options' ? 'settings' : 'browse');
   const [settingsPage, setSettingsPage] = useState<SettingsPage>('overview');
@@ -24,16 +26,50 @@ export function App({ page }: { page: 'panel' | 'options' }) {
     setSettingsJump({ page: pageName, nonce: Date.now(), ...extra });
     setWorkbench('settings');
   }
-  return <ThemeProvider><div className={`shell ${page}`}>
-    <a className="skip-link" href="#main">跳到主要内容</a>
-    <PanelChrome page={page} workbench={workbench} settingsPage={settingsPage} onWorkbench={setWorkbench} onSettingsPage={onSettingsPage} onBatch={() => setBatchNonce(value => value + 1)} onExport={() => openSettings('export-backup', { recovery: false })} onSettings={() => openSettings('overview')} onQuery={setQuery} />
-    <main id="main" tabIndex={-1}>
-      {page === 'panel' && <div hidden={workbench !== 'browse'}><CurrentPageSave settings={settingsStore} /></div>}
-      {page === 'panel' && <div hidden={workbench !== 'browse'}><SearchResults query={query} settings={settingsStore} onOrganize={() => setWorkbench('organize')} /></div>}
-      {page === 'panel' && <section className="directory" hidden={workbench !== 'browse'} aria-label="书签目录"><BookmarkTree batchNonce={batchNonce} /></section>}
-      {page === 'panel' && <OrganizeWorkbench visible={workbench === 'organize'} settings={settingsStore} />}
-      {page === 'panel' && <ImportWorkbench visible={workbench === 'import'} settings={settingsStore} />}
-      <SettingsNav visible={workbench === 'settings'} store={settingsStore} jump={settingsJump} page={settingsPage} onPage={onSettingsPage} />
-    </main>
-  </div></ThemeProvider>;
+  return (
+    <ThemeProvider>
+      <div className={`shell ${page}`}>
+        <a className="skip-link" href="#main">
+          跳到主要内容
+        </a>
+        <PanelChrome
+          page={page}
+          workbench={workbench}
+          settingsPage={settingsPage}
+          onWorkbench={setWorkbench}
+          onSettingsPage={onSettingsPage}
+          onBatch={() => setBatchNonce(value => value + 1)}
+          onExport={() => openSettings('export-backup', { recovery: false })}
+          onSettings={() => openSettings('overview')}
+          onQuery={setQuery}
+        />
+        <main id="main" tabIndex={-1}>
+          {page === 'panel' && (
+            <div hidden={workbench !== 'browse'}>
+              <CurrentPageSave settings={settingsStore} />
+            </div>
+          )}
+          {page === 'panel' && (
+            <div hidden={workbench !== 'browse'}>
+              <SearchResults query={query} settings={settingsStore} onOrganize={() => setWorkbench('organize')} />
+            </div>
+          )}
+          {page === 'panel' && (
+            <section className="directory" hidden={workbench !== 'browse'} aria-label="书签目录">
+              <BookmarkTree batchNonce={batchNonce} />
+            </section>
+          )}
+          {page === 'panel' && <OrganizeWorkbench visible={workbench === 'organize'} settings={settingsStore} />}
+          {page === 'panel' && <ImportWorkbench visible={workbench === 'import'} settings={settingsStore} />}
+          <SettingsNav
+            visible={workbench === 'settings'}
+            store={settingsStore}
+            jump={settingsJump}
+            page={settingsPage}
+            onPage={onSettingsPage}
+          />
+        </main>
+      </div>
+    </ThemeProvider>
+  );
 }

@@ -9,12 +9,27 @@ export function startTreeService() {
   projection.start();
   chrome.runtime.onConnect.addListener(port => {
     if (port.name !== TREE_PORT) return;
-    if (!port.sender || !trustedMutationSender(port.sender, chrome.runtime.id)) { port.disconnect(); return; }
+    if (!port.sender || !trustedMutationSender(port.sender, chrome.runtime.id)) {
+      port.disconnect();
+      return;
+    }
     const unsubscribe = projection.subscribe(state => {
-      try { port.postMessage({ version: 1, state }); } catch { /* Disconnected port: onDisconnect removes subscription. */ }
+      try {
+        port.postMessage({ version: 1, state });
+      } catch {
+        /* Disconnected port: onDisconnect removes subscription. */
+      }
     });
     port.onMessage.addListener((message: unknown) => {
-      if (message && typeof message === 'object' && 'version' in message && message.version === 1 && 'type' in message && message.type === 'refresh') projection.refresh();
+      if (
+        message &&
+        typeof message === 'object' &&
+        'version' in message &&
+        message.version === 1 &&
+        'type' in message &&
+        message.type === 'refresh'
+      )
+        projection.refresh();
     });
     port.onDisconnect.addListener(unsubscribe);
     if (projection.state.status === 'error') projection.refresh();

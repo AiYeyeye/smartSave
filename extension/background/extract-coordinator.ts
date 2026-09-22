@@ -8,7 +8,12 @@ export const chromeExtractionBoundary: ExtractionBoundary = {
   inject: tabId => chrome.scripting.executeScript({ target: { tabId, frameIds: [0] }, files: ['content-script.js'] }),
   message: (tabId, message, documentId) => chrome.tabs.sendMessage(tabId, message, { documentId }),
 };
-export function extractSaveBodyForUi(sender: chrome.runtime.MessageSender, page: SavePage, current: () => SavePage | undefined, boundary: ExtractionBoundary = chromeExtractionBoundary): Promise<SaveBody> {
+export function extractSaveBodyForUi(
+  sender: chrome.runtime.MessageSender,
+  page: SavePage,
+  current: () => SavePage | undefined,
+  boundary: ExtractionBoundary = chromeExtractionBoundary,
+): Promise<SaveBody> {
   if (!trustedMutationSender(sender, chrome.runtime.id)) return Promise.reject(Error('invalid-sender'));
   return extractSaveBody(page, current, boundary).then(snippet => ({ status: 'ready', url: page.url, snippet }));
 }

@@ -1,11 +1,29 @@
-export type SenderLite = { id?: string; url?: string; origin?: string; tab?: unknown; frameId?: number; documentId?: string };
+export type SenderLite = {
+  id?: string;
+  url?: string;
+  origin?: string;
+  tab?: unknown;
+  frameId?: number;
+  documentId?: string;
+};
 export type CapturedPage = { tabId: number; windowId: number; url: string; title: string; documentId?: string };
-export type BoundUi = { kind: 'panel' | 'options'; tabId?: number; windowId?: number; frameId?: number; documentId?: string; url: string };
+export type BoundUi = {
+  kind: 'panel' | 'options';
+  tabId?: number;
+  windowId?: number;
+  frameId?: number;
+  documentId?: string;
+  url: string;
+};
 
 export function extensionDocumentKind(sender: SenderLite, extensionId: string): 'panel' | 'options' | undefined {
   if (sender.id !== extensionId || !sender.url) return;
   let parsed: URL;
-  try { parsed = new URL(sender.url); } catch { return; }
+  try {
+    parsed = new URL(sender.url);
+  } catch {
+    return;
+  }
   if (parsed.protocol !== 'chrome-extension:' || parsed.host !== extensionId) return;
   if (parsed.search) return;
   if (sender.origin && sender.origin !== `chrome-extension://${extensionId}`) return;
@@ -27,8 +45,16 @@ export class UiIdentityRegistry {
   bind(nonce: string, sender: SenderLite, extensionId: string): BoundUi | undefined {
     const kind = extensionDocumentKind(sender, extensionId);
     if (kind === 'options') {
-      const tab = sender.tab && typeof sender.tab === 'object' ? sender.tab as { id?: number; windowId?: number } : undefined;
-      const ui: BoundUi = { kind, tabId: tab?.id, windowId: tab?.windowId, frameId: sender.frameId ?? 0, documentId: sender.documentId, url: sender.url! };
+      const tab =
+        sender.tab && typeof sender.tab === 'object' ? (sender.tab as { id?: number; windowId?: number }) : undefined;
+      const ui: BoundUi = {
+        kind,
+        tabId: tab?.id,
+        windowId: tab?.windowId,
+        frameId: sender.frameId ?? 0,
+        documentId: sender.documentId,
+        url: sender.url!,
+      };
       this.mounts.set(this.key(ui), ui);
       return ui;
     }
@@ -37,30 +63,53 @@ export class UiIdentityRegistry {
     if (!ticket || ticket.used || ticket.expires < Date.now()) return;
     if (sender.documentId && [...this.mounts.values()].some(m => m.documentId === sender.documentId)) return;
     ticket.used = true;
-    const panelTab = sender.tab && typeof sender.tab === 'object' ? sender.tab as { id?: number; windowId?: number } : undefined;
-    const ui: BoundUi = { kind, tabId: panelTab?.id, windowId: panelTab?.windowId, frameId: sender.frameId, documentId: sender.documentId, url: sender.url! };
+    const panelTab =
+      sender.tab && typeof sender.tab === 'object' ? (sender.tab as { id?: number; windowId?: number }) : undefined;
+    const ui: BoundUi = {
+      kind,
+      tabId: panelTab?.id,
+      windowId: panelTab?.windowId,
+      frameId: sender.frameId,
+      documentId: sender.documentId,
+      url: sender.url!,
+    };
     this.mounts.set(this.key(ui), ui);
     return ui;
   }
   mountFor(sender: SenderLite, extensionId: string) {
     const kind = extensionDocumentKind(sender, extensionId);
     if (!kind) return;
-    const tab = sender.tab && typeof sender.tab === 'object' ? sender.tab as { id?: number } : undefined;
-    return [...this.mounts.values()].find(m => m.kind === kind && ((sender.documentId && m.documentId === sender.documentId) || (tab?.id !== undefined && m.tabId === tab.id && m.frameId === sender.frameId)));
+    const tab = sender.tab && typeof sender.tab === 'object' ? (sender.tab as { id?: number }) : undefined;
+    return [...this.mounts.values()].find(
+      m =>
+        m.kind === kind &&
+        ((sender.documentId && m.documentId === sender.documentId) ||
+          (tab?.id !== undefined && m.tabId === tab.id && m.frameId === sender.frameId)),
+    );
   }
   isBound(sender: SenderLite, extensionId: string) {
     const kind = extensionDocumentKind(sender, extensionId);
     if (!kind) return false;
-    const tab = sender.tab && typeof sender.tab === 'object' ? sender.tab as { id?: number; url?: string } : undefined;
+    const tab =
+      sender.tab && typeof sender.tab === 'object' ? (sender.tab as { id?: number; url?: string }) : undefined;
     if (kind === 'options') {
       if (tab?.url) return extensionDocumentKind({ ...sender, url: tab.url }, extensionId) === 'options';
       return true;
     }
-    return [...this.mounts.values()].some(m => m.kind === 'panel' && m.documentId && m.documentId === sender.documentId && m.frameId === sender.frameId && (tab?.id === undefined || m.tabId === tab.id));
+    return [...this.mounts.values()].some(
+      m =>
+        m.kind === 'panel' &&
+        m.documentId &&
+        m.documentId === sender.documentId &&
+        m.frameId === sender.frameId &&
+        (tab?.id === undefined || m.tabId === tab.id),
+    );
   }
   unbind(sender: SenderLite) {
-    const tab = sender.tab && typeof sender.tab === 'object' ? sender.tab as { id?: number } : undefined;
-    for (const [key, m] of this.mounts) if (m.documentId === sender.documentId || (m.tabId && m.tabId === tab?.id && m.frameId === sender.frameId)) this.mounts.delete(key);
+    const tab = sender.tab && typeof sender.tab === 'object' ? (sender.tab as { id?: number }) : undefined;
+    for (const [key, m] of this.mounts)
+      if (m.documentId === sender.documentId || (m.tabId && m.tabId === tab?.id && m.frameId === sender.frameId))
+        this.mounts.delete(key);
   }
   beginTransfer(captured: CapturedPage) {
     const id = crypto.randomUUID();
@@ -69,7 +118,10 @@ export class UiIdentityRegistry {
   }
   bindTransfer(id: string, uiTabId: number) {
     const t = this.transfers.get(id);
-    if (!t || t.used || t.expires < Date.now() || uiTabId <= 0) { this.transfers.delete(id); return; }
+    if (!t || t.used || t.expires < Date.now() || uiTabId <= 0) {
+      this.transfers.delete(id);
+      return;
+    }
     t.uiTabId = uiTabId;
     const waiters = this.transferWaiters.get(uiTabId) ?? [];
     this.transferWaiters.delete(uiTabId);
@@ -81,11 +133,20 @@ export class UiIdentityRegistry {
     if (ready) waiter();
     else this.transferWaiters.set(uiTabId, [...(this.transferWaiters.get(uiTabId) ?? []), waiter]);
   }
-  dropTransfer(id: string) { this.transfers.delete(id); }
+  dropTransfer(id: string) {
+    this.transfers.delete(id);
+  }
   takeTransfer(uiTabId: number) {
     for (const [id, t] of this.transfers) {
-      if (t.used || t.expires < Date.now()) { this.transfers.delete(id); continue; }
-      if (t.uiTabId === uiTabId && uiTabId > 0) { t.used = true; this.transfers.delete(id); return t.captured; }
+      if (t.used || t.expires < Date.now()) {
+        this.transfers.delete(id);
+        continue;
+      }
+      if (t.uiTabId === uiTabId && uiTabId > 0) {
+        t.used = true;
+        this.transfers.delete(id);
+        return t.captured;
+      }
     }
   }
   invalidateCapturedTab(tabId: number) {
@@ -95,12 +156,18 @@ export class UiIdentityRegistry {
   invalidateUiTab(tabId: number) {
     for (const [key, m] of this.mounts) if (m.tabId === tabId) this.mounts.delete(key);
   }
-  private key(ui: BoundUi) { return `${ui.kind}:${ui.tabId}:${ui.frameId}:${ui.documentId}`; }
+  private key(ui: BoundUi) {
+    return `${ui.kind}:${ui.tabId}:${ui.frameId}:${ui.documentId}`;
+  }
 }
 
 let registry = new UiIdentityRegistry();
-export function uiRegistry() { return registry; }
-export function resetUiRegistry() { registry = new UiIdentityRegistry(); }
+export function uiRegistry() {
+  return registry;
+}
+export function resetUiRegistry() {
+  registry = new UiIdentityRegistry();
+}
 export function trustedMutationSender(sender: SenderLite, extensionId: string) {
   const kind = extensionDocumentKind(sender, extensionId);
   if (kind === 'options') return true;

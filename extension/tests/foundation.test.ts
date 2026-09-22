@@ -23,7 +23,8 @@ describe('foundation appearance and context', () => {
     }
     expect(network).not.toHaveBeenCalled();
     expect(storage).not.toHaveBeenCalled();
-    network.mockRestore(); storage.mockRestore();
+    network.mockRestore();
+    storage.mockRestore();
   });
   it('exposes keyboard-operable appearance settings and resets only on a new page session', async () => {
     const user = userEvent.setup();
@@ -51,11 +52,15 @@ it('shares readable empty, error and loading state semantics in every theme', as
   const { ThemeProvider, ThemePicker } = await import('../ui/ThemeProvider');
   const { StateMessage } = await import('../ui/StateMessage');
   const user = userEvent.setup();
-  render(createElement(ThemeProvider, null,
-    createElement(ThemePicker),
-    createElement(StateMessage, { kind: 'error', title: '无法读取', children: '请稍后重试' }),
-    createElement(StateMessage, { kind: 'loading', title: '正在准备', children: '请稍候' }),
-  ));
+  render(
+    createElement(
+      ThemeProvider,
+      null,
+      createElement(ThemePicker),
+      createElement(StateMessage, { kind: 'error', title: '无法读取', children: '请稍后重试' }),
+      createElement(StateMessage, { kind: 'loading', title: '正在准备', children: '请稍候' }),
+    ),
+  );
   for (const name of ['轻盈原生', '温润纸感', '清爽文具（默认）', '深色精密']) {
     await user.click(screen.getByRole('radio', { name }));
     expect(screen.getByRole('alert')).toHaveTextContent('无法读取');

@@ -11,9 +11,22 @@ export class TreeProjection {
   private reading = false;
   private dirty = false;
   private detach = () => {};
-  constructor(private source: BookmarkSource, private ensureIdentity: () => Promise<string>, private epoch: string) {}
-  subscribe(listener: (state: TreeState) => void) { this.listeners.add(listener); listener(this.state); return () => { this.listeners.delete(listener); }; }
-  private publish(state: TreeState) { this.state = state; this.listeners.forEach(listener => listener(state)); }
+  constructor(
+    private source: BookmarkSource,
+    private ensureIdentity: () => Promise<string>,
+    private epoch: string,
+  ) {}
+  subscribe(listener: (state: TreeState) => void) {
+    this.listeners.add(listener);
+    listener(this.state);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+  private publish(state: TreeState) {
+    this.state = state;
+    this.listeners.forEach(listener => listener(state));
+  }
   fresh(): Promise<TreeSnapshot> {
     return new Promise((resolve, reject) => {
       this.refresh();
@@ -25,7 +38,10 @@ export class TreeProjection {
       };
       this.listeners.add(listener);
       if (this.state.status !== 'loading') listener(this.state);
-      if (this.importing || !this.active) { this.listeners.delete(listener); reject(new Error('tree-unavailable')); }
+      if (this.importing || !this.active) {
+        this.listeners.delete(listener);
+        reject(new Error('tree-unavailable'));
+      }
     });
   }
   invalidatePreviews() {
@@ -44,7 +60,11 @@ export class TreeProjection {
     });
     this.refresh();
   }
-  stop() { this.active = false; this.generation++; this.detach(); }
+  stop() {
+    this.active = false;
+    this.generation++;
+    this.detach();
+  }
   refresh() {
     this.dirty = true;
     this.publish({ status: 'loading' });
@@ -67,17 +87,49 @@ export class TreeProjection {
           const entry = stack.pop()!;
           const { node, index } = entry;
           const readOnly = entry.protectedAncestor || !!node.unmodifiable || entry.depth <= 1;
-          nodes.push({ ref: { installationId, nativeId: node.id, kind: node.url === undefined ? 'folder' : 'bookmark' }, parentId: node.parentId, index: node.index ?? index, title: node.title, url: node.url, childrenIds: node.children?.map(child => child.id) ?? [], readOnly, childrenWritable: node.url === undefined && entry.depth > 0 && !entry.protectedAncestor && !node.unmodifiable, observedRevision: revision });
+          nodes.push({
+            ref: { installationId, nativeId: node.id, kind: node.url === undefined ? 'folder' : 'bookmark' },
+            parentId: node.parentId,
+            index: node.index ?? index,
+            title: node.title,
+            url: node.url,
+            childrenIds: node.children?.map(child => child.id) ?? [],
+            readOnly,
+            childrenWritable:
+              node.url === undefined && entry.depth > 0 && !entry.protectedAncestor && !node.unmodifiable,
+            observedRevision: revision,
+          });
           const children = node.children ?? [];
-          for (let i = children.length - 1; i >= 0; i--) stack.push({ node: children[i]!, index: i, protectedAncestor: entry.protectedAncestor || !!node.unmodifiable, depth: entry.depth + 1 });
+          for (let i = children.length - 1; i >= 0; i--)
+            stack.push({
+              node: children[i]!,
+              index: i,
+              protectedAncestor: entry.protectedAncestor || !!node.unmodifiable,
+              depth: entry.depth + 1,
+            });
         }
-        const snapshot = { installationId, epoch: this.epoch, observedRevision: revision, roots: tree.map(node => node.id), nodes };
-        nodes.forEach(node => { Object.freeze(node.ref); Object.freeze(node.childrenIds); Object.freeze(node); });
-        Object.freeze(nodes); Object.freeze(snapshot.roots); Object.freeze(snapshot);
+        const snapshot = {
+          installationId,
+          epoch: this.epoch,
+          observedRevision: revision,
+          roots: tree.map(node => node.id),
+          nodes,
+        };
+        nodes.forEach(node => {
+          Object.freeze(node.ref);
+          Object.freeze(node.childrenIds);
+          Object.freeze(node);
+        });
+        Object.freeze(nodes);
+        Object.freeze(snapshot.roots);
+        Object.freeze(snapshot);
         this.publish({ status: 'ready', snapshot });
       }
     } catch {
-      if (this.active && generation === this.generation) this.publish({ status: 'error', message: '无法读取书签或安装身份，请重试。' });
-    } finally { this.reading = false; }
+      if (this.active && generation === this.generation)
+        this.publish({ status: 'error', message: '无法读取书签或安装身份，请重试。' });
+    } finally {
+      this.reading = false;
+    }
   }
 }

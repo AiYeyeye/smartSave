@@ -6,5 +6,10 @@ export interface BookmarkWriter {
 }
 // Only the background mutation owner receives this adapter. Never expose removeTree.
 export function bookmarksWrite(api: typeof chrome.bookmarks): BookmarkWriter {
-  return { create: details => api.create(details), update: (id, changes) => api.update(id, changes), move: (id, destination) => api.move(id, destination), remove: id => api.remove(id) };
+  return {
+    create: details => api.create(details),
+    update: (id, changes) => api.update(id, changes),
+    move: (id, destination) => api.move(id, destination),
+    remove: id => api.remove(id),
+  };
 }

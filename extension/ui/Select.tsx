@@ -1,4 +1,13 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type SelectHTMLAttributes } from 'react';
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+  type SelectHTMLAttributes,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { overlayHost } from './ThemeProvider';
 
@@ -31,7 +40,14 @@ function placeList(trigger: HTMLElement, list: HTMLElement) {
   list.style.top = `${flip ? Math.max(8, rect.top - margin - height) : rect.bottom + margin}px`;
 }
 
-export function Select({ children, disabled, onMouseDown, onKeyDown, onBlur, ...props }: SelectHTMLAttributes<HTMLSelectElement>) {
+export function Select({
+  children,
+  disabled,
+  onMouseDown,
+  onKeyDown,
+  onBlur,
+  ...props
+}: SelectHTMLAttributes<HTMLSelectElement>) {
   const selectRef = useRef<HTMLSelectElement>(null);
   const root = useRef<HTMLSpanElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -42,7 +58,7 @@ export function Select({ children, disabled, onMouseDown, onKeyDown, onBlur, ...
   const typed = useRef({ prefix: '', at: 0 });
   const value = props.value === undefined || props.value === null ? '' : String(props.value);
   function enabledIndexes(list: Option[]) {
-    return list.map((option, index) => option.disabled ? -1 : index).filter(index => index >= 0);
+    return list.map((option, index) => (option.disabled ? -1 : index)).filter(index => index >= 0);
   }
   function matchTypeahead(list: Option[], prefix: string, from: number) {
     const needle = prefix.toLowerCase();
@@ -57,7 +73,11 @@ export function Select({ children, disabled, onMouseDown, onKeyDown, onBlur, ...
   }
   function commit(next: string) {
     const select = selectRef.current;
-    if (!select || select.disabled || select.value === next) { setOpen(false); select?.focus(); return; }
+    if (!select || select.disabled || select.value === next) {
+      setOpen(false);
+      select?.focus();
+      return;
+    }
     Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set?.call(select, next);
     select.dispatchEvent(new Event('change', { bubbles: true }));
     setOpen(false);
@@ -79,11 +99,17 @@ export function Select({ children, disabled, onMouseDown, onKeyDown, onBlur, ...
     placeList(selectRef.current, listRef.current);
     listRef.current.querySelector<HTMLElement>('[aria-selected="true"]')?.scrollIntoView?.({ block: 'nearest' });
   }, [open, options, active]);
-  useEffect(() => { setOpen(false); }, [value]);
+  useEffect(() => {
+    setOpen(false);
+  }, [value]);
   useEffect(() => {
     if (!open) return;
-    const onDoc = (event: MouseEvent) => { if (!containsNode(event.target as Node)) setOpen(false); };
-    const onReposition = () => { if (selectRef.current && listRef.current) placeList(selectRef.current, listRef.current); };
+    const onDoc = (event: MouseEvent) => {
+      if (!containsNode(event.target as Node)) setOpen(false);
+    };
+    const onReposition = () => {
+      if (selectRef.current && listRef.current) placeList(selectRef.current, listRef.current);
+    };
     document.addEventListener('mousedown', onDoc);
     window.addEventListener('resize', onReposition);
     document.addEventListener('scroll', onReposition, true);
@@ -98,7 +124,8 @@ export function Select({ children, disabled, onMouseDown, onKeyDown, onBlur, ...
     if (event.defaultPrevented || disabled) return;
     event.preventDefault();
     selectRef.current?.focus();
-    if (open) setOpen(false); else openList();
+    if (open) setOpen(false);
+    else openList();
   }
   function onSelectKeyDown(event: ReactKeyboardEvent<HTMLSelectElement>) {
     onKeyDown?.(event);
@@ -111,11 +138,24 @@ export function Select({ children, disabled, onMouseDown, onKeyDown, onBlur, ...
       setOpen(false);
       return;
     }
-    if (event.key === 'Tab') { if (open) setOpen(false); return; }
-    const opens = event.key === 'ArrowDown' || event.key === 'ArrowUp' || event.key === 'Enter' || event.key === ' ' || event.key === 'Home' || event.key === 'End' || (event.altKey && (event.key === 'ArrowDown' || event.key === 'ArrowUp'));
+    if (event.key === 'Tab') {
+      if (open) setOpen(false);
+      return;
+    }
+    const opens =
+      event.key === 'ArrowDown' ||
+      event.key === 'ArrowUp' ||
+      event.key === 'Enter' ||
+      event.key === ' ' ||
+      event.key === 'Home' ||
+      event.key === 'End' ||
+      (event.altKey && (event.key === 'ArrowDown' || event.key === 'ArrowUp'));
     if (opens) {
       event.preventDefault();
-      if (!open) { openList(); return; }
+      if (!open) {
+        openList();
+        return;
+      }
       if (!enabled.length) return;
       const position = Math.max(0, enabled.indexOf(active));
       if (event.key === 'ArrowDown') setActive(enabled[(position + 1) % enabled.length]!);
@@ -140,10 +180,47 @@ export function Select({ children, disabled, onMouseDown, onKeyDown, onBlur, ...
       setActive(next);
     }
   }
-  return <span className="in-panel-select" ref={root} data-open={open || undefined}>
-    <select {...props} ref={selectRef} disabled={disabled} aria-expanded={open} aria-controls={open ? listId : undefined} onMouseDown={onSelectMouseDown} onKeyDown={onSelectKeyDown} onBlur={event => { onBlur?.(event); if (!containsNode(event.relatedTarget as Node)) setOpen(false); }}>{children}</select>
-    {open && createPortal(<div ref={listRef} id={listId} role="listbox" className="in-panel-select-list">
-      {options.map((option, index) => <div key={`${option.value}:${index}`} role="option" aria-selected={index === active} aria-disabled={option.disabled || undefined} className={option.disabled ? 'is-disabled' : undefined} onMouseEnter={() => { if (!option.disabled) setActive(index); }} onMouseDown={event => event.preventDefault()} onClick={() => { if (!option.disabled) commit(option.value); }}>{option.label}</div>)}
-    </div>, overlayHost())}
-  </span>;
+  return (
+    <span className="in-panel-select" ref={root} data-open={open || undefined}>
+      <select
+        {...props}
+        ref={selectRef}
+        disabled={disabled}
+        aria-expanded={open}
+        aria-controls={open ? listId : undefined}
+        onMouseDown={onSelectMouseDown}
+        onKeyDown={onSelectKeyDown}
+        onBlur={event => {
+          onBlur?.(event);
+          if (!containsNode(event.relatedTarget as Node)) setOpen(false);
+        }}
+      >
+        {children}
+      </select>
+      {open &&
+        createPortal(
+          <div ref={listRef} id={listId} role="listbox" className="in-panel-select-list">
+            {options.map((option, index) => (
+              <div
+                key={`${option.value}:${index}`}
+                role="option"
+                aria-selected={index === active}
+                aria-disabled={option.disabled || undefined}
+                className={option.disabled ? 'is-disabled' : undefined}
+                onMouseEnter={() => {
+                  if (!option.disabled) setActive(index);
+                }}
+                onMouseDown={event => event.preventDefault()}
+                onClick={() => {
+                  if (!option.disabled) commit(option.value);
+                }}
+              >
+                {option.label}
+              </div>
+            ))}
+          </div>,
+          overlayHost(),
+        )}
+    </span>
+  );
 }

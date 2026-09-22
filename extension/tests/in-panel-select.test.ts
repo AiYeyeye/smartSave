@@ -7,13 +7,23 @@ import { ThemeProvider, THEME_OVERLAY_ID } from '../ui/ThemeProvider';
 
 function Harness({ disabled = false }: { disabled?: boolean }) {
   const [value, setValue] = useState('');
-  return createElement(ThemeProvider, null, createElement('label', null, '目标目录',
-    createElement(Select, { value, disabled, onChange: event => setValue(event.currentTarget.value) },
-      createElement('option', { value: '' }, '请选择目录'),
-      createElement('option', { value: 'a' }, 'Alpha'),
-      createElement('option', { value: 'b' }, 'Beta'),
-      createElement('option', { value: 'c', disabled: true }, 'Closed'),
-    )));
+  return createElement(
+    ThemeProvider,
+    null,
+    createElement(
+      'label',
+      null,
+      '目标目录',
+      createElement(
+        Select,
+        { value, disabled, onChange: event => setValue(event.currentTarget.value) },
+        createElement('option', { value: '' }, '请选择目录'),
+        createElement('option', { value: 'a' }, 'Alpha'),
+        createElement('option', { value: 'b' }, 'Beta'),
+        createElement('option', { value: 'c', disabled: true }, 'Closed'),
+      ),
+    ),
+  );
 }
 
 it('keeps native labeled select contracts for change and value', async () => {

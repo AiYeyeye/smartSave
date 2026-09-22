@@ -13,8 +13,13 @@ export function connectTree(runtime: Pick<typeof chrome.runtime, 'connect'>, rec
   function detach() {
     generation++;
     clearTimeout(responseTimer);
-    const old = port; port = undefined;
-    try { old?.disconnect(); } catch { /* Already disconnected. */ }
+    const old = port;
+    port = undefined;
+    try {
+      old?.disconnect();
+    } catch {
+      /* Already disconnected. */
+    }
   }
   function retry(message: string) {
     if (closed) return;
@@ -22,7 +27,10 @@ export function connectTree(runtime: Pick<typeof chrome.runtime, 'connect'>, rec
     clearTimeout(retryTimer);
     // Invalidate authority immediately. Only the view may retain a read-only snapshot.
     receive({ status: 'loading' });
-    if (++failures > MAX_RECONNECTS) { receive({ status: 'error', message }); return; }
+    if (++failures > MAX_RECONNECTS) {
+      receive({ status: 'error', message });
+      return;
+    }
     retryTimer = setTimeout(connect, 1000);
   }
   function connect() {
@@ -41,12 +49,16 @@ export function connectTree(runtime: Pick<typeof chrome.runtime, 'connect'>, rec
       connection.onMessage.addListener((message: unknown) => {
         if (closed || generation !== current) return;
         const parsed = envelope.safeParse(message);
-        if (!parsed.success) { retry('书签响应无效，请重新连接。'); return; }
+        if (!parsed.success) {
+          retry('书签响应无效，请重新连接。');
+          return;
+        }
         if (parsed.data.state.status === 'loading') {
           // Repeated loading events must not extend an already-running deadline.
           if (responseTimer === undefined) awaitResponse();
         } else {
-          clearTimeout(responseTimer); responseTimer = undefined;
+          clearTimeout(responseTimer);
+          responseTimer = undefined;
         }
         if (parsed.data.state.status === 'ready') failures = 0;
         receive(parsed.data.state);
@@ -63,5 +75,9 @@ export function connectTree(runtime: Pick<typeof chrome.runtime, 'connect'>, rec
     }
   }
   connect();
-  return () => { closed = true; clearTimeout(retryTimer); detach(); };
+  return () => {
+    closed = true;
+    clearTimeout(retryTimer);
+    detach();
+  };
 }

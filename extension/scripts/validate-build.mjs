@@ -6,15 +6,31 @@ import { z } from 'zod';
 
 const manifestSchema = z.object({
   manifest_version: z.literal(3),
-  permissions: z.tuple([z.literal('bookmarks'), z.literal('storage'), z.literal('activeTab'), z.literal('scripting'), z.literal('contextMenus'), z.literal('favicon')]),
+  permissions: z.tuple([
+    z.literal('bookmarks'),
+    z.literal('storage'),
+    z.literal('activeTab'),
+    z.literal('scripting'),
+    z.literal('contextMenus'),
+    z.literal('favicon'),
+  ]),
   background: z.object({ service_worker: z.string(), type: z.literal('module') }),
   side_panel: z.never().optional(),
   options_ui: z.object({ page: z.string() }),
   host_permissions: z.never().optional(),
   optional_host_permissions: z.tuple([z.literal('https://*/*'), z.literal('http://*/*')]),
-  content_security_policy: z.object({ extension_pages: z.literal("script-src 'self'; object-src 'self'; connect-src https: http:") }),
+  content_security_policy: z.object({
+    extension_pages: z.literal("script-src 'self'; object-src 'self'; connect-src https: http:"),
+  }),
   content_scripts: z.never().optional(),
-  web_accessible_resources: z.array(z.object({ resources: z.array(z.literal('panel/index.html')).length(1), matches: z.tuple([z.literal('http://*/*'), z.literal('https://*/*')]) })).length(1),
+  web_accessible_resources: z
+    .array(
+      z.object({
+        resources: z.array(z.literal('panel/index.html')).length(1),
+        matches: z.tuple([z.literal('http://*/*'), z.literal('https://*/*')]),
+      }),
+    )
+    .length(1),
 });
 
 function rejectDynamicImports(node) {
@@ -49,7 +65,11 @@ export async function validateBuild(directory) {
       const ast = parse(text, { ecmaVersion: 'latest', sourceType: 'module' });
       rejectDynamicImports(ast);
       for (const node of ast.body) {
-        if (node.type === 'ImportDeclaration' || node.type === 'ExportAllDeclaration' || node.type === 'ExportNamedDeclaration') {
+        if (
+          node.type === 'ImportDeclaration' ||
+          node.type === 'ExportAllDeclaration' ||
+          node.type === 'ExportNamedDeclaration'
+        ) {
           if (node.source) await check(resolve(dirname(file), node.source.value));
         }
       }
@@ -58,7 +78,8 @@ export async function validateBuild(directory) {
   const assets = await readdir(resolve(root, 'assets'));
   const parserWorkers = assets.filter(name => /^parse-worker-.*\.js$/.test(name));
   const parserClients = assets.filter(name => /^import-client-.*\.js$/.test(name));
-  if (parserWorkers.length !== 1 || parserClients.length !== 1) throw new Error('Missing import Worker/client build contract');
+  if (parserWorkers.length !== 1 || parserClients.length !== 1)
+    throw new Error('Missing import Worker/client build contract');
   for (const name of [...parserWorkers, ...parserClients]) await check(resolve(root, 'assets', name));
   for (const entry of [manifest.background.service_worker, manifest.options_ui.page, 'panel/index.html']) {
     await check(resolve(root, entry));

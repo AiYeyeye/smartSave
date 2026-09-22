@@ -4,9 +4,18 @@ import type { InlineConfig } from 'vite';
 /** Future approved content scripts must use a separate, single-file classic build. */
 export function contentScriptConfig(entry: string, outDir: string): InlineConfig {
   return {
-    configFile: false, publicDir: false,
-    build: { target: 'chrome114', outDir, emptyOutDir: false,
-      lib: { entry: resolve(entry), name: 'ZhilanContentScript', formats: ['iife'], fileName: () => 'content-script.js' },
+    configFile: false,
+    publicDir: false,
+    build: {
+      target: 'chrome114',
+      outDir,
+      emptyOutDir: false,
+      lib: {
+        entry: resolve(entry),
+        name: 'ZhilanContentScript',
+        formats: ['iife'],
+        fileName: () => 'content-script.js',
+      },
     },
   };
 }

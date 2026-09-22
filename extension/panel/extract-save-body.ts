@@ -6,12 +6,24 @@ export interface ExtractionBoundary {
   message(tabId: number, message: unknown, documentId: string): Promise<unknown>;
 }
 /** One response contract for the content script reply and the worker reply to the panel: exact page URL, at most 1500 code points, never truncated here. */
-export const saveBodySchema = (url: string) => z.object({ status: z.literal('ready'), url: z.literal(url), snippet: z.string().refine(text => Array.from(text).length <= 1500) });
+export const saveBodySchema = (url: string) =>
+  z.object({
+    status: z.literal('ready'),
+    url: z.literal(url),
+    snippet: z.string().refine(text => Array.from(text).length <= 1500),
+  });
 export type SaveBody = z.infer<ReturnType<typeof saveBodySchema>>;
-export async function extractSaveBody(page: SavePage, current: () => SavePage | undefined, boundary: ExtractionBoundary): Promise<string> {
-  const valid = () => { if (current()?.token !== page.token) throw Error('stale-page'); };
+export async function extractSaveBody(
+  page: SavePage,
+  current: () => SavePage | undefined,
+  boundary: ExtractionBoundary,
+): Promise<string> {
+  const valid = () => {
+    if (current()?.token !== page.token) throw Error('stale-page');
+  };
   valid();
-  const tab = await boundary.get(page.tabId); valid();
+  const tab = await boundary.get(page.tabId);
+  valid();
   if (tab.url !== page.url) throw Error('stale-page');
   let documentId: string | undefined;
   try {
@@ -19,11 +31,16 @@ export async function extractSaveBody(page: SavePage, current: () => SavePage | 
     documentId = results.find(result => result.frameId === 0)?.documentId;
     if (!documentId) throw Error('document-unavailable');
     valid();
-    const response = await boundary.message(page.tabId, { type: 'zhilan-extract-current-page', url: page.url }, documentId);
+    const response = await boundary.message(
+      page.tabId,
+      { type: 'zhilan-extract-current-page', url: page.url },
+      documentId,
+    );
     valid();
     return saveBodySchema(page.url).parse(response).snippet;
   } finally {
     // Even cancellation while injection awaited removes the dormant listener in that exact document.
-    if (documentId) await boundary.message(page.tabId, { type: 'zhilan-cancel-extraction' }, documentId).catch(() => {});
+    if (documentId)
+      await boundary.message(page.tabId, { type: 'zhilan-cancel-extraction' }, documentId).catch(() => {});
   }
 }

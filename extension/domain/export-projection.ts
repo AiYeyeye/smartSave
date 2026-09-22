@@ -1,10 +1,21 @@
 import type { NodeRef, TreeSnapshot } from './node-reference';
 
-export type ExportNode = Readonly<{
-  type: 'folder'; id: string; title: string; path: readonly string[]; children: readonly ExportNode[];
-} | {
-  type: 'bookmark'; id: string; title: string; path: readonly string[]; url: string;
-}>;
+export type ExportNode = Readonly<
+  | {
+      type: 'folder';
+      id: string;
+      title: string;
+      path: readonly string[];
+      children: readonly ExportNode[];
+    }
+  | {
+      type: 'bookmark';
+      id: string;
+      title: string;
+      path: readonly string[];
+      url: string;
+    }
+>;
 export interface ExportDocument {
   readonly format: 'markora.bookmarks';
   readonly schemaVersion: 1;
@@ -24,11 +35,18 @@ export interface ExportProjection {
 const proofs = new WeakMap<ExportProjection, string>();
 export const EXPORT_RESOURCE_LIMITS = Object.freeze({ nodes: 50_000, depth: 64, bytes: 16 * 1024 * 1024 });
 export class ExportProjectionError extends Error {
-  constructor(readonly code: 'scope-invalid-or-stale' | 'resource') { super(`export-${code}`); this.name = 'ExportProjectionError'; }
+  constructor(readonly code: 'scope-invalid-or-stale' | 'resource') {
+    super(`export-${code}`);
+    this.name = 'ExportProjectionError';
+  }
 }
 // Function declarations (not arrow consts) so TypeScript narrows after `if (bad) reject();` via the never return type.
-function reject(): never { throw new ExportProjectionError('scope-invalid-or-stale'); }
-function resource(): never { throw new ExportProjectionError('resource'); }
+function reject(): never {
+  throw new ExportProjectionError('scope-invalid-or-stale');
+}
+function resource(): never {
+  throw new ExportProjectionError('resource');
+}
 const byteLength = (text: string) => new TextEncoder().encode(text).byteLength;
 
 function validateTree(tree: TreeSnapshot): void {
@@ -43,7 +61,8 @@ function validateTree(tree: TreeSnapshot): void {
     const { id, parentId, depth } = pending.pop()!;
     if (depth > EXPORT_RESOURCE_LIMITS.depth) resource();
     const node = nodes.get(id);
-    if (!node || reached.has(id) || node.parentId !== parentId || node.ref.installationId !== tree.installationId) reject();
+    if (!node || reached.has(id) || node.parentId !== parentId || node.ref.installationId !== tree.installationId)
+      reject();
     reached.add(id);
     if (node.ref.kind === 'bookmark' && (node.url === undefined || node.childrenIds.length)) reject();
     if (node.ref.kind === 'folder' && node.url !== undefined) reject();
@@ -61,20 +80,34 @@ function validateTree(tree: TreeSnapshot): void {
 }
 
 function project(tree: TreeSnapshot, scope: ExportScope, generatedAt: string): ExportDocument {
-  if (!scope.roots.length || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(generatedAt) || !Number.isFinite(Date.parse(generatedAt))) reject();
+  if (
+    !scope.roots.length ||
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(generatedAt) ||
+    !Number.isFinite(Date.parse(generatedAt))
+  )
+    reject();
   if (scope.roots.length + scope.excludedFolders.length > EXPORT_RESOURCE_LIMITS.nodes) resource();
   validateTree(tree);
   const nodes = new Map(tree.nodes.map(node => [node.ref.nativeId, node]));
   const resolve = (ref: NodeRef) => {
     const node = nodes.get(ref.nativeId);
-    if (ref.installationId !== tree.installationId || ref.kind !== 'folder' || node?.ref.kind !== 'folder' || node.parentId === undefined) reject();
+    if (
+      ref.installationId !== tree.installationId ||
+      ref.kind !== 'folder' ||
+      node?.ref.kind !== 'folder' ||
+      node.parentId === undefined
+    )
+      reject();
     return ref.nativeId;
   };
   const selected = new Set(scope.roots.map(resolve));
   const excluded = new Set(scope.excludedFolders.map(resolve));
   const ancestorsContain = (id: string, ids: Set<string>) => {
     let parent = nodes.get(id)!.parentId;
-    while (parent !== undefined) { if (ids.has(parent)) return true; parent = nodes.get(parent)!.parentId; }
+    while (parent !== undefined) {
+      if (ids.has(parent)) return true;
+      parent = nodes.get(parent)!.parentId;
+    }
     return false;
   };
   let serial = 0;
@@ -88,12 +121,32 @@ function project(tree: TreeSnapshot, scope: ExportScope, generatedAt: string): E
     const node = nodes.get(nativeId)!;
     const id = `n${++serial}`;
     const path = Object.freeze([...parentPath, node.title]);
-    account({ id, title: node.title, path, url: node.url, type: node.ref.kind, children: [] }, [...path, node.title, node.url ?? '']);
-    if (node.ref.kind === 'bookmark') return Object.freeze({ type: 'bookmark', id, title: node.title, path, url: node.url! });
-    return Object.freeze({ type: 'folder', id, title: node.title, path, children: Object.freeze(node.childrenIds.filter(child => !excluded.has(child)).map(child => convert(child, path))) });
+    account({ id, title: node.title, path, url: node.url, type: node.ref.kind, children: [] }, [
+      ...path,
+      node.title,
+      node.url ?? '',
+    ]);
+    if (node.ref.kind === 'bookmark')
+      return Object.freeze({ type: 'bookmark', id, title: node.title, path, url: node.url! });
+    return Object.freeze({
+      type: 'folder',
+      id,
+      title: node.title,
+      path,
+      children: Object.freeze(
+        node.childrenIds.filter(child => !excluded.has(child)).map(child => convert(child, path)),
+      ),
+    });
   };
-  const roots = [...selected].filter(id => !ancestorsContain(id, selected) && !excluded.has(id) && !ancestorsContain(id, excluded));
-  const document = Object.freeze({ format: 'markora.bookmarks' as const, schemaVersion: 1 as const, generatedAt, roots: Object.freeze(roots.map(id => convert(id, []))) });
+  const roots = [...selected].filter(
+    id => !ancestorsContain(id, selected) && !excluded.has(id) && !ancestorsContain(id, excluded),
+  );
+  const document = Object.freeze({
+    format: 'markora.bookmarks' as const,
+    schemaVersion: 1 as const,
+    generatedAt,
+    roots: Object.freeze(roots.map(id => convert(id, []))),
+  });
   if (byteLength(JSON.stringify(document, null, 2)) + 1 > EXPORT_RESOURCE_LIMITS.bytes) resource();
   return document;
 }
@@ -101,8 +154,19 @@ function project(tree: TreeSnapshot, scope: ExportScope, generatedAt: string): E
 /** Pure, explicit selection only. No AI policy, native authority, permission or file handle. */
 export function createExportProjection(tree: TreeSnapshot, scope: ExportScope, generatedAt: string): ExportProjection {
   if (scope.roots.length + scope.excludedFolders.length > EXPORT_RESOURCE_LIMITS.nodes) resource();
-  const frozenScope = Object.freeze({ roots: Object.freeze(scope.roots.map(ref => Object.freeze({ ...ref }))), excludedFolders: Object.freeze(scope.excludedFolders.map(ref => Object.freeze({ ...ref }))) });
-  const projection = Object.freeze({ document: project(tree, frozenScope, generatedAt), scope: frozenScope, source: Object.freeze({ installationId: tree.installationId, epoch: tree.epoch, observedRevision: tree.observedRevision }) });
+  const frozenScope = Object.freeze({
+    roots: Object.freeze(scope.roots.map(ref => Object.freeze({ ...ref }))),
+    excludedFolders: Object.freeze(scope.excludedFolders.map(ref => Object.freeze({ ...ref }))),
+  });
+  const projection = Object.freeze({
+    document: project(tree, frozenScope, generatedAt),
+    scope: frozenScope,
+    source: Object.freeze({
+      installationId: tree.installationId,
+      epoch: tree.epoch,
+      observedRevision: tree.observedRevision,
+    }),
+  });
   proofs.set(projection, JSON.stringify(tree));
   return projection;
 }

@@ -12,7 +12,13 @@ it('rejects query and accepts hash-stripped panel path', () => {
 it('options path is trusted without nonce; panel requires bind', () => {
   const options = { id, url: `chrome-extension://${id}/options/index.html` };
   expect(trustedMutationSender(options, id)).toBe(true);
-  const panel = { id, url: `chrome-extension://${id}/panel/index.html`, frameId: 3, documentId: 'd', tab: { id: 1, windowId: 1 } };
+  const panel = {
+    id,
+    url: `chrome-extension://${id}/panel/index.html`,
+    frameId: 3,
+    documentId: 'd',
+    tab: { id: 1, windowId: 1 },
+  };
   expect(trustedMutationSender(panel, id)).toBe(false);
   const nonce = uiRegistry().issueNonce();
   expect(uiRegistry().bind(nonce, panel, id)).toBeTruthy();
@@ -20,8 +26,20 @@ it('options path is trusted without nonce; panel requires bind', () => {
 });
 it('second frame with reused nonce is rejected', () => {
   const nonce = uiRegistry().issueNonce();
-  const a = { id, url: `chrome-extension://${id}/panel/index.html#${nonce}`, frameId: 3, documentId: 'a', tab: { id: 1, windowId: 1 } };
-  const b = { id, url: `chrome-extension://${id}/panel/index.html#${nonce}`, frameId: 4, documentId: 'b', tab: { id: 1, windowId: 1 } };
+  const a = {
+    id,
+    url: `chrome-extension://${id}/panel/index.html#${nonce}`,
+    frameId: 3,
+    documentId: 'a',
+    tab: { id: 1, windowId: 1 },
+  };
+  const b = {
+    id,
+    url: `chrome-extension://${id}/panel/index.html#${nonce}`,
+    frameId: 4,
+    documentId: 'b',
+    tab: { id: 1, windowId: 1 },
+  };
   expect(uiRegistry().bind(nonce, a, id)).toBeTruthy();
   expect(uiRegistry().bind(nonce, b, id)).toBeUndefined();
   expect(trustedMutationSender(b, id)).toBe(false);
@@ -45,7 +63,9 @@ it('connect-before-bind retries when the exact created tab is bound', () => {
   const captured = { tabId: 9, windowId: 1, url: 'https://a.test/', title: 'A' };
   const id = uiRegistry().beginTransfer(captured);
   let seen = 0;
-  uiRegistry().whenTransferBound(77, () => { seen++; });
+  uiRegistry().whenTransferBound(77, () => {
+    seen++;
+  });
   expect(seen).toBe(0);
   expect(uiRegistry().takeTransfer(77)).toBeUndefined();
   uiRegistry().bindTransfer(id, 77);

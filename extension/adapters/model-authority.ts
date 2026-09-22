@@ -10,18 +10,39 @@ export function browserModelAuthority(store: SettingsStore): ModelAuthority {
   let tree: TreeSnapshot | undefined;
   const listeners = new Set<() => void>();
   let stop: (() => void) | undefined;
-  const changed = () => { for (const listener of listeners) listener(); };
+  const changed = () => {
+    for (const listener of listeners) listener();
+  };
   return {
-    async read() { if (!tree) throw Error('tree-unavailable'); const settings = await store.snapshot(); if (!tree) throw Error('tree-unavailable'); return { ...settings, tree: structuredClone(tree) }; },
+    async read() {
+      if (!tree) throw Error('tree-unavailable');
+      const settings = await store.snapshot();
+      if (!tree) throw Error('tree-unavailable');
+      return { ...settings, tree: structuredClone(tree) };
+    },
     subscribe(listener) {
       listeners.add(listener);
       if (!stop) {
-        const stopTree = connectTree(chrome.runtime, state => { tree = state.status === 'ready' ? state.snapshot : undefined; changed(); });
+        const stopTree = connectTree(chrome.runtime, state => {
+          tree = state.status === 'ready' ? state.snapshot : undefined;
+          changed();
+        });
         const stopStore = store.subscribe(changed);
         chrome.permissions.onRemoved.addListener(changed);
-        stop = () => { stopTree(); stopStore(); chrome.permissions.onRemoved.removeListener(changed); tree = undefined; };
+        stop = () => {
+          stopTree();
+          stopStore();
+          chrome.permissions.onRemoved.removeListener(changed);
+          tree = undefined;
+        };
       }
-      return () => { listeners.delete(listener); if (!listeners.size) { stop?.(); stop = undefined; } };
+      return () => {
+        listeners.delete(listener);
+        if (!listeners.size) {
+          stop?.();
+          stop = undefined;
+        }
+      };
     },
   };
 }

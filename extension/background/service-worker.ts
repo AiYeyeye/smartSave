@@ -11,18 +11,33 @@ import { extractSaveBodyForUi } from './extract-coordinator';
 import { trustedMutationSender } from './ui-identity';
 
 const host = startSidebarHost();
-const { validateSaveContext, livePageForSender } = startSaveEntrypoints(() => coordinator?.purgeSavePreviews(), (tab, capture) => host.show(tab, capture));
+const { validateSaveContext, livePageForSender } = startSaveEntrypoints(
+  () => coordinator?.purgeSavePreviews(),
+  (tab, capture) => host.show(tab, capture),
+);
 const projection = startTreeService();
 startFileOutput(projection);
 const settings = new SettingsStore(chrome.storage.local);
 const persistence = new ImportPersistenceStore();
-const coordinator = startMutationService(projection, validateSaveContext, startOrganizerAuthority(settings), startImportAuthority(settings, projection, persistence.importCheckpoints), persistence);
+const coordinator = startMutationService(
+  projection,
+  validateSaveContext,
+  startOrganizerAuthority(settings),
+  startImportAuthority(settings, projection, persistence.importCheckpoints),
+  persistence,
+);
 
 chrome.runtime.onMessage.addListener((message, sender, reply) => {
-  if (!message || typeof message !== 'object' || !('type' in message) || message.type !== 'extractSaveBody') return false;
+  if (!message || typeof message !== 'object' || !('type' in message) || message.type !== 'extractSaveBody')
+    return false;
   if (!trustedMutationSender(sender, chrome.runtime.id)) return false;
   const page = livePageForSender(sender);
-  if (!page) { reply({ status: 'error', reason: 'no-live-save' }); return false; }
-  void extractSaveBodyForUi(sender, page, () => livePageForSender(sender)).then(reply).catch(error => reply({ status: 'error', reason: String(error && (error as Error).message) }));
+  if (!page) {
+    reply({ status: 'error', reason: 'no-live-save' });
+    return false;
+  }
+  void extractSaveBodyForUi(sender, page, () => livePageForSender(sender))
+    .then(reply)
+    .catch(error => reply({ status: 'error', reason: String(error && (error as Error).message) }));
   return true;
 });

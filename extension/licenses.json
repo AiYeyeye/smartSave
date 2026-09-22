@@ -2077,6 +2077,19 @@
       "description": "prelude.ls is a functionally oriented utility library. It is powerful and flexible. Almost all of its functions are curried. It is written in, and is the recommended base library for, LiveScript."
     },
     {
+      "name": "prettier",
+      "versions": [
+        "3.9.8"
+      ],
+      "paths": [
+        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\prettier@3.9.8\\node_modules\\prettier"
+      ],
+      "license": "MIT",
+      "author": "James Long",
+      "homepage": "https://prettier.io",
+      "description": "Prettier is an opinionated code formatter"
+    },
+    {
       "name": "pretty-format",
       "versions": [
         "27.0.2"

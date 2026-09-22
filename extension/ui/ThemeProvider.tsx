@@ -13,12 +13,14 @@ export const THEME_OVERLAY_ID = 'theme-overlay';
 
 export function ThemeProvider({ children }: PropsWithChildren) {
   const [theme, setTheme] = useState<Theme>('stationery');
-  return <ThemeContext.Provider value={{ theme, setTheme }}>
-    <div className="theme-root" data-theme={theme}>
-      {children}
-      <div id={THEME_OVERLAY_ID} className="theme-overlay" />
-    </div>
-  </ThemeContext.Provider>;
+  return (
+    <ThemeContext.Provider value={{ theme, setTheme }}>
+      <div className="theme-root" data-theme={theme}>
+        {children}
+        <div id={THEME_OVERLAY_ID} className="theme-overlay" />
+      </div>
+    </ThemeContext.Provider>
+  );
 }
 
 export function overlayHost() {
@@ -33,11 +35,16 @@ export function useTheme() {
 
 export function ThemePicker() {
   const context = useTheme();
-  return <fieldset className="theme-picker"><legend>界面风格</legend>
-    {themes.map(({ id, name }) => <label key={id} className="theme-choice">
-      <input type="radio" name="appearance" checked={context.theme === id} onChange={() => context.setTheme(id)} />
-      <span>{name}</span>
-    </label>)}
-    <p className="hint">仅在当前页面会话生效；关闭后恢复默认，不同步到其他页面。</p>
-  </fieldset>;
+  return (
+    <fieldset className="theme-picker">
+      <legend>界面风格</legend>
+      {themes.map(({ id, name }) => (
+        <label key={id} className="theme-choice">
+          <input type="radio" name="appearance" checked={context.theme === id} onChange={() => context.setTheme(id)} />
+          <span>{name}</span>
+        </label>
+      ))}
+      <p className="hint">仅在当前页面会话生效；关闭后恢复默认，不同步到其他页面。</p>
+    </fieldset>
+  );
 }

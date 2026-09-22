@@ -19,16 +19,33 @@ export function SidebarPosition() {
     if (typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) return;
     chrome.runtime.sendMessage({ type: HOST, action: 'set', ...next });
   }
-  return <section aria-label="侧栏位置"><h3>侧栏位置</h3>
-    <p role="status">当前位置：{side === 'left' ? '左侧' : '右侧'} · {width}px</p>
-    <div className="actions">
-      <button type="button" onClick={() => apply({ side: 'left' })}>左侧</button>
-      <button type="button" onClick={() => apply({ side: 'right' })}>右侧</button>
-      <button type="button" onClick={() => apply({ width: 320 })}>窄</button>
-      <button type="button" onClick={() => apply({ width: 380 })}>中</button>
-      <button type="button" onClick={() => apply({ width: 480 })}>宽</button>
-      <button type="button" onClick={() => apply({ close: true })}>关闭侧栏</button>
-    </div>
-    <p className="hint">位置由智栏控制，不使用浏览器原生侧栏。关闭会移除此页上的侧栏。</p>
-  </section>;
+  return (
+    <section aria-label="侧栏位置">
+      <h3>侧栏位置</h3>
+      <p role="status">
+        当前位置：{side === 'left' ? '左侧' : '右侧'} · {width}px
+      </p>
+      <div className="actions">
+        <button type="button" onClick={() => apply({ side: 'left' })}>
+          左侧
+        </button>
+        <button type="button" onClick={() => apply({ side: 'right' })}>
+          右侧
+        </button>
+        <button type="button" onClick={() => apply({ width: 320 })}>
+          窄
+        </button>
+        <button type="button" onClick={() => apply({ width: 380 })}>
+          中
+        </button>
+        <button type="button" onClick={() => apply({ width: 480 })}>
+          宽
+        </button>
+        <button type="button" onClick={() => apply({ close: true })}>
+          关闭侧栏
+        </button>
+      </div>
+      <p className="hint">位置由智栏控制，不使用浏览器原生侧栏。关闭会移除此页上的侧栏。</p>
+    </section>
+  );
 }

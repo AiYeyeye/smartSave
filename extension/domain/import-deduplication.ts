@@ -22,19 +22,36 @@ export function deduplicateImport(items: readonly ImportItem[], tree: TreeSnapsh
   const diagnostics: ImportDiagnostic[] = [];
   const ordinals = new Set<number>();
   for (const item of items) {
-    if (!Number.isSafeInteger(item.sourceOrdinal) || item.sourceOrdinal < 0 || ordinals.has(item.sourceOrdinal)) throw Error('invalid-source-ordinal');
+    if (!Number.isSafeInteger(item.sourceOrdinal) || item.sourceOrdinal < 0 || ordinals.has(item.sourceOrdinal))
+      throw Error('invalid-source-ordinal');
     ordinals.add(item.sourceOrdinal);
   }
   for (const item of [...items].sort((a, b) => a.sourceOrdinal - b.sourceOrdinal)) {
-    if (item.diagnostic) { diagnostics.push({ sourceOrdinal: item.sourceOrdinal, reason: item.diagnostic }); continue; }
+    if (item.diagnostic) {
+      diagnostics.push({ sourceOrdinal: item.sourceOrdinal, reason: item.diagnostic });
+      continue;
+    }
     // Validate again at the domain boundary: callers must not bypass parser diagnostics.
     const reason = importURLDiagnostic(item.rawURL);
-    if (reason) { diagnostics.push({ sourceOrdinal: item.sourceOrdinal, reason }); continue; }
-    if (existing.has(item.rawURL)) { diagnostics.push({ sourceOrdinal: item.sourceOrdinal, reason: 'existing-url' }); continue; }
+    if (reason) {
+      diagnostics.push({ sourceOrdinal: item.sourceOrdinal, reason });
+      continue;
+    }
+    if (existing.has(item.rawURL)) {
+      diagnostics.push({ sourceOrdinal: item.sourceOrdinal, reason: 'existing-url' });
+      continue;
+    }
     const first = retained.get(item.rawURL);
     if (first) {
-      if (!first.titleLocked && item.title.trim()) { first.item.title = item.title; first.titleLocked = true; }
-      diagnostics.push({ sourceOrdinal: item.sourceOrdinal, reason: 'file-duplicate', retainedSourceOrdinal: first.item.sourceOrdinal });
+      if (!first.titleLocked && item.title.trim()) {
+        first.item.title = item.title;
+        first.titleLocked = true;
+      }
+      diagnostics.push({
+        sourceOrdinal: item.sourceOrdinal,
+        reason: 'file-duplicate',
+        retainedSourceOrdinal: first.item.sourceOrdinal,
+      });
     } else retained.set(item.rawURL, { item: structuredClone(item), titleLocked: Boolean(item.title.trim()) });
   }
   return { pending: [...retained.values()], diagnostics };

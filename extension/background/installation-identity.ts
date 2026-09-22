@@ -6,11 +6,12 @@ export interface IdentityStorage {
 export function installationIdentity(storage: IdentityStorage, random: () => string = () => crypto.randomUUID()) {
   let pending: Promise<string> | undefined;
   return function ensureIdentity() {
-    return pending ??= (async () => {
+    return (pending ??= (async () => {
       await storage.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' });
       const result = await storage.get('installationId');
       if (result.installationId !== undefined) {
-        if (typeof result.installationId !== 'string' || !result.installationId) throw Error('Invalid installation identity');
+        if (typeof result.installationId !== 'string' || !result.installationId)
+          throw Error('Invalid installation identity');
         return result.installationId;
       }
       const id = random();
@@ -20,6 +21,6 @@ export function installationIdentity(storage: IdentityStorage, random: () => str
       // A rejected write may already have persisted: retry the read, never reuse a candidate ID.
       pending = undefined;
       throw error;
-    });
+    }));
   };
 }

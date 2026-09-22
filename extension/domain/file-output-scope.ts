@@ -6,8 +6,12 @@ export function fileOutputAncestry(tree: TreeSnapshot, scope: ExportScope): stri
   createExportProjection(tree, scope, new Date().toISOString());
   const nodes = new Map(tree.nodes.map(node => [node.ref.nativeId, node]));
   return [...scope.roots, ...scope.excludedFolders].map(ref => {
-    const path: string[] = []; let node = nodes.get(ref.nativeId);
-    while (node) { path.push(node.ref.nativeId); node = node.parentId === undefined ? undefined : nodes.get(node.parentId); }
+    const path: string[] = [];
+    let node = nodes.get(ref.nativeId);
+    while (node) {
+      path.push(node.ref.nativeId);
+      node = node.parentId === undefined ? undefined : nodes.get(node.parentId);
+    }
     return path;
   });
 }

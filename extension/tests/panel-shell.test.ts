@@ -8,12 +8,53 @@ import { fileURLToPath } from 'node:url';
 import { App } from '../ui/App';
 import { TreeRows } from '../panel/BookmarkTree';
 import { TREE_PORT, type TreeSnapshot } from '../domain/node-reference';
-const tree: TreeSnapshot = { installationId: 'i', epoch: 'e', observedRevision: 0, roots: ['r'], nodes: [
-  { ref: { installationId: 'i', nativeId: 'r', kind: 'folder' }, title: 'Root', index: 0, childrenIds: ['f','g'], readOnly: true, childrenWritable: true, observedRevision: 0 },
-  { ref: { installationId: 'i', nativeId: 'f', kind: 'folder' }, title: 'Folder', parentId: 'r', index: 0, childrenIds: ['b'], readOnly: false, childrenWritable: true, observedRevision: 0 },
-  { ref: { installationId: 'i', nativeId: 'g', kind: 'folder' }, title: 'Other', parentId: 'r', index: 1, childrenIds: [], readOnly: false, childrenWritable: true, observedRevision: 0 },
-  { ref: { installationId: 'i', nativeId: 'b', kind: 'bookmark' }, title: 'Book', url: 'https://example.test/', parentId: 'f', index: 0, childrenIds: [], readOnly: false, observedRevision: 0 },
-] };
+const tree: TreeSnapshot = {
+  installationId: 'i',
+  epoch: 'e',
+  observedRevision: 0,
+  roots: ['r'],
+  nodes: [
+    {
+      ref: { installationId: 'i', nativeId: 'r', kind: 'folder' },
+      title: 'Root',
+      index: 0,
+      childrenIds: ['f', 'g'],
+      readOnly: true,
+      childrenWritable: true,
+      observedRevision: 0,
+    },
+    {
+      ref: { installationId: 'i', nativeId: 'f', kind: 'folder' },
+      title: 'Folder',
+      parentId: 'r',
+      index: 0,
+      childrenIds: ['b'],
+      readOnly: false,
+      childrenWritable: true,
+      observedRevision: 0,
+    },
+    {
+      ref: { installationId: 'i', nativeId: 'g', kind: 'folder' },
+      title: 'Other',
+      parentId: 'r',
+      index: 1,
+      childrenIds: [],
+      readOnly: false,
+      childrenWritable: true,
+      observedRevision: 0,
+    },
+    {
+      ref: { installationId: 'i', nativeId: 'b', kind: 'bookmark' },
+      title: 'Book',
+      url: 'https://example.test/',
+      parentId: 'f',
+      index: 0,
+      childrenIds: [],
+      readOnly: false,
+      observedRevision: 0,
+    },
+  ],
+};
 
 function chromeStub(readyTree = false) {
   vi.stubGlobal('chrome', {
@@ -23,17 +64,30 @@ function chromeStub(readyTree = false) {
       connect: (info?: { name?: string }) => {
         const listeners: Array<(message: unknown) => void> = [];
         return {
-          onMessage: { addListener: (fn: (message: unknown) => void) => { listeners.push(fn); } },
+          onMessage: {
+            addListener: (fn: (message: unknown) => void) => {
+              listeners.push(fn);
+            },
+          },
           onDisconnect: { addListener: () => {} },
           postMessage: () => {
-            if (readyTree && info?.name === TREE_PORT) listeners.forEach(fn => fn({ version: 1, state: { status: 'ready', snapshot: tree } }));
+            if (readyTree && info?.name === TREE_PORT)
+              listeners.forEach(fn => fn({ version: 1, state: { status: 'ready', snapshot: tree } }));
           },
           disconnect: () => {},
         };
       },
       sendMessage: () => {},
     },
-    storage: { local: { get: async () => ({ 'tree.expanded.i.r': true, 'tree.expanded.i.f': true }), set: async () => {}, remove: async () => {}, setAccessLevel: async () => {} }, onChanged: { addListener: () => {}, removeListener: () => {} } },
+    storage: {
+      local: {
+        get: async () => ({ 'tree.expanded.i.r': true, 'tree.expanded.i.f': true }),
+        set: async () => {},
+        remove: async () => {},
+        setAccessLevel: async () => {},
+      },
+      onChanged: { addListener: () => {}, removeListener: () => {} },
+    },
     permissions: { onRemoved: { addListener: () => {}, removeListener: () => {} }, contains: async () => false },
   });
 }
@@ -149,7 +203,9 @@ it('batch mutate actions stay disabled for read-only or multi-select', async () 
   expect(within(bar).getByRole('button', { name: '删除' })).toBeDisabled();
   await user.click(screen.getByRole('checkbox', { name: '选择 Book' }));
   expect(within(bar).getByText('已选 2 项')).toBeVisible();
-  expect(within(bar).getByRole('status')).toHaveTextContent('当前版本暂不支持批量修改，请只选择一项进行编辑、移动或删除');
+  expect(within(bar).getByRole('status')).toHaveTextContent(
+    '当前版本暂不支持批量修改，请只选择一项进行编辑、移动或删除',
+  );
   expect(within(bar).getByRole('button', { name: '编辑 / 重命名' })).toBeDisabled();
   expect(within(bar).getByRole('button', { name: '移动' })).toBeDisabled();
   expect(within(bar).getByRole('button', { name: '删除' })).toBeDisabled();

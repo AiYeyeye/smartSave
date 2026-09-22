@@ -1,0 +1,16 @@
+# Generated or byte-exact inputs: never reformat.
+dist/
+node_modules/
+coverage/
+pnpm-lock.yaml
+audit.json
+licenses.json
+release-candidate.json
+import/fixtures/
+public/
+# Styles/markup/data are asserted on verbatim by tests or shipped as-is.
+*.css
+*.html
+*.json
+*.md
+*.py

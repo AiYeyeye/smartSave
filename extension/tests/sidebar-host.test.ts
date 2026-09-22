@@ -4,16 +4,27 @@ import { resetUiRegistry } from '../background/ui-identity';
 
 function event<T extends (...args: never[]) => unknown>() {
   const listeners: T[] = [];
-  return { addListener: (listener: T) => listeners.push(listener), emit: (...args: Parameters<T>) => listeners.forEach(listener => listener(...args)) };
+  return {
+    addListener: (listener: T) => listeners.push(listener),
+    emit: (...args: Parameters<T>) => listeners.forEach(listener => listener(...args)),
+  };
 }
 
-afterEach(() => { vi.unstubAllGlobals(); resetUiRegistry(); });
+afterEach(() => {
+  vi.unstubAllGlobals();
+  resetUiRegistry();
+});
 
 function harness() {
   const executeScript = vi.fn(async () => [{ result: { created: true } }]);
   const createTab = vi.fn(async () => ({ id: 77 }));
   vi.stubGlobal('chrome', {
-    runtime: { id: 'i', getURL: (path: string) => `chrome-extension://i/${path}`, onConnect: event(), onMessage: event() },
+    runtime: {
+      id: 'i',
+      getURL: (path: string) => `chrome-extension://i/${path}`,
+      onConnect: event(),
+      onMessage: event(),
+    },
     tabs: { onRemoved: event(), create: createTab },
     storage: { local: { get: async () => ({}), set: async () => {} } },
     scripting: { executeScript },

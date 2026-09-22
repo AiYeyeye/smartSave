@@ -12,7 +12,10 @@ export function bindUi(): Promise<boolean> {
       if (ok && location.hash) history.replaceState(null, '', `${location.pathname}${location.search}`);
       resolve(ok);
     });
-    port.onDisconnect.addListener(() => { clearTimeout(timer); resolve(false); });
+    port.onDisconnect.addListener(() => {
+      clearTimeout(timer);
+      resolve(false);
+    });
     port.postMessage({ type: 'bind', nonce });
   });
 }

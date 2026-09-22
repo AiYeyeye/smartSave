@@ -17,14 +17,31 @@ export function prepareMutation(snapshot: TreeSnapshot, command: Command): Confi
     return result;
   }
   const chains = ids.map(ancestors);
-  const scopeId = chains[0]?.find(id => byId.get(id)?.ref.kind === 'folder' && chains.every(chain => chain.includes(id)));
+  const scopeId = chains[0]?.find(
+    id => byId.get(id)?.ref.kind === 'folder' && chains.every(chain => chain.includes(id)),
+  );
   const scope = scopeId === undefined ? undefined : byId.get(scopeId);
   if (!scope) throw Error('invalid-scope');
-  const request: ConfirmMutation = structuredClone({ version: 1, type: 'confirmMutation', requestId: crypto.randomUUID(), installationId: snapshot.installationId, epoch: snapshot.epoch, observedRevision: snapshot.observedRevision, scope: scope.ref, before: snapshot.nodes, command });
+  const request: ConfirmMutation = structuredClone({
+    version: 1,
+    type: 'confirmMutation',
+    requestId: crypto.randomUUID(),
+    installationId: snapshot.installationId,
+    epoch: snapshot.epoch,
+    observedRevision: snapshot.observedRevision,
+    scope: scope.ref,
+    before: snapshot.nodes,
+    command,
+  });
   preflight(request, snapshot);
   return request;
 }
-export function prepareMove(snapshot: TreeSnapshot, sourceId: string, parentId: string, index: number): ConfirmMutation {
+export function prepareMove(
+  snapshot: TreeSnapshot,
+  sourceId: string,
+  parentId: string,
+  index: number,
+): ConfirmMutation {
   const target = snapshot.nodes.find(n => n.ref.nativeId === sourceId);
   const parent = snapshot.nodes.find(n => n.ref.nativeId === parentId);
   if (!target || !parent) throw Error('invalid-reference');
@@ -34,8 +51,14 @@ export function prepareMove(snapshot: TreeSnapshot, sourceId: string, parentId: 
 export type DropPlacement = 'before' | 'after' | 'inside';
 export type DropTarget = { parentId: string; index: number };
 // UI affordance only, never write authority. O(ancestor depth), no UUID or tree clone.
-export function resolveDropTarget(byId: ReadonlyMap<string, TreeSnapshot['nodes'][number]>, sourceId: string, targetId: string, placement: DropPlacement): DropTarget | undefined {
-  const source = byId.get(sourceId); const target = byId.get(targetId);
+export function resolveDropTarget(
+  byId: ReadonlyMap<string, TreeSnapshot['nodes'][number]>,
+  sourceId: string,
+  targetId: string,
+  placement: DropPlacement,
+): DropTarget | undefined {
+  const source = byId.get(sourceId);
+  const target = byId.get(targetId);
   if (!source || !target || source.readOnly || source.parentId === undefined || sourceId === targetId) return;
   const parentId = placement === 'inside' ? targetId : target.parentId;
   if (parentId === undefined) return;
