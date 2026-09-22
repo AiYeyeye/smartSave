@@ -75,8 +75,10 @@ async function setup(mode: 'completed' | 'rejected' | 'dropped' | 'unknown' | 'p
   );
   let authority = new ImportAuthority(settings, projection, persistence.importCheckpoints, 'test');
   const sender = { id: 'test', url: 'chrome-extension://test/options/index.html' };
+  let beforeCreate: ((call: number) => Promise<void>) | undefined;
   const create = vi.fn(async (details: { parentId: string; title: string; url?: string }) => {
     if (mode === 'unknown') throw Error('native response lost');
+    await beforeCreate?.(create.mock.calls.length);
     const node = { ...details, id: `new${create.mock.calls.length}`, syncing: false };
     native[0]!.children![0]!.children!.push(node);
     changes.forEach(cb => cb());
@@ -104,6 +106,7 @@ async function setup(mode: 'completed' | 'rejected' | 'dropped' | 'unknown' | 'p
   );
   if (mode === 'rejected') vi.spyOn(persistence, 'handoffImport').mockRejectedValue(Error('quota'));
   const event = () => ({ addListener() {}, removeListener() {} });
+  const sent: string[] = [];
   const runtime = {
     id: 'test',
     connect: ({ name }: { name: string }) => {
@@ -117,11 +120,16 @@ async function setup(mode: 'completed' | 'rejected' | 'dropped' | 'unknown' | 'p
         messages.forEach(cb => cb(raw));
       };
       if (token) queueMicrotask(() => void deliver());
+      // The tree port behaves like the worker service: every published state reaches the connected page.
+      const detach = token
+        ? undefined
+        : projection.subscribe(state => messages.forEach(cb => cb({ version: 1, state })));
       return {
         onMessage: { addListener: (cb: (raw: unknown) => void) => messages.add(cb) },
         onDisconnect: { addListener: (cb: () => void) => disconnects.add(cb) },
         postMessage: () => void deliver(),
         disconnect: () => {
+          detach?.();
           if (token) authority.close(token);
         },
       };
@@ -130,6 +138,7 @@ async function setup(mode: 'completed' | 'rejected' | 'dropped' | 'unknown' | 'p
       raw: ConfirmMutation & { checkpointId: string; checkpointRevision: number; selection: ImportPreviewSelection },
       callback: (value: unknown) => void,
     ) => {
+      sent.push(String(raw.type));
       void (async () => {
         if (String(raw.type) === 'registerImportPreview') {
           const proposal = await coordinator.registerImportPreview(
@@ -167,12 +176,16 @@ async function setup(mode: 'completed' | 'rejected' | 'dropped' | 'unknown' | 'p
   let failAt = 0;
   let holdAt = 0;
   let quotaAt = 0;
+  let gateAt = 0;
+  let openGate = () => {};
+  let gate = Promise.resolve();
   const payloads: { task: string; items: { id: string }[] }[] = [];
   const fetcher = vi.fn(async (_url: unknown, init?: RequestInit) => {
     const payload = JSON.parse(JSON.parse(String(init?.body)).messages[1].content);
     payloads.push(payload);
     if (payloads.length === failAt) throw Error('synthetic provider interruption');
     if (payloads.length === holdAt) return new Promise<Response>(() => {});
+    if (payloads.length === gateAt) await gate;
     if (payloads.length === quotaAt)
       vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(function () {
         throw new DOMException('synthetic quota', 'QuotaExceededError');
@@ -234,6 +247,18 @@ async function setup(mode: 'completed' | 'rejected' | 'dropped' | 'unknown' | 'p
     settings,
     native,
     payloads,
+    sent,
+    notify: () => changes.forEach(cb => cb()),
+    onCreate: (hook: (call: number) => Promise<void>) => {
+      beforeCreate = hook;
+    },
+    gate: (n: number) => {
+      gateAt = n;
+      gate = new Promise<void>(resolve => {
+        openGate = resolve;
+      });
+    },
+    release: () => openGate(),
     fail: (n: number) => {
       failAt = n;
     },
@@ -322,7 +347,7 @@ it('real UI maps original fields, reloads manually, preserves empty drafts on sa
   await h.user.click(screen.getByRole('button', { name: '读取导入任务列表' }));
   await h.user.click(await screen.findByRole('button', { name: '加载任务' }));
   expect(h.fetcher).toHaveBeenCalledTimes(2);
-  await screen.findByRole('button', { name: '手动继续剩余分类' });
+  await screen.findByRole('button', { name: '继续分类' });
   for (const checkbox of screen.getAllByRole('checkbox')) await h.user.click(checkbox);
   await h.user.clear(screen.getByLabelText('明确编辑标题 0'));
   await h.user.selectOptions(screen.getByLabelText('明确调整目标 0'), '');
@@ -409,7 +434,7 @@ const multiBatchSource = () =>
 async function loadTask(h: Awaited<ReturnType<typeof setup>>) {
   await h.user.click(screen.getByRole('button', { name: '读取导入任务列表' }));
   await h.user.click(await screen.findByRole('button', { name: '加载任务' }));
-  await screen.findByRole('button', { name: '手动继续剩余分类' });
+  await screen.findByRole('button', { name: '继续分类' });
 }
 it('real UI completes every byte batch and four actual themes/navigation retain edited empty drafts and unselected entries', async () => {
   const h = await setup();
@@ -436,8 +461,8 @@ it('real UI completes every byte batch and four actual themes/navigation retain 
   expect(h.create).not.toHaveBeenCalled();
 }, 30000);
 
-it.each(['resume', 'recover'] as const)(
-  'real UI manual %s after remount only sends uncommitted rows',
+it.each(['remount', 'worker-restart'] as const)(
+  'real UI manual continuation after %s only sends uncommitted rows',
   async action => {
     const h = await setup();
     h.fail(2);
@@ -445,7 +470,7 @@ it.each(['resume', 'recover'] as const)(
     const saved = (await h.persistence.importCheckpoints.all())[0]!;
     expect(saved.classified).toHaveLength(1);
     const committed = h.payloads[0]!.items[0]!.id;
-    if (action === 'recover') await h.restart();
+    if (action === 'worker-restart') await h.restart();
     else {
       cleanup();
       h.mount();
@@ -455,14 +480,8 @@ it.each(['resume', 'recover'] as const)(
     await h.user.clear(screen.getByLabelText('明确编辑标题 0'));
     await h.user.selectOptions(screen.getByLabelText('明确调整目标 0'), '');
     await h.user.click(screen.getAllByRole('checkbox')[1]!);
-    if (action === 'recover') {
-      await h.user.click(screen.getByRole('button', { name: '手动继续剩余分类' }));
-      await screen.findByText(/已暂停：stale-context/);
-      expect(h.fetcher).toHaveBeenCalledTimes(2);
-    }
-    await h.user.click(
-      screen.getByRole('button', { name: action === 'recover' ? '服务重启后明确恢复并重新校验' : '手动继续剩余分类' }),
-    );
+    // A new worker epoch is not classification evidence: the same button continues after a restart.
+    await h.user.click(screen.getByRole('button', { name: '继续分类' }));
     await screen.findByText(/全量分类完成/);
     expect(h.payloads.slice(2).flatMap(p => p.items.map(i => i.id))).not.toContain(committed);
     expect((await h.persistence.importCheckpoints.all())[0]!.classified).toHaveLength(3);
@@ -480,13 +499,15 @@ it.each(['resume', 'recover'] as const)(
       false,
     );
     await waitFor(() => expect(screen.getByRole('button', { name: '一次确认并应用整批' })).toBeDisabled());
+    expect(screen.getByText(/模型设置或权限已变化/)).toBeVisible();
     expect(h.create).not.toHaveBeenCalled();
+    expect(h.sent).not.toContain('cancelMutation');
   },
   30000,
 );
 
 it.each(['root', 'privacy'] as const)(
-  'real UI %s changes disallow semantic recovery and preserve prior evidence',
+  'real UI %s changes inside the scope refuse continuation and preserve prior evidence',
   async change => {
     const h = await setup();
     h.fail(2);
@@ -506,7 +527,7 @@ it.each(['root', 'privacy'] as const)(
       );
     await h.restart();
     await loadTask(h);
-    await h.user.click(screen.getByRole('button', { name: '服务重启后明确恢复并重新校验' }));
+    await h.user.click(screen.getByRole('button', { name: '继续分类' }));
     await screen.findByText(change === 'root' ? /已暂停：stale-context/ : /已暂停：privacy-excluded/);
     expect(h.fetcher).toHaveBeenCalledTimes(2);
     expect(h.create).not.toHaveBeenCalled();
@@ -514,6 +535,72 @@ it.each(['root', 'privacy'] as const)(
   },
   30000,
 );
+
+it('real UI: native changes outside the scope neither cancel classification nor drop a registered preview', async () => {
+  const h = await setup();
+  h.gate(2);
+  await h.upload(multiBatchSource(), 'json', 'pending');
+  await waitFor(() => expect(h.fetcher).toHaveBeenCalledTimes(2));
+  h.native[0]!.children!.push({ id: 'other', parentId: '0', title: 'Other', syncing: false, children: [] });
+  h.notify();
+  await waitFor(() =>
+    expect(screen.getByLabelText('导入目标根').querySelector('option[value="other"]')).not.toBeNull(),
+  );
+  h.release();
+  await screen.findByText(/全量分类完成/);
+  expect(h.fetcher).toHaveBeenCalledTimes(3);
+  expect((await h.persistence.importCheckpoints.all())[0]!.classified).toHaveLength(3);
+  await h.user.click(screen.getByRole('button', { name: '校验所选整批预览' }));
+  await screen.findByText(/实际新建书签 3/);
+  h.native[0]!.children![1]!.title = 'Other renamed';
+  h.notify();
+  await waitFor(() => expect(screen.getByText(/Other renamed/)).toBeInTheDocument());
+  expect(screen.getByText(/实际新建书签 3/)).toBeVisible();
+  expect(screen.getByRole('button', { name: '一次确认并应用整批' })).toBeEnabled();
+  expect(screen.getByText(/整批预览已校验/)).toBeVisible();
+  expect(h.sent).not.toContain('cancelMutation');
+  expect(h.create).not.toHaveBeenCalled();
+}, 30000);
+
+it('real UI: a settings change cancels in-flight classification and keeps committed rows', async () => {
+  const h = await setup();
+  h.gate(2);
+  await h.upload(multiBatchSource(), 'json', 'pending');
+  await waitFor(() => expect(h.fetcher).toHaveBeenCalledTimes(2));
+  await h.settings.save(
+    { adapter: 'openai-compatible', baseUrl: 'https://synthetic.test', model: 'changed', timeoutMs: 10000 },
+    { fullUrl: true, bodyEnabled: false, excludedFolders: [] },
+    '',
+    false,
+  );
+  await screen.findByText(/已暂停：cancelled/);
+  h.release();
+  expect((await h.persistence.importCheckpoints.all())[0]!.classified).toHaveLength(1);
+  expect(h.fetcher).toHaveBeenCalledTimes(2);
+  expect(h.create).not.toHaveBeenCalled();
+}, 30000);
+
+it('real UI: a settings change while applying never sends cancelMutation and the handed-off batch completes', async () => {
+  const h = await setup();
+  await h.upload('https://source.test/one\nhttps://source.test/two');
+  await h.user.click(screen.getByRole('button', { name: '校验所选整批预览' }));
+  await screen.findByText(/实际新建书签 2/);
+  h.onCreate(async call => {
+    if (call === 1)
+      await h.settings.save(
+        { adapter: 'openai-compatible', baseUrl: 'https://synthetic.test', model: 'changed', timeoutMs: 10000 },
+        { fullUrl: true, bodyEnabled: false, excludedFolders: [] },
+        '',
+        false,
+      );
+  });
+  await h.user.click(screen.getByRole('button', { name: '一次确认并应用整批' }));
+  await screen.findByText(/请求 .*：completed/);
+  expect(h.create).toHaveBeenCalledTimes(2);
+  expect(h.sent.filter(type => type === 'cancelMutation')).toEqual([]);
+  expect((await h.persistence.importCheckpoints.all())[0]!.requestId).toBeTruthy();
+  expect(screen.getByRole('button', { name: '校验所选整批预览' })).toBeDisabled();
+}, 30000);
 
 it('real UI cancel aborts current batch and manual resume preserves committed prefix', async () => {
   const h = await setup();
@@ -523,7 +610,7 @@ it('real UI cancel aborts current batch and manual resume preserves committed pr
   await h.user.click(screen.getByRole('button', { name: '暂停分类 / 取消授权及未发起写入' }));
   await screen.findByText(/已暂停：cancelled/);
   expect((await h.persistence.importCheckpoints.all())[0]!.classified).toHaveLength(1);
-  await h.user.click(screen.getByRole('button', { name: '手动继续剩余分类' }));
+  await h.user.click(screen.getByRole('button', { name: '继续分类' }));
   await screen.findByText(/全量分类完成/);
   expect(h.payloads.slice(2).flatMap(p => p.items.map(i => i.id))).not.toContain(h.payloads[0]!.items[0]!.id);
   expect(h.create).not.toHaveBeenCalled();
@@ -537,7 +624,7 @@ it('real UI checkpoint quota stops batching and manual resume repeats only uncom
   expect((await h.persistence.importCheckpoints.all())[0]!.classified).toHaveLength(1);
   vi.restoreAllMocks();
   h.quota(0);
-  await h.user.click(screen.getByRole('button', { name: '手动继续剩余分类' }));
+  await h.user.click(screen.getByRole('button', { name: '继续分类' }));
   await screen.findByText(/全量分类完成/);
   expect(h.payloads[2]!.items).toEqual(h.payloads[1]!.items);
   expect(h.create).not.toHaveBeenCalled();
@@ -557,7 +644,7 @@ it('real UI partial native outcome stays journal-owned and never replays success
   cleanup();
   h.mount();
   await loadTask(h);
-  expect(screen.getByRole('button', { name: '手动继续剩余分类' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: '继续分类' })).toBeDisabled();
   expect(h.create).toHaveBeenCalledTimes(1);
 });
 it('real authority privacy rejection appears precisely in UI without handoff or transport outage', async () => {

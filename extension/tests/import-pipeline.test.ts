@@ -114,7 +114,7 @@ it('classifies every byte-batched item, retains original URLs and locked titles,
     ),
     'json',
   );
-  const result = await s.make().start({ id: 'all', source, format: 'json', root: s.root, tree: s.state.tree });
+  const result = await s.make().start({ id: 'all', source, format: 'json', root: s.root });
   expect(result.status).toBe('classified');
   const checkpoint = (await s.store.all())[0]!;
   expect(checkpoint.classified).toHaveLength(12);
@@ -132,14 +132,12 @@ it('manually resumes in a new instance without repeating committed batches', asy
   const source = parsed(
     Array.from({ length: 20 }, (_, i) => `https://example.test/${i}/${'a'.repeat(150)}`).join('\n'),
   );
-  expect((await s.make().start({ id: 'resume', source, format: 'txt', root: s.root, tree: s.state.tree })).status).toBe(
-    'paused',
-  );
+  expect((await s.make().start({ id: 'resume', source, format: 'txt', root: s.root })).status).toBe('paused');
   const saved = (await s.store.all())[0]!;
   expect(saved.classified.length).toBeGreaterThan(0);
   const completedIds = s.payloads[0]!.items.map(i => i.id);
   const before = s.payloads.length;
-  expect((await s.make().resume('resume', { root: s.root, tree: s.state.tree })).status).toBe('classified');
+  expect((await s.make().resume('resume', { root: s.root })).status).toBe('classified');
   expect(
     s.payloads
       .slice(before)
@@ -155,9 +153,7 @@ it('maps isomorphic unfamiliar elements with one model decision per structure, a
     label: `Label ${i}`,
   }));
   const source = parsed(JSON.stringify([...rows, { label: 'No link here' }]), 'json');
-  expect(
-    (await s.make().start({ id: 'mapping', source, format: 'json', root: s.root, tree: s.state.tree })).status,
-  ).toBe('classified');
+  expect((await s.make().start({ id: 'mapping', source, format: 'json', root: s.root })).status).toBe('classified');
   const checkpoint = (await s.store.all())[0]!;
   expect(checkpoint.items.map(i => i.item.rawURL)).toEqual(rows.map(r => r.link));
   expect(s.payloads.map(p => p.task)).toEqual(['import-map', 'import-classify']);
@@ -177,9 +173,7 @@ it('recognized rows skip mapping entirely: no import-map call and one counted di
     '[{"link":"https://source.test","label":"First"},{"url":"https://source.test","title":"Later"}]',
     'json',
   );
-  expect((await s.make().start({ id: 'mixed', source, format: 'json', root: s.root, tree: s.state.tree })).status).toBe(
-    'classified',
-  );
+  expect((await s.make().start({ id: 'mixed', source, format: 'json', root: s.root })).status).toBe('classified');
   const saved = (await s.store.all())[0]!;
   expect(s.payloads.map(p => p.task)).toEqual(['import-classify']);
   expect(saved.classified).toHaveLength(1);
@@ -198,9 +192,9 @@ it('the extension export fixture never enters mapping: zero calls when every row
     parentId: 'root',
     url: source.items[0]!.rawURL,
   });
-  expect(
-    (await s.make().start({ id: 'export-existing', source, format: 'json', root: s.root, tree: s.state.tree })).status,
-  ).toBe('classified');
+  expect((await s.make().start({ id: 'export-existing', source, format: 'json', root: s.root })).status).toBe(
+    'classified',
+  );
   expect(s.fetcher).not.toHaveBeenCalled();
   expect(await s.store.get('export-existing')).toMatchObject({
     items: [],
@@ -211,9 +205,7 @@ it('the extension export fixture never enters mapping: zero calls when every row
     runtime: { stage: 'classification', mappedGroups: [] },
   });
   s.state.tree.nodes.pop();
-  expect(
-    (await s.make().start({ id: 'export', source, format: 'json', root: s.root, tree: s.state.tree })).status,
-  ).toBe('classified');
+  expect((await s.make().start({ id: 'export', source, format: 'json', root: s.root })).status).toBe('classified');
   expect(s.payloads.map(p => p.task)).toEqual(['import-classify']);
   const checkpoint = (await s.store.get('export'))!;
   expect(checkpoint.items.map(i => i.item.rawURL)).toEqual(['https://example.test/article?id=1#part']);
@@ -232,15 +224,13 @@ it('honors an explicit model refusal: the structure is marked mapped with zero r
     '[{"link":"https://source.test/a","label":"A"},{"link":"https://source.test/b","label":"B"}]',
     'json',
   );
-  expect(
-    (await s.make().start({ id: 'refusal', source, format: 'json', root: s.root, tree: s.state.tree })).status,
-  ).toBe('classified');
+  expect((await s.make().start({ id: 'refusal', source, format: 'json', root: s.root })).status).toBe('classified');
   const checkpoint = (await s.store.get('refusal'))!;
   expect(checkpoint.items).toEqual([]);
   expect(checkpoint.classified).toEqual([]);
   expect(checkpoint.diagnostics).toEqual([]);
   expect(checkpoint.runtime).toMatchObject({ stage: 'classification', mappedGroups: ['["*"]'], mappedItems: [] });
-  expect((await s.make().resume('refusal', { root: s.root, tree: s.state.tree })).status).toBe('classified');
+  expect((await s.make().resume('refusal', { root: s.root })).status).toBe('classified');
   expect(s.fetcher).toHaveBeenCalledTimes(1);
 });
 it('duplicate-only imports do not call the model or propose folders', async () => {
@@ -258,7 +248,6 @@ it('duplicate-only imports do not call the model or propose folders', async () =
         source: parsed('https://existing.test'),
         format: 'txt',
         root: s.root,
-        tree: s.state.tree,
       })
     ).status,
   ).toBe('classified');
@@ -272,13 +261,12 @@ it('reports an impossible single-item payload locally and preserves evidence', a
     source: parsed(`https://example.test/${'x'.repeat(10000)}`),
     format: 'txt',
     root: s.root,
-    tree: s.state.tree,
   });
   expect(result).toMatchObject({ status: 'paused', reason: 'single-item-payload-too-large' });
   expect(s.fetcher).not.toHaveBeenCalled();
   expect((await s.store.all())[0]!.items).toHaveLength(1);
 });
-it.each(['settings', 'privacy', 'root', 'snapshot'] as const)(
+it.each(['config', 'privacy', 'root', 'scope-folder'] as const)(
   'fails closed on %s change after reload without overwriting evidence',
   async change => {
     const s = setup();
@@ -288,17 +276,60 @@ it.each(['settings', 'privacy', 'root', 'snapshot'] as const)(
       source: parsed(Array.from({ length: 20 }, (_, i) => `https://example.test/${i}/${'x'.repeat(150)}`).join('\n')),
       format: 'txt',
       root: s.root,
-      tree: s.state.tree,
     });
     const before = await s.store.all();
     const calls = s.fetcher.mock.calls.length;
-    if (change === 'settings') s.state.revision = 'new';
+    if (change === 'config') s.state.config.model = 'other';
     if (change === 'privacy') s.state.privacy.fullUrl = true;
     if (change === 'root') s.state.tree.nodes[0]!.childrenWritable = false;
-    if (change === 'snapshot') s.state.tree.observedRevision++;
-    expect((await s.make().resume('stale', { root: s.root, tree: s.state.tree })).status).toBe('paused');
+    if (change === 'scope-folder') s.state.tree.nodes[1]!.title = 'renamed child';
+    expect((await s.make().resume('stale', { root: s.root })).status).toBe('paused');
     expect(await s.store.all()).toEqual(before);
     expect(s.fetcher).toHaveBeenCalledTimes(calls);
+  },
+);
+it.each(['settings-revision', 'worker-restart', 'outside-bookmark', 'inside-bookmark'] as const)(
+  'resumes after an unrelated %s change without repeating committed batches',
+  async change => {
+    const s = setup();
+    s.failAt(2);
+    await s.make().start({
+      id: 'unrelated',
+      source: parsed(Array.from({ length: 20 }, (_, i) => `https://example.test/${i}/${'x'.repeat(150)}`).join('\n')),
+      format: 'txt',
+      root: s.root,
+    });
+    const before = (await s.store.all())[0]!;
+    expect(before.classified.length).toBeGreaterThan(0);
+    const completed = before.classified.map(c => `import-item:unrelated:${c.sourceOrdinal}`);
+    const calls = s.payloads.length;
+    if (change === 'settings-revision') {
+      s.state.revision = 'rotated';
+      s.state.sessionRevision++;
+    }
+    if (change === 'worker-restart') {
+      s.state.tree.epoch = 'new-epoch';
+      s.state.tree.observedRevision = 0;
+      s.state.tree.nodes.forEach(n => {
+        n.observedRevision = 0;
+      });
+    }
+    if (change !== 'settings-revision' && change !== 'worker-restart')
+      s.state.tree.nodes.push({
+        ...s.state.tree.nodes[0]!,
+        ref: { installationId: 'i', nativeId: 'later', kind: 'bookmark' },
+        parentId: change === 'inside-bookmark' ? 'child' : 'outside',
+        childrenWritable: undefined,
+        url: 'https://later.test/',
+      });
+    expect((await s.make().resume('unrelated', { root: s.root })).status).toBe('classified');
+    expect(
+      s.payloads
+        .slice(calls)
+        .flatMap(p => p.items.map(i => i.id))
+        .some(id => completed.includes(id)),
+    ).toBe(false);
+    expect((await s.store.get('unrelated'))!.classified).toHaveLength(20);
   },
 );
 it.each(['item', 'target', 'title', 'path'] as const)(
@@ -342,7 +373,6 @@ it.each(['item', 'target', 'title', 'path'] as const)(
         source,
         format: invalid === 'path' ? 'json' : 'txt',
         root: s.root,
-        tree: s.state.tree,
       }),
     ).toMatchObject({ status: 'paused', reason: 'schema' });
     expect((await s.store.all())[0]!.classified).toEqual([]);
@@ -366,7 +396,6 @@ it('cancels a provider call, preserves committed batches and resumes only manual
       source: parsed(Array.from({ length: 20 }, (_, i) => `https://example.test/${i}/${'x'.repeat(150)}`).join('\n')),
       format: 'txt',
       root: s.root,
-      tree: s.state.tree,
     }),
   ).toMatchObject({ status: 'paused', reason: 'cancelled' });
   const before = (await s.store.all())[0]!;
@@ -374,7 +403,7 @@ it('cancels a provider call, preserves committed batches and resumes only manual
   s.fetcher.mockImplementation(original);
   const fresh = s.make();
   expect((await s.store.all())[0]).toEqual(before);
-  expect((await fresh.resume('cancel', { root: s.root, tree: s.state.tree })).status).toBe('classified');
+  expect((await fresh.resume('cancel', { root: s.root })).status).toBe('classified');
 });
 it('preserves a completed structure mapping across interruption and reload', async () => {
   const s = setup(10000);
@@ -383,11 +412,9 @@ it('preserves a completed structure mapping across interruption and reload', asy
     '{"a":[{"link":"https://source.test/a","label":"A"}],"b":[{"link":"https://source.test/b","label":"B"}]}',
     'json',
   );
-  expect(
-    (await s.make().start({ id: 'map-resume', source, format: 'json', root: s.root, tree: s.state.tree })).status,
-  ).toBe('paused');
+  expect((await s.make().start({ id: 'map-resume', source, format: 'json', root: s.root })).status).toBe('paused');
   expect((await s.store.all())[0]!.runtime!.mappedGroups).toHaveLength(1);
-  expect((await s.make().resume('map-resume', { root: s.root, tree: s.state.tree })).status).toBe('classified');
+  expect((await s.make().resume('map-resume', { root: s.root })).status).toBe('classified');
   expect(s.payloads.filter(p => p.task === 'import-map').map(p => p.fields![0]!.path.slice(0, -1).join('/'))).toEqual([
     'a/*',
     'b/*',
@@ -402,7 +429,6 @@ it('never repeats calls for duplicate checkpoint creation or a concurrent CAS co
     source: parsed('https://example.test'),
     format: 'txt' as const,
     root: s.root,
-    tree: s.state.tree,
   };
   const results = await Promise.all([s.make().start(input), s.make().start(input)]);
   expect(results.filter(r => r.status === 'classified')).toHaveLength(1);
@@ -429,7 +455,6 @@ it('preserves durable evidence on a real IDB quota fault and does not send anoth
       source: parsed(Array.from({ length: 20 }, (_, i) => `https://example.test/${i}/${'x'.repeat(150)}`).join('\n')),
       format: 'txt',
       root: s.root,
-      tree: s.state.tree,
     });
     expect(result.status).toBe('paused');
     expect(s.fetcher).toHaveBeenCalledTimes(2);
@@ -448,7 +473,6 @@ it('rejects unsafe unknown text with URL privacy disabled before sending any mod
       source: parsed('[{"link":"https://source.test?a=1","label":"ambiguous?secret"}]', 'json'),
       format: 'json',
       root: s.root,
-      tree: s.state.tree,
     }),
   ).toMatchObject({ status: 'paused', reason: 'unsafe-text-sample' });
   expect(s.fetcher).not.toHaveBeenCalled();
@@ -487,7 +511,6 @@ it('preserves nested proposed relationships across batches while permitting only
         source: parsed(Array.from({ length: 20 }, (_, i) => `https://example.test/${i}/${'x'.repeat(150)}`).join('\n')),
         format: 'txt',
         root: s.root,
-        tree: s.state.tree,
       })
     ).status,
   ).toBe('classified');
@@ -508,13 +531,12 @@ it('does not retry a provider response-budget error', async () => {
       source: parsed('https://source.test'),
       format: 'txt',
       root: s.root,
-      tree: s.state.tree,
     }),
   ).toMatchObject({ status: 'paused', reason: 'response-too-large' });
   expect(s.fetcher).toHaveBeenCalledTimes(1);
   expect((await s.store.all())[0]!.classified).toEqual([]);
 });
-it('explicitly recovers across actual epoch and per-node revision changes without repeating completed batches', async () => {
+it('continues directly after a worker restart (new epoch, reset revisions) and recover stays an alias of resume', async () => {
   const s = setup();
   s.failAt(2);
   await s.make().start({
@@ -522,7 +544,6 @@ it('explicitly recovers across actual epoch and per-node revision changes withou
     source: parsed(Array.from({ length: 20 }, (_, i) => `https://example.test/${i}/${'x'.repeat(150)}`).join('\n')),
     format: 'txt',
     root: s.root,
-    tree: s.state.tree,
   });
   const before = (await s.store.all())[0]!;
   const calls = s.payloads.length;
@@ -531,11 +552,7 @@ it('explicitly recovers across actual epoch and per-node revision changes withou
   s.state.tree.nodes.forEach(n => {
     n.observedRevision = 0;
   });
-  expect(await s.make().resume('epoch', { root: s.root, tree: s.state.tree })).toMatchObject({
-    status: 'paused',
-    reason: 'stale-context',
-  });
-  expect((await s.make().recover('epoch', { root: s.root, tree: s.state.tree })).status).toBe('classified');
+  expect((await s.make().recover('epoch', { root: s.root })).status).toBe('classified');
   const completed = before.classified.map(c => `import-item:epoch:${c.sourceOrdinal}`);
   expect(
     s.payloads
@@ -544,9 +561,12 @@ it('explicitly recovers across actual epoch and per-node revision changes withou
       .some(id => completed.includes(id)),
   ).toBe(false);
   expect((await s.store.get('epoch'))!.classified).toHaveLength(20);
+  const after = s.payloads.length;
+  expect((await s.make().resume('epoch', { root: s.root })).status).toBe('classified');
+  expect(s.payloads).toHaveLength(after);
 });
-it.each(['installation', 'root', 'privacy', 'config', 'settings', 'outside-url', 'title'] as const)(
-  'recovery rejects changed %s semantics without mutation',
+it.each(['installation', 'root', 'privacy', 'config', 'title'] as const)(
+  'continuation rejects changed %s semantics without mutation',
   async change => {
     const s = setup();
     s.failAt(1);
@@ -561,7 +581,6 @@ it.each(['installation', 'root', 'privacy', 'config', 'settings', 'outside-url',
       source: parsed('https://source.test'),
       format: 'txt',
       root: s.root,
-      tree: s.state.tree,
     });
     const before = await s.store.get('semantic');
     const calls = s.fetcher.mock.calls.length;
@@ -570,25 +589,39 @@ it.each(['installation', 'root', 'privacy', 'config', 'settings', 'outside-url',
     if (change === 'root') s.state.tree.nodes[0]!.childrenWritable = false;
     if (change === 'privacy') s.state.privacy.fullUrl = true;
     if (change === 'config') s.state.config.model = 'other';
-    if (change === 'settings') s.state.revision = 'other';
-    if (change === 'outside-url') s.state.tree.nodes.at(-1)!.url = 'https://source.test';
     if (change === 'title') s.state.tree.nodes[1]!.title = 'other';
-    expect((await s.make().recover('semantic', { root: s.root, tree: s.state.tree })).status).toBe('paused');
+    expect((await s.make().recover('semantic', { root: s.root })).status).toBe('paused');
     expect(await s.store.get('semantic')).toEqual(before);
     expect(s.fetcher).toHaveBeenCalledTimes(calls);
   },
 );
+it('a settings revision rotation or an outside bookmark URL change is not classification evidence', async () => {
+  const s = setup();
+  s.failAt(1);
+  s.state.tree.nodes.push({
+    ...s.state.tree.nodes[0]!,
+    ref: { installationId: 'i', nativeId: 'bookmark', kind: 'bookmark' },
+    parentId: 'outside',
+    childrenWritable: undefined,
+    url: 'https://outside.test',
+  });
+  await s.make().start({ id: 'lenient', source: parsed('https://source.test'), format: 'txt', root: s.root });
+  expect((await s.store.get('lenient'))!.classified).toHaveLength(0);
+  s.state.tree.epoch = 'new';
+  s.state.revision = 'other';
+  s.state.tree.nodes.at(-1)!.url = 'https://elsewhere.test';
+  expect((await s.make().resume('lenient', { root: s.root })).status).toBe('classified');
+  expect((await s.store.get('lenient'))!.classified).toHaveLength(1);
+});
 it('reclassification retains all original rows, old progress and atomic source revision provenance', async () => {
   const s = setup();
   const source = parsed('https://source.test\nhttps://source.test');
-  await s.make().start({ id: 'original', source, format: 'txt', root: s.root, tree: s.state.tree });
+  await s.make().start({ id: 'original', source, format: 'txt', root: s.root });
   const before = await s.store.get('original');
   expect(before!.runtime!.sourceItems).toHaveLength(2);
   s.state.tree.epoch = 'new';
   s.state.tree.nodes[1]!.title = 'new';
-  expect((await s.make().reclassify('original', { id: 'replacement', root: s.root, tree: s.state.tree })).status).toBe(
-    'classified',
-  );
+  expect((await s.make().reclassify('original', { id: 'replacement', root: s.root })).status).toBe('classified');
   expect(await s.store.get('original')).toEqual(before);
   expect((await s.store.get('replacement'))!.sourceCheckpoint).toEqual({ id: 'original', revision: before!.revision });
   const branch = {
@@ -600,31 +633,72 @@ it('reclassification retains all original rows, old progress and atomic source r
   await expect(s.store.put(branch, null)).rejects.toThrow('import-checkpoint-conflict');
   expect(await s.store.get('race')).toBeUndefined();
 });
-it('active epoch change during recovered execution rejects delivery and preserves durable evidence', async () => {
+it('a scope folder change during execution rejects delivery and preserves durable evidence', async () => {
   const s = setup();
   s.failAt(1);
-  await s
-    .make()
-    .start({ id: 'active', source: parsed('https://source.test'), format: 'txt', root: s.root, tree: s.state.tree });
+  await s.make().start({ id: 'active', source: parsed('https://source.test'), format: 'txt', root: s.root });
   const before = await s.store.get('active');
   s.state.tree.epoch = 'recovered';
   const original = s.fetcher.getMockImplementation()!;
   s.fetcher.mockImplementation(async (url, init) => {
     const response = await original(url, init);
-    s.state.tree.epoch = 'invalidated';
+    s.state.tree.nodes[1]!.title = 'renamed while the model answered';
     return response;
   });
-  expect(await s.make().recover('active', { root: s.root, tree: s.state.tree })).toMatchObject({
+  expect(await s.make().recover('active', { root: s.root })).toMatchObject({
     status: 'paused',
     reason: 'stale-context',
   });
   expect(await s.store.get('active')).toEqual(before);
 });
+it('runtime v2 records continue under legacy strict-or-semantic evidence and otherwise require reclassification', async () => {
+  const s = setup();
+  const { legacyImportContextDigest } = await import('../domain/import-evidence');
+  const { deduplicateImport } = await import('../domain/import-deduplication');
+  const source = parsed('https://legacy.test/a\nhttps://legacy.test/b');
+  const context = structuredClone(s.state);
+  const legacy = {
+    schemaVersion: 1 as const,
+    id: 'v2',
+    revision: 0,
+    installationId: 'i',
+    root: s.root,
+    items: deduplicateImport(source.items, s.state.tree).pending,
+    diagnostics: [],
+    classified: [],
+    newFolders: [],
+    phase: 'paused' as const,
+    runtime: {
+      version: 2 as const,
+      contextDigest: await legacyImportContextDigest(context, s.root),
+      semanticDigest: await legacyImportContextDigest(context, s.root, true),
+      stage: 'classification' as const,
+      format: 'txt' as const,
+      candidates: [],
+      sourceItems: source.items,
+      mappedGroups: [],
+      mappedItems: [],
+    },
+  };
+  await s.store.put(legacy, null);
+  // A worker restart breaks the strict v2 digest, but the semantic digest still matches: continue as recover once did.
+  s.state.tree.epoch = 'restarted';
+  s.state.tree.observedRevision = 0;
+  expect((await s.make().resume('v2', { root: s.root })).status).toBe('classified');
+  const saved = (await s.store.get('v2'))!;
+  expect(saved.runtime).toMatchObject({ version: 2, semanticDigest: legacy.runtime.semanticDigest });
+  expect(saved.classified).toHaveLength(2);
+  await s.store.put({ ...legacy, id: 'v2-stale' }, null);
+  s.state.revision = 'rotated';
+  expect(await s.make().resume('v2-stale', { root: s.root })).toMatchObject({
+    status: 'paused',
+    reason: 'import-reclassification-required',
+  });
+  expect((await s.store.get('v2-stale'))!.classified).toEqual([]);
+});
 it('target reads isolate unknown rows, legacy requires supplied source, and missing targets fail explicitly', async () => {
   const s = setup();
-  await s
-    .make()
-    .start({ id: 'valid', source: parsed('https://source.test'), format: 'txt', root: s.root, tree: s.state.tree });
+  await s.make().start({ id: 'valid', source: parsed('https://source.test'), format: 'txt', root: s.root });
   const valid = (await s.store.get('valid'))!;
   // Synthetic raw legacy/future rows; no production migration or cleanup.
   const factory = (s.store as unknown as { factory: IDBFactory }).factory;
@@ -642,12 +716,12 @@ it('target reads isolate unknown rows, legacy requires supplied source, and miss
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });
-  expect((await s.make().resume('valid', { root: s.root, tree: s.state.tree })).status).toBe('classified');
-  expect((await s.make().recover('valid', { root: s.root, tree: s.state.tree })).status).toBe('classified');
-  expect(await s.make().recover('legacy', { root: s.root, tree: s.state.tree })).toMatchObject({
+  expect((await s.make().resume('valid', { root: s.root })).status).toBe('classified');
+  expect((await s.make().recover('valid', { root: s.root })).status).toBe('classified');
+  expect(await s.make().recover('legacy', { root: s.root })).toMatchObject({
     reason: 'import-reclassification-required',
   });
-  expect(await s.make().reclassify('legacy', { id: 'new', root: s.root, tree: s.state.tree })).toMatchObject({
+  expect(await s.make().reclassify('legacy', { id: 'new', root: s.root })).toMatchObject({
     reason: 'import-source-required',
   });
   expect(
@@ -657,16 +731,15 @@ it('target reads isolate unknown rows, legacy requires supplied source, and miss
         source: parsed('https://source.test'),
         format: 'txt',
         root: s.root,
-        tree: s.state.tree,
       })
     ).status,
   ).toBe('classified');
   expect(await s.store.get('legacy')).toEqual(legacy);
   for (const id of ['future', 'missing']) {
     const reason = id === 'future' ? 'unsupported-import-checkpoint' : 'import-checkpoint-not-found';
-    expect(await s.make().resume(id, { root: s.root, tree: s.state.tree })).toMatchObject({ reason });
-    expect(await s.make().recover(id, { root: s.root, tree: s.state.tree })).toMatchObject({ reason });
-    expect(await s.make().reclassify(id, { id: 'no', root: s.root, tree: s.state.tree })).toMatchObject({ reason });
+    expect(await s.make().resume(id, { root: s.root })).toMatchObject({ reason });
+    expect(await s.make().recover(id, { root: s.root })).toMatchObject({ reason });
+    expect(await s.make().reclassify(id, { id: 'no', root: s.root })).toMatchObject({ reason });
   }
   expect(
     await new Promise(resolve => {
@@ -678,9 +751,7 @@ it('target reads isolate unknown rows, legacy requires supplied source, and miss
 });
 it('request-bearing tasks remain journal-owned for resume, recovery and reclassification', async () => {
   const s = setup();
-  await s
-    .make()
-    .start({ id: 'owned', source: parsed('https://source.test'), format: 'txt', root: s.root, tree: s.state.tree });
+  await s.make().start({ id: 'owned', source: parsed('https://source.test'), format: 'txt', root: s.root });
   const checkpoint = (await s.store.get('owned'))!;
   // Seed historical request-bearing evidence; new applying transitions require atomic journal handoff.
   const db = await new Promise<IDBDatabase>(resolve => {
@@ -700,13 +771,13 @@ it('request-bearing tasks remain journal-owned for resume, recovery and reclassi
   db.close();
   const before = await s.store.get('owned');
   const calls = s.fetcher.mock.calls.length;
-  expect(await s.make().resume('owned', { root: s.root, tree: s.state.tree })).toMatchObject({
+  expect(await s.make().resume('owned', { root: s.root })).toMatchObject({
     reason: 'import-checkpoint-recovery-required',
   });
-  expect(await s.make().recover('owned', { root: s.root, tree: s.state.tree })).toMatchObject({
+  expect(await s.make().recover('owned', { root: s.root })).toMatchObject({
     reason: 'import-checkpoint-recovery-required',
   });
-  expect(await s.make().reclassify('owned', { id: 'forbidden', root: s.root, tree: s.state.tree })).toMatchObject({
+  expect(await s.make().reclassify('owned', { id: 'forbidden', root: s.root })).toMatchObject({
     reason: 'import-checkpoint-recovery-required',
   });
   expect(await s.store.get('owned')).toEqual(before);
@@ -721,12 +792,11 @@ it('concurrent explicit recoveries cannot overwrite committed batches', async ()
     source: parsed('https://source.test'),
     format: 'txt',
     root: s.root,
-    tree: s.state.tree,
   });
   s.state.tree.epoch = 'new';
   const results = await Promise.all([
-    s.make().recover('concurrent', { root: s.root, tree: s.state.tree }),
-    s.make().recover('concurrent', { root: s.root, tree: s.state.tree }),
+    s.make().recover('concurrent', { root: s.root }),
+    s.make().recover('concurrent', { root: s.root }),
   ]);
   expect(results.some(r => r.status === 'classified')).toBe(true);
   expect((await s.store.get('concurrent'))!.classified).toHaveLength(1);
@@ -756,8 +826,6 @@ it('import title suggestions fill only missing unlocked source titles', async ()
       ),
   );
   const source = parsed('[{"url":"https://a.test","title":"Locked"},{"url":"https://b.test","title":""}]', 'json');
-  expect(
-    (await s.make().start({ id: 'titles', source, format: 'json', root: s.root, tree: s.state.tree })).status,
-  ).toBe('classified');
+  expect((await s.make().start({ id: 'titles', source, format: 'json', root: s.root })).status).toBe('classified');
   expect((await s.store.get('titles'))?.classified.map(row => row.title)).toEqual(['Locked', 'Suggested']);
 });

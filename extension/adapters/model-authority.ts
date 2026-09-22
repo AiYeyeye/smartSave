@@ -1,18 +1,21 @@
 import type { TreeSnapshot } from '../domain/node-reference';
 import type { SettingsStore } from '../persistence/settings';
 import { connectTree } from '../panel/tree-client';
+/** Which owner changed: tree port state, settings/session envelope, or a removed host permission. Legacy no-argument notifiers are treated as settings-level changes. */
+export type ModelAuthorityChange = 'tree' | 'settings' | 'permissions';
 export interface ModelAuthority {
   read(): Promise<Awaited<ReturnType<SettingsStore['snapshot']>> & { tree: TreeSnapshot }>;
-  subscribe(listener: () => void): () => void;
+  subscribe(listener: (change?: ModelAuthorityChange) => void): () => void;
 }
 // Every consumer uses the same settings owner and authoritative tree port; UI state is not authority.
 export function browserModelAuthority(store: SettingsStore): ModelAuthority {
   let tree: TreeSnapshot | undefined;
-  const listeners = new Set<() => void>();
+  const listeners = new Set<(change?: ModelAuthorityChange) => void>();
   let stop: (() => void) | undefined;
-  const changed = () => {
-    for (const listener of listeners) listener();
+  const changed = (change: ModelAuthorityChange) => {
+    for (const listener of listeners) listener(change);
   };
+  const permissionsRemoved = () => changed('permissions');
   return {
     async read() {
       if (!tree) throw Error('tree-unavailable');
@@ -25,14 +28,14 @@ export function browserModelAuthority(store: SettingsStore): ModelAuthority {
       if (!stop) {
         const stopTree = connectTree(chrome.runtime, state => {
           tree = state.status === 'ready' ? state.snapshot : undefined;
-          changed();
+          changed('tree');
         });
-        const stopStore = store.subscribe(changed);
-        chrome.permissions.onRemoved.addListener(changed);
+        const stopStore = store.subscribe(() => changed('settings'));
+        chrome.permissions.onRemoved.addListener(permissionsRemoved);
         stop = () => {
           stopTree();
           stopStore();
-          chrome.permissions.onRemoved.removeListener(changed);
+          chrome.permissions.onRemoved.removeListener(permissionsRemoved);
           tree = undefined;
         };
       }

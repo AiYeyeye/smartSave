@@ -1,6 +1,7 @@
 import type { ModelAuthority } from '../adapters/model-authority';
 import type { ModelTransport } from '../adapters/model-transport';
-import type { TreeState } from '../domain/node-reference';
+import { dependencyDigest } from '../domain/context-dependencies';
+import type { TreeSnapshot, TreeState } from '../domain/node-reference';
 import {
   organizeCandidates,
   organizeProposal,
@@ -25,6 +26,9 @@ export interface OrganizeState {
   message: string;
   result?: MutationResult;
 }
+/** The organize scope is the selected root and every descendant; changes elsewhere in the tree are not this task's concern. */
+const scopeDependencies = (tree: TreeSnapshot, rootId: string) =>
+  dependencyDigest(tree, { task: 'organize', rootId, itemIds: [], folderIds: [] });
 export class OrganizeController {
   private state: OrganizeState = {
     tree: { status: 'loading' },
@@ -43,6 +47,8 @@ export class OrganizeController {
   private applying = false;
   private pendingRequestId?: string;
   private scanTree?: Extract<TreeState, { status: 'ready' }>['snapshot'];
+  /** Scope digest recorded when the retained baseline (scan or proposal) was taken. */
+  private scopeDigest?: string;
   constructor(
     private emit: (state: OrganizeState) => void,
     private authority?: ModelAuthority,
@@ -50,7 +56,10 @@ export class OrganizeController {
     private open: OpenOrganizerLease = openOrganizerLease,
     private send: SendMutation = sendMutation,
   ) {
-    this.stop = authority?.subscribe(() => this.invalidate());
+    // Tree changes arrive through setTree and are judged against the retained scope; settings/permissions revoke outright.
+    this.stop = authority?.subscribe(change => {
+      if (change !== 'tree') this.invalidate();
+    });
   }
   private publish() {
     this.emit({
@@ -72,8 +81,16 @@ export class OrganizeController {
     this.publish();
   }
   setTree(tree: TreeState) {
-    if (JSON.stringify(tree) !== JSON.stringify(this.state.tree)) this.invalidate();
     this.state.tree = structuredClone(tree);
+    // Only a change inside the retained scope invalidates; loading/error carry no scope evidence and wait for ready.
+    if (
+      tree.status === 'ready' &&
+      !this.state.invalid &&
+      (this.state.proposal || this.scanTree) &&
+      this.scopeDigest !== undefined &&
+      scopeDependencies(tree.snapshot, this.state.scopeId) !== this.scopeDigest
+    )
+      this.invalidate();
     this.publish();
   }
   selectScope(id: string) {
@@ -124,6 +141,7 @@ export class OrganizeController {
     try {
       this.scanTree = structuredClone(this.state.tree.snapshot);
       this.state.duplicates = exactDuplicates(this.scanTree, this.state.scopeId);
+      this.scopeDigest = scopeDependencies(this.scanTree, this.state.scopeId);
       this.state.choices = {};
       this.state.proposal = undefined;
       this.state.result = undefined;
@@ -165,13 +183,15 @@ export class OrganizeController {
       if (!this.authority || !this.model || this.state.tree.status !== 'ready') throw Error('unavailable');
       const generation = await this.begin();
       const context = await this.authority.read();
+      const rootId = this.state.scopeId;
       if (
         generation !== this.generation ||
         !context.config ||
-        JSON.stringify(context.tree) !== JSON.stringify(this.state.tree.snapshot)
+        this.state.tree.status !== 'ready' ||
+        context.tree.installationId !== this.state.tree.snapshot.installationId ||
+        scopeDependencies(context.tree, rootId) !== scopeDependencies(this.state.tree.snapshot, rootId)
       )
         throw Error('stale');
-      const rootId = this.state.scopeId;
       const candidates = organizeCandidates(context.tree, rootId, context.privacy);
       const result = await this.model.run({
         ...context,
@@ -187,6 +207,7 @@ export class OrganizeController {
       if (result.status !== 'completed') throw Error('model-failed');
       this.scanTree = undefined;
       this.state.duplicates = [];
+      this.scopeDigest = scopeDependencies(context.tree, rootId);
       this.accept(organizeProposal(context.tree, rootId, result.output, context.privacy));
     } catch {
       this.lease?.close();
@@ -206,7 +227,7 @@ export class OrganizeController {
       if (
         generation !== this.generation ||
         this.state.tree.status !== 'ready' ||
-        JSON.stringify(tree) !== JSON.stringify(this.state.tree.snapshot)
+        scopeDependencies(this.state.tree.snapshot, this.state.scopeId) !== this.scopeDigest
       )
         throw Error('stale');
       this.accept(duplicateProposal(tree, this.state.scopeId, this.state.choices));

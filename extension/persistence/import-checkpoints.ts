@@ -54,7 +54,8 @@ const candidateSchema = z
   .strict();
 const runtimeSchema = z
   .object({
-    version: z.union([z.literal(1), z.literal(2)]),
+    // v1: legacy without provenance; v2: strict epoch digest + semantic digest; v3: scoped context digest only.
+    version: z.union([z.literal(1), z.literal(2), z.literal(3)]),
     semanticDigest: z
       .string()
       .regex(/^[a-f0-9]{64}$/)

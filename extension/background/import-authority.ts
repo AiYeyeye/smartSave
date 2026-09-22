@@ -2,7 +2,8 @@ import type { OperationJournal } from '../persistence/operations';
 import type { SettingsStore } from '../persistence/settings';
 import type { ImportCheckpointStore, ImportCheckpoint } from '../persistence/import-checkpoints';
 import { compileImportPreview, importSelectionSchema, type ImportPreviewSelection } from '../domain/import-preview';
-import { importContextDigest } from '../domain/import-evidence';
+import { importContextCurrent, importContextDigest, importScopeFolders } from '../domain/import-evidence';
+import { dependencyDigest } from '../domain/context-dependencies';
 import { serializeAiPayload } from '../domain/ai-payload';
 import { confirmSchema, trustedMutationSender, type ConfirmMutation } from '../schemas/messages';
 import type { TreeProjection } from './tree-projection';
@@ -17,7 +18,11 @@ type Lease = {
   checkpoint?: ImportCheckpoint;
   request?: ConfirmMutation;
   tree?: TreeSnapshot;
+  /** Synchronous scope identity for the coordinator's final check: the projected scope folders at preparation time. */
+  scope?: { folderIds: string[]; digest: string };
 };
+const scopeDigest = (tree: TreeSnapshot, rootId: string, folderIds: string[]) =>
+  dependencyDigest(tree, { task: 'import-classify', targetId: rootId, items: [], folderIds });
 /** Independently reads evidence and current owners; the coordinator remains the only executor. */
 export class ImportAuthority {
   private version = 0;
@@ -76,14 +81,10 @@ export class ImportAuthority {
     const settings = await this.settings.snapshot();
     const tree = await this.projection.fresh();
     const context = { ...settings, tree };
-    // A new explicit preview may bind recovered semantic work, but execution always uses this strict epoch digest.
-    const digest = await importContextDigest(context, selection.root);
-    if (
-      checkpoint.runtime.contextDigest !== digest &&
-      (checkpoint.runtime.version !== 2 ||
-        checkpoint.runtime.semanticDigest !== (await importContextDigest(context, selection.root, true)))
-    )
+    // Classification evidence must still describe the current scope; the binding always carries the current v3 digest.
+    if (!(await importContextCurrent(checkpoint.runtime, context, selection.root)))
       throw Error('import-reclassification-required');
+    const digest = await importContextDigest(context, selection.root);
     const request = compileImportPreview(checkpoint, selection, tree, crypto.randomUUID());
     if (!request) {
       this.close(token);
@@ -119,9 +120,11 @@ export class ImportAuthority {
         ...(selection.destinationEdits ? { destinationEdits: selection.destinationEdits } : {}),
       },
     });
+    const scopeFolderIds = importScopeFolders(tree, settings.privacy, selection.root);
     lease.checkpoint = checkpoint;
     lease.request = proposal;
     lease.tree = tree;
+    lease.scope = { folderIds: scopeFolderIds, digest: scopeDigest(tree, selection.root.nativeId, scopeFolderIds) };
     if (!(await this.validate(proposal, sender)) || !this.current(proposal)) {
       this.close(token);
       throw Error('stale-import-authority');
@@ -166,6 +169,7 @@ export class ImportAuthority {
       return false;
     }
   }
+  /** Synchronous, no awaits: the published tree must still carry the prepared scope (root, its writable folders, protection). */
   current(request: ConfirmMutation): boolean {
     const lease = request.importContext ? this.leases.get(request.importContext) : undefined;
     const state = this.projection.state;
@@ -173,8 +177,11 @@ export class ImportAuthority {
       !!lease &&
       lease.version === this.version &&
       !!lease.request &&
+      !!lease.tree &&
+      !!lease.scope &&
       state.status === 'ready' &&
-      equal(state.snapshot, lease.tree)
+      state.snapshot.installationId === lease.tree.installationId &&
+      scopeDigest(state.snapshot, lease.request.scope.nativeId, lease.scope.folderIds) === lease.scope.digest
     );
   }
   sharesPersistence(journal: OperationJournal): boolean {

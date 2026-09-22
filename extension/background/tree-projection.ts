@@ -1,10 +1,13 @@
 import type { BookmarkSource } from '../adapters/bookmarks-read';
 import type { TreeSnapshot, TreeState } from '../domain/node-reference';
 
+type Waiter = { resolve: (snapshot: TreeSnapshot) => void; reject: (error: Error) => void };
 export class TreeProjection {
   state: TreeState = { status: 'loading' };
   private listeners = new Set<(state: TreeState) => void>();
+  private waiters = new Set<Waiter>();
   private revision = 0;
+  private published?: number;
   private generation = 0;
   private active = false;
   private importing = false;
@@ -27,21 +30,13 @@ export class TreeProjection {
     this.state = state;
     this.listeners.forEach(listener => listener(state));
   }
+  /** Silent authoritative read: resolves from a native read started after this call, publishing nothing unless the tree actually changed. */
   fresh(): Promise<TreeSnapshot> {
+    if (this.importing || !this.active) return Promise.reject(new Error('tree-unavailable'));
     return new Promise((resolve, reject) => {
-      this.refresh();
-      const listener = (state: TreeState) => {
-        if (state.status === 'loading') return;
-        this.listeners.delete(listener);
-        if (state.status === 'ready') resolve(state.snapshot);
-        else reject(new Error('tree-unavailable'));
-      };
-      this.listeners.add(listener);
-      if (this.state.status !== 'loading') listener(this.state);
-      if (this.importing || !this.active) {
-        this.listeners.delete(listener);
-        reject(new Error('tree-unavailable'));
-      }
+      this.waiters.add({ resolve, reject });
+      this.dirty = true;
+      if (!this.reading) void this.read();
     });
   }
   invalidatePreviews() {
@@ -65,6 +60,7 @@ export class TreeProjection {
     this.generation++;
     this.detach();
   }
+  /** Explicit broadcast refresh: subscribers see loading, then the (re)published ready state. */
   refresh() {
     this.dirty = true;
     this.publish({ status: 'loading' });
@@ -73,10 +69,13 @@ export class TreeProjection {
   private async read() {
     this.reading = true;
     const generation = this.generation;
+    let taken: Waiter[] = [];
     try {
       const installationId = await this.ensureIdentity();
       while (this.active && generation === this.generation && this.dirty && !this.importing) {
         this.dirty = false;
+        taken.push(...this.waiters);
+        this.waiters.clear();
         const revision = this.revision;
         const tree = await this.source.read();
         if (!this.active || generation !== this.generation) return;
@@ -123,13 +122,23 @@ export class TreeProjection {
         Object.freeze(nodes);
         Object.freeze(snapshot.roots);
         Object.freeze(snapshot);
-        this.publish({ status: 'ready', snapshot });
+        // A silent read at an already published revision keeps the published state; only real changes or explicit refreshes publish.
+        if (this.state.status !== 'ready' || this.published !== revision) {
+          this.published = revision;
+          this.publish({ status: 'ready', snapshot });
+        }
+        taken.forEach(waiter => waiter.resolve(snapshot));
+        taken = [];
       }
     } catch {
       if (this.active && generation === this.generation)
         this.publish({ status: 'error', message: '无法读取书签或安装身份，请重试。' });
     } finally {
       this.reading = false;
+      // Reads abandoned by stop/import or failed identity/native reads never resolve a stale snapshot.
+      const pending = [...taken, ...this.waiters];
+      this.waiters.clear();
+      pending.forEach(waiter => waiter.reject(new Error('tree-unavailable')));
     }
   }
 }

@@ -87,24 +87,27 @@ function setup(failure: 'get' | 'set' | 'setAccessLevel') {
   };
   const onConnect = event<(port: chrome.runtime.Port) => void>();
   const getTree = vi.fn(async () => [{ id: 'root', title: '', syncing: false }]);
+  const bookmarks = {
+    getTree,
+    onCreated: event(),
+    onChanged: event(),
+    onMoved: event(),
+    onRemoved: event(),
+    onChildrenReordered: event(),
+    onImportBegan: event(),
+    onImportEnded: event(),
+  };
   vi.stubGlobal('chrome', {
     storage: { local: storage },
     runtime: { id: 'test', getURL: (path: string) => `chrome-extension://test/${path}`, onConnect },
-    bookmarks: {
-      getTree,
-      onCreated: event(),
-      onChanged: event(),
-      onMoved: event(),
-      onRemoved: event(),
-      onChildrenReordered: event(),
-      onImportBegan: event(),
-      onImportEnded: event(),
-    },
+    bookmarks,
   });
-  startTreeService();
+  const projection = startTreeService();
   return {
     storage,
     getTree,
+    bookmarks,
+    projection,
     recover: () => {
       failing = false;
     },
@@ -125,12 +128,47 @@ function setup(failure: 'get' | 'set' | 'setAccessLevel') {
       } as unknown as chrome.runtime.Port);
       return {
         state: () => messages.at(-1)?.state,
+        statuses: () => messages.map(message => message.state.status),
         refresh: () => onMessage.emit({ version: 1, type: 'refresh' }),
         disconnect: () => onDisconnect.emit(),
       };
     },
   };
 }
+
+it('silent fresh reads publish nothing; native events still publish loading then ready', async () => {
+  const harness = setup('get');
+  harness.recover();
+  const port = harness.connect();
+  await vi.waitFor(() => expect(port.state()?.status).toBe('ready'));
+  const before = port.statuses().length;
+  const reads = harness.getTree.mock.calls.length;
+  const snapshot = await harness.projection.fresh();
+  expect(snapshot.observedRevision).toBe(0);
+  expect(harness.getTree).toHaveBeenCalledTimes(reads + 1);
+  expect(port.statuses()).toHaveLength(before);
+  expect(harness.projection.state).toMatchObject({ status: 'ready', snapshot: { observedRevision: 0 } });
+  harness.bookmarks.onCreated.emit();
+  await vi.waitFor(() => expect(port.state()).toMatchObject({ status: 'ready', snapshot: { observedRevision: 1 } }));
+  expect(port.statuses().slice(before)).toEqual(['loading', 'ready']);
+});
+it('a port refresh on a ready tree answers only that port from the published state without a native re-read', async () => {
+  const harness = setup('get');
+  harness.recover();
+  const first = harness.connect();
+  const second = harness.connect();
+  await vi.waitFor(() => expect(first.state()?.status).toBe('ready'));
+  await vi.waitFor(() => expect(second.state()?.status).toBe('ready'));
+  const reads = harness.getTree.mock.calls.length;
+  const firstCount = first.statuses().length;
+  const secondCount = second.statuses().length;
+  first.refresh();
+  expect(first.statuses()).toHaveLength(firstCount + 1);
+  expect(first.state()).toEqual(second.state());
+  expect(second.statuses()).toHaveLength(secondCount);
+  await new Promise(resolve => setTimeout(resolve, 20));
+  expect(harness.getTree).toHaveBeenCalledTimes(reads);
+});
 
 it('publishes authoritative tree to exact trusted options page', async () => {
   const harness = setup('get');

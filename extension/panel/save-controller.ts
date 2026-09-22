@@ -183,3 +183,18 @@ export function saveSuggestionPath(
 export function invalidateSaveSuggestion(draft: SaveDraft): SaveDraft {
   return draft.origin === 'ai' ? { ...draft, aiInvalidated: true } : draft;
 }
+/**
+ * Follows the live tree. A destination that still exists unchanged keeps every intent, including an accepted AI
+ * suggestion; a renamed or moved destination only invalidates the suggestion; a missing/unwritable one must be reselected.
+ */
+export function rebaseSaveDraft(draft: SaveDraft, snapshot: TreeSnapshot): SaveDraft {
+  const next = { ...draft, snapshot: structuredClone(snapshot) };
+  if (!draft.parentId) return next;
+  const before = draft.snapshot.nodes.find(n => n.ref.nativeId === draft.parentId);
+  const after = snapshot.nodes.find(n => n.ref.nativeId === draft.parentId);
+  if (!after || !after.childrenWritable)
+    return invalidateSaveSuggestion({ ...next, parentId: '', source: '目标目录已不可用，请重新选择' });
+  return !before || before.title !== after.title || before.parentId !== after.parentId
+    ? invalidateSaveSuggestion(next)
+    : next;
+}

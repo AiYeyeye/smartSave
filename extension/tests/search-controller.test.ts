@@ -84,14 +84,14 @@ it('uses actual transport and privacy projection; explicit request only, no auto
   expect(f.state().hits[0]?.id).toBe('1');
   f.controller.dispose();
 });
-it.each(['query', 'tree', 'settings', 'session', 'permission', 'cancel'] as const)(
+it.each(['query', 'tree-loss', 'settings', 'session', 'permission', 'cancel'] as const)(
   'rejects late response after %s invalidation',
   async kind => {
     const f = setup();
     const pending = f.controller.rerank();
     await vi.waitFor(() => expect(f.fetcher).toHaveBeenCalledOnce());
     if (kind === 'query') f.controller.setQuery('重庆');
-    else if (kind === 'tree') f.controller.setTree({ status: 'loading' });
+    else if (kind === 'tree-loss') f.controller.setTree({ status: 'loading' });
     else if (kind === 'cancel') f.controller.cancel();
     else {
       if (kind === 'session') f.context.sessionRevision++;
@@ -113,6 +113,45 @@ it.each([['unknown'], ['1', '1']])('retains local results after invalid IDs %j',
   await pending;
   expect(f.state().hits).toHaveLength(12);
   expect(f.state().message).toContain('未完成');
+  f.controller.dispose();
+});
+it('a tree change outside the candidates during rerank still delivers the order over the current local results', async () => {
+  const f = setup();
+  const pending = f.controller.rerank();
+  await vi.waitFor(() => expect(f.fetcher).toHaveBeenCalledOnce());
+  const grown = searchTree(13);
+  grown.observedRevision = 2;
+  grown.epoch = 'restarted';
+  f.context.tree = grown;
+  f.controller.setTree({ status: 'ready', snapshot: grown });
+  expect(f.state().reranking).toBe(true);
+  expect(f.state().hits).toHaveLength(13);
+  f.respond(['2', '1']);
+  await pending;
+  expect(
+    f
+      .state()
+      .hits.map(hit => hit.id)
+      .slice(0, 2),
+  ).toEqual(['2', '1']);
+  expect(f.state().hits).toHaveLength(13);
+  expect(f.state().reranking).toBe(false);
+  expect(f.state().message).toContain('已重排');
+  f.controller.dispose();
+});
+it('a candidate removed locally before the answer arrives is ignored rather than failing the order', async () => {
+  const f = setup();
+  const pending = f.controller.rerank();
+  await vi.waitFor(() => expect(f.fetcher).toHaveBeenCalledOnce());
+  const shrunk = searchTree(12);
+  shrunk.nodes = shrunk.nodes.filter(node => node.ref.nativeId !== '3');
+  shrunk.nodes[0]!.childrenIds = shrunk.nodes[0]!.childrenIds.filter(id => id !== '3');
+  f.controller.setTree({ status: 'ready', snapshot: shrunk });
+  f.respond(['3', '2']);
+  await pending;
+  expect(f.state().hits[0]?.id).toBe('2');
+  expect(f.state().hits).toHaveLength(11);
+  expect(f.state().hits.some(hit => hit.id === '3')).toBe(false);
   f.controller.dispose();
 });
 it('safe opening resolves current native identity and refuses removed/unsupported results', () => {

@@ -28,8 +28,16 @@ export function startTreeService() {
         message.version === 1 &&
         'type' in message &&
         message.type === 'refresh'
-      )
-        projection.refresh();
+      ) {
+        // A connecting page only needs the current authoritative state; a global native re-read is reserved for recovery.
+        if (projection.state.status === 'ready') {
+          try {
+            port.postMessage({ version: 1, state: projection.state });
+          } catch {
+            /* Disconnected port: onDisconnect removes subscription. */
+          }
+        } else projection.refresh();
+      }
     });
     port.onDisconnect.addListener(unsubscribe);
     if (projection.state.status === 'error') projection.refresh();

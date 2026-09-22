@@ -48,7 +48,7 @@ async function setup(app = false) {
   tree.start();
   await tree.fresh();
   const store = new FileOutputStore();
-  const sink = new FileOutputSink(tree, store);
+  const sink = new FileOutputSink(tree, store, { debounceMs: 0 });
   const messages: unknown[] = [];
   vi.stubGlobal('chrome', {
     storage: {

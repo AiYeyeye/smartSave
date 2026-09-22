@@ -36,8 +36,9 @@ export function ImportWorkbench({ visible, settings }: { visible: boolean; setti
   const result = submission.result;
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('选择格式、文件和一个目标根目录。不会自动调用模型或重放任务。');
+  // User edits drop the unapplied preview locally; only the explicit pause button signals the worker.
   const invalidate = () => {
-    owner.current?.controller.cancel();
+    owner.current?.controller.invalidatePreview();
     setPreview(undefined);
   };
   useEffect(() => {
@@ -52,12 +53,15 @@ export function ImportWorkbench({ visible, settings }: { visible: boolean; setti
     owner.current = { pipeline, controller };
     let active = true;
     let revision = 0;
-    const stop = authority.subscribe(() => {
+    const stop = authority.subscribe(change => {
       const current = ++revision;
-      pipeline.cancel();
-      controller.cancel();
-      setPreview(undefined);
-      setMessage('上下文已变化；预览失效。请明确恢复或重新分类，不会自动请求。');
+      // Tree changes only refresh the view: classification and a registered preview are judged by their scope owners.
+      if (change !== 'tree') {
+        pipeline.cancel();
+        controller.invalidatePreview();
+        setPreview(undefined);
+        setMessage('模型设置或权限已变化；预览失效。请明确继续或重新分类，不会自动请求。');
+      }
       void authority
         .read()
         .then(context => {
@@ -131,24 +135,22 @@ export function ImportWorkbench({ visible, settings }: { visible: boolean; setti
     setSubmission(owner.current?.controller.observe(value) ?? { state: value.requestId ? 'journal-owned' : 'idle' });
     setRootId(value.root.nativeId);
   };
-  const classify = (action: 'start' | 'resume' | 'recover' | 'reclassify') =>
+  const classify = (action: 'start' | 'resume' | 'reclassify') =>
     run(async () => {
       const root = tree?.nodes.find(n => n.ref.nativeId === rootId)?.ref;
       if (!root || !tree || !owner.current) return;
       invalidate();
       setSubmission({ state: 'idle' });
       const pipeline = owner.current.pipeline;
-      const selection = { root, tree };
+      const selection = { root };
       const response =
         action === 'start' && source
           ? await pipeline.start({ ...selection, id: crypto.randomUUID(), source, format })
           : checkpoint && action === 'reclassify'
             ? await pipeline.reclassify(checkpoint.id, { ...selection, id: crypto.randomUUID() })
-            : checkpoint && action === 'recover'
-              ? await pipeline.recover(checkpoint.id, selection)
-              : checkpoint
-                ? await pipeline.resume(checkpoint.id, selection)
-                : undefined;
+            : checkpoint
+              ? await pipeline.resume(checkpoint.id, selection)
+              : undefined;
       if (!response) return;
       if (response.checkpoint) {
         setCheckpoint(response.checkpoint);
@@ -282,7 +284,8 @@ export function ImportWorkbench({ visible, settings }: { visible: boolean; setti
         onClick={() => {
           parsing.current?.abort();
           owner.current?.pipeline.cancel();
-          invalidate();
+          owner.current?.controller.cancel();
+          setPreview(undefined);
           setMessage('已请求暂停；已发起写入结果须核对日志。');
         }}
       >
@@ -329,13 +332,13 @@ export function ImportWorkbench({ visible, settings }: { visible: boolean; setti
             {checkpoint.items.length}；已映射 {checkpoint.runtime?.mappedGroups.length ?? 0} 组
           </p>
           {checkpoint.requestId && <p>日志请求：{checkpoint.requestId}。checkpoint 阶段不代表写入完成。</p>}
-          {(['resume', 'recover', 'reclassify'] as const).map((action, index) => (
+          {(['resume', 'reclassify'] as const).map((action, index) => (
             <button
               key={action}
               disabled={busy || journalOwned || !rootId || !tree}
               onClick={() => void classify(action)}
             >
-              {['手动继续剩余分类', '服务重启后明确恢复并重新校验', '保留旧证据并重新分类'][index]}
+              {['继续分类', '重新分类'][index]}
             </button>
           ))}
           {importDiagnosticSources(checkpoint).map(({ diagnostic, item }, index) => (

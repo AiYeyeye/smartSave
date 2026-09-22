@@ -5,6 +5,7 @@ import {
   invalidateSaveSuggestion,
   hydrateSaveRules,
   prepareSave,
+  rebaseSaveDraft,
   saveDuplicates,
   selectSaveDuplicate,
   saveSuggestionPath,
@@ -17,7 +18,7 @@ import { SiteRulesStore } from '../persistence/site-rules';
 import { siteHost, matchSiteRule, type SiteRule } from '../domain/site-rules';
 import { SettingsStore } from '../persistence/settings';
 import { ModelTransport } from '../adapters/model-transport';
-import { browserModelAuthority } from '../adapters/model-authority';
+import { browserModelAuthority, type ModelAuthorityChange } from '../adapters/model-authority';
 import { completedSaveFolder, reconcileSave, type ReconcileSave } from './save-receipt';
 import { openUrl } from '../domain/open-url';
 import { Select } from '../ui/Select';
@@ -58,10 +59,14 @@ export function SaveCard({
     live.current = true;
     const authority =
       settings && typeof chrome !== 'undefined' && chrome.permissions ? browserModelAuthority(settings) : undefined;
-    const changed = () => {
+    const revoke = () => {
       generation.current++;
       transport.current?.cancel();
       if (live.current) setDraft(current => invalidateSaveSuggestion(current));
+    };
+    // Tree changes are judged per destination by the snapshot effect below; settings/permissions revoke outright.
+    const changed = (change?: ModelAuthorityChange) => {
+      if (change !== 'tree') revoke();
     };
     if (authority)
       transport.current = new ModelTransport(
@@ -69,7 +74,7 @@ export function SaveCard({
         authority,
       );
     const stop = authority?.subscribe(changed) ?? settings?.subscribe(changed);
-    window.addEventListener('pagehide', changed);
+    window.addEventListener('pagehide', revoke);
     void rulesStore
       .load()
       .then(rules => {
@@ -85,20 +90,22 @@ export function SaveCard({
       });
     return () => {
       live.current = false;
-      changed();
+      revoke();
       stop?.();
       transport.current?.dispose();
-      window.removeEventListener('pagehide', changed);
+      window.removeEventListener('pagehide', revoke);
     };
   }, [settings, rulesStore, page]);
+  // The draft follows the live tree; only a changed or missing destination folder touches an accepted suggestion.
   useEffect(() => {
-    generation.current++;
-    transport.current?.cancel();
+    setDraft(current => rebaseSaveDraft(current, snapshot));
+  }, [snapshot]);
+  useEffect(() => {
     if (!connectionReady) {
       automaticEligible.current = false;
       setAutoSuggest(false);
     }
-  }, [snapshot, connectionReady]);
+  }, [connectionReady]);
   useEffect(() => {
     if (autoSuggest) {
       setAutoSuggest(false);

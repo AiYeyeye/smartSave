@@ -88,16 +88,15 @@ async function harness(deferred = false, bodyEnabled = false) {
       }),
   );
   vi.stubGlobal('fetch', fetcher);
-  const view = render(
-    createElement(SaveCard, {
-      page: { title: 'Page', url: 'https://page.test/' },
-      snapshot: tree,
-      settings,
-      rulesStore: rules,
-      extractBody: async () => 'ephemeral-body',
-      onClose: vi.fn(),
-    }),
-  );
+  const props = {
+    page: { title: 'Page', url: 'https://page.test/' },
+    snapshot: tree,
+    settings,
+    rulesStore: rules,
+    extractBody: async () => 'ephemeral-body',
+    onClose: vi.fn(),
+  };
+  const view = render(createElement(SaveCard, props));
   return {
     revoke: () => listeners.forEach(listener => listener()),
     respond: (value: Response) => finish(value),
@@ -107,8 +106,73 @@ async function harness(deferred = false, bodyEnabled = false) {
     settings,
     view,
     data,
+    rerender: (snapshot: TreeSnapshot) => view.rerender(createElement(SaveCard, { ...props, snapshot })),
   };
 }
+async function acceptSuggestion(h: Awaited<ReturnType<typeof harness>>) {
+  await waitFor(() => expect(h.fetcher).toHaveBeenCalledOnce());
+  const wire = JSON.parse(String(h.fetcher.mock.calls[0]![1]!.body));
+  const item = JSON.parse(wire.messages[1].content).items[0];
+  h.respond(
+    new Response(
+      JSON.stringify({
+        choices: [
+          {
+            message: { content: JSON.stringify({ assignments: [{ itemId: item.id, folderId: 'f' }], newFolders: [] }) },
+          },
+        ],
+      }),
+    ),
+  );
+  await waitFor(() => expect(screen.getByLabelText('收藏目标目录')).toHaveValue('f'));
+}
+it('an accepted AI destination survives unrelated tree changes and is revoked only when its folder changes', async () => {
+  const h = await harness();
+  await acceptSuggestion(h);
+  const grown = structuredClone(tree);
+  grown.observedRevision = 1;
+  grown.epoch = 'restarted';
+  grown.nodes.push({
+    ref: { installationId: 'i', nativeId: 'g', kind: 'folder' },
+    parentId: 'root',
+    title: 'Other folder',
+    index: 1,
+    childrenIds: [],
+    readOnly: false,
+    childrenWritable: true,
+    observedRevision: 1,
+  });
+  grown.nodes[0]!.childrenIds = ['f', 'g'];
+  h.rerender(grown);
+  await waitFor(() => expect(screen.getByRole('option', { name: 'Other folder（g）' })).toBeInTheDocument());
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  expect(screen.getByLabelText('收藏目标目录')).toHaveValue('f');
+  expect(h.fetcher).toHaveBeenCalledOnce();
+  const renamed = structuredClone(grown);
+  renamed.observedRevision = 2;
+  renamed.nodes[1]!.title = 'Renamed folder';
+  h.rerender(renamed);
+  await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('模型配置已变化'));
+  expect(screen.getByLabelText('收藏目标目录')).toHaveValue('f');
+  fireEvent.click(screen.getByRole('button', { name: '确认收藏保存' }));
+  expect(screen.getByRole('status')).toHaveTextContent('未提交');
+  h.view.unmount();
+  h.settings.dispose();
+});
+it('a deleted destination folder must be reselected after the tree changes', async () => {
+  const h = await harness();
+  await acceptSuggestion(h);
+  const removed = structuredClone(tree);
+  removed.observedRevision = 3;
+  removed.nodes = removed.nodes.filter(n => n.ref.nativeId !== 'f');
+  removed.nodes[0]!.childrenIds = [];
+  h.rerender(removed);
+  await waitFor(() => expect(screen.getByLabelText('收藏目标目录')).toHaveValue(''));
+  expect(screen.getByText('目标目录已不可用，请重新选择')).toBeVisible();
+  expect(screen.getByRole('button', { name: '确认收藏保存' })).toBeDisabled();
+  h.view.unmount();
+  h.settings.dispose();
+});
 it('configured automatic initialization reaches actual ModelTransport with provenance and no default body', async () => {
   const h = await harness();
   await waitFor(() => expect(h.fetcher).toHaveBeenCalledOnce());

@@ -76,7 +76,8 @@ async function harness() {
   }
   const a = handle('a');
   await store.configure(a.file, scope, ancestry, await store.issueLease());
-  const sink = new FileOutputSink(tree, store);
+  // Zero debounce keeps the event-driven assertions immediate; the trailing debounce has its own fake-timer case.
+  const sink = new FileOutputSink(tree, store, { debounceMs: 0 });
   return {
     factory,
     store,
@@ -109,9 +110,60 @@ it('startup catches current snapshot without panel and never refreshes itself in
   await vi.waitFor(() => expect(h.tree.state.status).toBe('ready'));
   await new Promise(resolve => setTimeout(resolve, 30));
   expect(h.a.stream.close).toHaveBeenCalledTimes(1);
-  expect(h.source.read).toHaveBeenCalledTimes(3);
+  // Startup and explicit reload write the published snapshot; only the explicit refresh above re-reads natively.
+  expect(h.source.read).toHaveBeenCalledTimes(2);
   h.sink.dispose();
   h.tree.stop();
+});
+it('silent fresh reads and same-revision refreshes never fence an in-flight write', async () => {
+  const h = await harness();
+  const gate = deferred();
+  h.a.stream.write.mockImplementationOnce(async () => {
+    await gate.promise;
+  });
+  await h.sink.control('reload');
+  await vi.waitFor(() => expect(h.a.stream.write).toHaveBeenCalledTimes(1));
+  await h.tree.fresh();
+  h.tree.refresh();
+  await vi.waitFor(() => expect(h.tree.state.status).toBe('ready'));
+  gate.resolve();
+  await vi.waitFor(() => expect(h.sink.status().status).toBe('success'));
+  expect(h.a.stream.abort).not.toHaveBeenCalled();
+  expect(h.a.stream.close).toHaveBeenCalledTimes(1);
+  expect(h.a.stream.write).toHaveBeenCalledTimes(1);
+  h.sink.dispose();
+  h.tree.stop();
+});
+it('a burst of native events produces one trailing write of the latest snapshot after the debounce window', async () => {
+  const h = await harness();
+  h.sink.dispose();
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  const settle = async (done: () => boolean) => {
+    for (let i = 0; i < 2000 && !done(); i++) await new Promise(resolve => setImmediate(resolve));
+    expect(done()).toBe(true);
+  };
+  const sink = new FileOutputSink(h.tree, h.store, { debounceMs: 1500 });
+  try {
+    await sink.control('reload');
+    await settle(() => sink.status().status === 'success');
+    expect(h.a.stream.write).toHaveBeenCalledTimes(1);
+    h.change('one');
+    await settle(() => h.tree.state.status === 'ready' && h.tree.state.snapshot.observedRevision === 1);
+    await vi.advanceTimersByTimeAsync(1000);
+    h.change('two');
+    await settle(() => h.tree.state.status === 'ready' && h.tree.state.snapshot.observedRevision === 2);
+    await vi.advanceTimersByTimeAsync(1400);
+    expect(h.a.stream.write).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(200);
+    await settle(() => h.a.stream.write.mock.calls.length === 2);
+    await settle(() => sink.status().status === 'success');
+    expect(h.a.stream.write.mock.calls[1]![0]).toContain('two');
+    expect(h.a.stream.close).toHaveBeenCalledTimes(2);
+  } finally {
+    sink.dispose();
+    vi.useRealTimers();
+    h.tree.stop();
+  }
 });
 it.each(['denied', 'prompt', 'error', 'close'] as const)(
   '%s pauses durably, no event-driven retry, explicit retry catches current',
@@ -464,7 +516,7 @@ it.each(['open', 'commit'] as const)('independent page stop wins while configura
   await refusal;
   expect(b.file.createWritable).not.toHaveBeenCalled();
   expect((await pageB.read())?.enabled).toBe(false);
-  const restarted = new FileOutputSink(h.tree, pageB);
+  const restarted = new FileOutputSink(h.tree, pageB, { debounceMs: 0 });
   await restarted.control('reload');
   expect(restarted.status().status).toBe('stopped');
   restarted.dispose();

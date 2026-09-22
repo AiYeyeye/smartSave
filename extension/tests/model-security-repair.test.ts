@@ -68,7 +68,7 @@ function disk() {
   };
   return { data, storage, lock, store: () => new SettingsStore(storage, lock) };
 }
-const request = { task: 'search' as const, query: 'synthetic', itemIds: [], folderIds: [] };
+const request = { task: 'search' as const, query: 'synthetic', itemIds: [], folderIds: ['root'] };
 async function setup() {
   const d = disk();
   const store = d.store();
@@ -85,8 +85,12 @@ async function setup() {
     store,
     authority,
     input,
+    // Renames the offered folder: a dependency of the frozen request, unlike observation clocks or unrelated nodes.
     changeTree: () => {
-      currentTree = { ...tree, observedRevision: 2 };
+      currentTree = {
+        ...tree,
+        nodes: tree.nodes.map(n => (n.ref.nativeId === 'root' ? { ...n, title: 'Renamed root' } : n)),
+      };
     },
   };
 }

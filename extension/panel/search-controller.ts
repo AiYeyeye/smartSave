@@ -25,8 +25,10 @@ export class SearchController {
     private readonly authority?: ModelAuthority,
     private readonly transport?: ModelTransport,
   ) {
-    this.stop = authority?.subscribe(() => {
-      this.invalidate('设置、权限或书签已变化，已恢复本地结果。');
+    // Tree changes reach this owner through setTree and are judged per request by the transport's dependency scope.
+    this.stop = authority?.subscribe(change => {
+      if (change === 'tree') return;
+      this.invalidate('设置或权限已变化，已恢复本地结果。');
       const generation = ++this.authorityGeneration;
       this.authorityReady = false;
       void authority
@@ -49,6 +51,7 @@ export class SearchController {
     this.state = { ...this.state, hits: this.local, reranking: false, message };
     this.publish();
   }
+  /** Rebuilds the local index and results; an in-flight rerank keeps running and lands on the current local results. */
   setTree(tree: TreeState) {
     this.tree = structuredClone(tree);
     try {
@@ -58,8 +61,13 @@ export class SearchController {
       this.index = undefined;
     }
     this.local = this.index?.query(this.state.query) ?? [];
-    this.state.status = this.tree.status;
-    this.invalidate(this.tree.status === 'error' ? this.tree.message : '');
+    this.state = {
+      ...this.state,
+      status: this.tree.status,
+      hits: this.local,
+      message: this.tree.status === 'error' ? this.tree.message : this.state.reranking ? this.state.message : '',
+    };
+    this.publish();
   }
   setQuery(query: string) {
     this.state.query = query;
@@ -89,8 +97,7 @@ export class SearchController {
     try {
       const context = await this.authority.read();
       if (generation !== this.generation) return;
-      if (!context.config || JSON.stringify(context.tree) !== JSON.stringify(this.tree.snapshot))
-        throw Error('unavailable');
+      if (!context.config) throw Error('unavailable');
       const candidates = searchCandidates(context.tree, context.privacy, this.local);
       if (!candidates.length) throw Error('no-allowed-candidates');
       const result = await this.transport.run({
@@ -100,7 +107,13 @@ export class SearchController {
       });
       if (generation !== this.generation) return;
       if (result.status !== 'completed' || !('rankedIds' in result.output)) throw Error('rerank-failed');
-      this.state.hits = applySearchOrder(this.local, candidates, result.output.rankedIds);
+      // Candidates removed from the tree while the model answered are simply no longer rankable.
+      const present = new Set(this.local.map(hit => hit.id));
+      this.state.hits = applySearchOrder(
+        this.local,
+        candidates,
+        result.output.rankedIds.filter(id => present.has(id)),
+      );
       this.state.message = 'AI 已重排本地候选；未参与项目仍保留。';
     } catch {
       if (generation === this.generation) {

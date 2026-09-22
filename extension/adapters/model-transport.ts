@@ -8,6 +8,7 @@ import {
   type ClassificationPolicy,
 } from '../domain/classification-policy';
 import { modelSystemPrompt } from '../domain/model-prompts';
+import { dependencyDigest, settingsIdentity } from '../domain/context-dependencies';
 import type { TreeSnapshot } from '../domain/node-reference';
 import { modelOutputJsonSchema, parseModelOutput, type ModelOutputContext } from '../schemas/model-output';
 import { z } from 'zod';
@@ -53,7 +54,10 @@ export class ModelTransport {
     private readonly authority: ModelAuthority,
     private readonly limits = MODEL_BYTE_LIMITS,
   ) {
-    this.unsubscribe = authority.subscribe(() => this.cancel());
+    // Tree changes are judged per request against its dependency scope in run(); settings/permission changes cancel outright.
+    this.unsubscribe = authority.subscribe(change => {
+      if (change !== 'tree') this.cancel();
+    });
   }
   dispose() {
     this.cancel();
@@ -98,16 +102,16 @@ export class ModelTransport {
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       const frozen = structuredClone(input);
-      const current = await this.authority.read();
-      const stamp = JSON.stringify(current);
-      if (
-        JSON.stringify(current.config) !== JSON.stringify(frozen.config) ||
-        current.key !== frozen.key ||
-        JSON.stringify(current.privacy) !== JSON.stringify(frozen.privacy) ||
-        JSON.stringify(current.tree) !== JSON.stringify(frozen.tree)
-      )
-        return { status: 'failed', reason: 'stale-context' };
-      const fresh = async () => stamp === JSON.stringify(await this.authority.read());
+      // Freshness is scoped to what this request depends on: unrelated bookmark changes never invalidate it.
+      const dependencies = dependencyDigest(frozen.tree, frozen.request);
+      const settings = settingsIdentity(frozen);
+      const same = (current: Awaited<ReturnType<ModelAuthority['read']>>) =>
+        current.tree.installationId === frozen.tree.installationId &&
+        dependencyDigest(current.tree, frozen.request) === dependencies &&
+        settingsIdentity(current) === settings &&
+        current.key === frozen.key;
+      if (!same(await this.authority.read())) return { status: 'failed', reason: 'stale-context' };
+      const fresh = async () => same(await this.authority.read());
       const route = parseModelEndpoint(frozen.config);
       const payload = serializeAiPayload(frozen.tree, frozen.privacy, frozen.request);
       const policy = frozen.policy ?? DEFAULT_CLASSIFICATION_POLICY;

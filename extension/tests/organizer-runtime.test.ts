@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { IDBFactory } from 'fake-indexeddb';
 import { OrganizerAuthority } from '../background/organizer-authority';
 import { MutationCoordinator } from '../background/mutation-coordinator';
@@ -228,3 +228,74 @@ it.each(['success', 'late-child', 'partial', 'backup-failure', 'privacy-race', '
     controller.dispose();
   },
 );
+it('real transport: a proposal survives changes outside its scope and is revoked by changes inside', async () => {
+  let tree = organizerTree();
+  const settings = {
+    snapshot: async () => ({
+      version: 1 as const,
+      revision: 'one',
+      sessionRevision: 0,
+      key: '',
+      privacy: { fullUrl: true, bodyEnabled: false, excludedFolders: [] },
+      config: {
+        adapter: 'openai-compatible' as const,
+        baseUrl: 'https://model.test/v1',
+        model: 'test',
+        timeoutMs: 1000,
+      },
+    }),
+    subscribe: () => () => {},
+  };
+  const modelAuthority: ModelAuthority = {
+    read: async () => ({ ...(await settings.snapshot()), tree: structuredClone(tree) }),
+    subscribe: settings.subscribe,
+  };
+  const fetcher = vi.fn(
+    async () =>
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  moves: [],
+                  newFolders: [],
+                  merges: [{ sourceId: 'left', targetId: 'right' }],
+                }),
+              },
+            },
+          ],
+        }),
+      ),
+  );
+  const transport = new ModelTransport({ contains: async () => true, fetch: fetcher }, modelAuthority);
+  let state: OrganizeState;
+  const close = vi.fn();
+  const controller = new OrganizeController(
+    s => {
+      state = s;
+    },
+    modelAuthority,
+    transport,
+    async () => ({ token: 'lease', close }),
+  );
+  controller.setTree({ status: 'ready', snapshot: tree });
+  controller.selectScope('bar');
+  await controller.generate();
+  expect(state!.proposal?.actions[0]?.kind).toBe('merge');
+  tree = organizerTree();
+  tree.observedRevision = 5;
+  tree.epoch = 'restarted';
+  tree.nodes.find(n => n.ref.nativeId === 'c')!.title = 'renamed outside bookmark';
+  controller.setTree({ status: 'ready', snapshot: tree });
+  expect(state!.invalid).toBe(false);
+  expect(close).not.toHaveBeenCalled();
+  tree = organizerTree();
+  tree.nodes = tree.nodes.filter(n => n.ref.nativeId !== 'b');
+  tree.nodes.find(n => n.ref.nativeId === 'left')!.childrenIds = ['a'];
+  controller.setTree({ status: 'ready', snapshot: tree });
+  expect(state!.invalid).toBe(true);
+  expect(close).toHaveBeenCalledTimes(1);
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  controller.dispose();
+});

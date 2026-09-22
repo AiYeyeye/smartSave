@@ -143,10 +143,20 @@ it('explicit UI rerank uses shared settings and actual browser authority; accept
   fireEvent.click(screen.getByRole('button', { name: /启用 AI/ }));
   await vi.waitFor(() => expect(fetcher).toHaveBeenCalledOnce());
   expect(screen.getByRole('region')).toHaveAttribute('aria-busy', 'true');
+  // A native change outside the candidates reaches both the view and the shared authority mid-flight and is not a cancellation.
+  const grown = searchTree(4);
+  grown.observedRevision = 2;
+  await act(async () => {
+    listeners.forEach(listener => listener({ status: 'loading' }));
+    listeners.forEach(listener => listener({ status: 'ready', snapshot: grown }));
+  });
+  expect(screen.getByRole('region')).toHaveAttribute('aria-busy', 'true');
   await act(async () => {
     finish(new Response(JSON.stringify({ choices: [{ message: { content: '{"rankedIds":["2"]}' } }] })));
   });
   expect(view.container.querySelector('.search-hit-list button')).toHaveTextContent('Bookmark 1');
+  expect(view.container.querySelectorAll('.search-hit-list li')).toHaveLength(4);
+  expect(fetcher).toHaveBeenCalledOnce();
   await act(async () => {
     invalidations.forEach(listener => listener());
   });

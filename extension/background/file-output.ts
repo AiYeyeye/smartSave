@@ -28,6 +28,8 @@ export class FileOutputSink {
   private busy = false;
   private paused = true;
   private disposed = false;
+  private timer?: ReturnType<typeof setTimeout>;
+  private readonly debounceMs: number;
   private detach: () => void;
   private controls: Promise<unknown> = Promise.resolve();
   private state: { status: FileOutputMetadata['status'] | 'storage-error'; generation?: string; lastSuccess?: string } =
@@ -35,18 +37,22 @@ export class FileOutputSink {
   constructor(
     private tree: TreeProjection,
     private store: FileOutputStore,
+    options: { debounceMs?: number } = {},
   ) {
+    this.debounceMs = options.debounceMs ?? 1500;
     this.detach = tree.subscribe(value => {
-      if (value.status !== 'ready') {
+      // Only a native read failure fences in-flight work; transient loading is not evidence of change.
+      if (value.status === 'error') {
         this.version++;
         return;
       }
+      if (value.status !== 'ready') return;
       const next = identity(value.snapshot);
       if (next !== this.seen) {
         this.seen = next;
         this.dirty++;
       }
-      this.kick();
+      this.schedule();
     });
   }
   status() {
@@ -155,7 +161,9 @@ export class FileOutputSink {
         this.paused = false;
         this.dirty++;
         this.state = { status: 'pending', generation: target.generation, lastSuccess: target.lastSuccess };
-        this.tree.refresh();
+        // An explicit command writes the current authoritative snapshot at once; only an unavailable tree is re-read.
+        if (this.tree.state.status === 'ready') this.kick();
+        else this.tree.refresh();
         return receipt('accepted', target.controlRevision);
       } catch {
         if (version === this.version) {
@@ -174,7 +182,21 @@ export class FileOutputSink {
     this.disposed = true;
     this.paused = true;
     this.version++;
+    clearTimeout(this.timer);
     this.detach();
+  }
+  /** Trailing debounce: a burst of native events yields one pass over the latest snapshot. */
+  private schedule() {
+    clearTimeout(this.timer);
+    this.timer = undefined;
+    if (!this.debounceMs) {
+      this.kick();
+      return;
+    }
+    this.timer = setTimeout(() => {
+      this.timer = undefined;
+      this.kick();
+    }, this.debounceMs);
   }
   private kick() {
     if (
@@ -190,7 +212,7 @@ export class FileOutputSink {
     this.state = { ...this.state, status: 'pending' };
     void this.pass().finally(() => {
       this.busy = false;
-      this.kick();
+      this.schedule();
     });
   }
   private async pass() {

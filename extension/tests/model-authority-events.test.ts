@@ -1,31 +1,38 @@
 import { expect, it, vi } from 'vitest';
 import { SettingsStore } from '../persistence/settings';
-import { browserModelAuthority } from '../adapters/model-authority';
+import { browserModelAuthority, type ModelAuthorityChange } from '../adapters/model-authority';
 import { ModelTransport } from '../adapters/model-transport';
+import type { TreeState } from '../domain/node-reference';
+const { treeListeners } = vi.hoisted(() => ({ treeListeners: new Set<(state: TreeState) => void>() }));
 vi.mock('../panel/tree-client', () => ({
-  connectTree: (_runtime: unknown, listener: (value: unknown) => void) => {
+  connectTree: (_runtime: unknown, listener: (value: TreeState) => void) => {
+    treeListeners.add(listener);
     listener({
       status: 'ready',
       snapshot: { installationId: 'i', epoch: 'e', observedRevision: 0, roots: [], nodes: [] },
     });
-    return () => {};
+    return () => {
+      treeListeners.delete(listener);
+    };
   },
 }));
-it.each([
-  ['tree.expanded.i', 'local', true],
-  ['siteRules', 'local', true],
-  ['modelSecurity', 'sync', true],
-  ['modelSecurity', 'local', false],
-] as const)('filters %s in %s without losing authority invalidation', async (key, area, completes) => {
+function boundary() {
   const listeners = new Set<(changes: Record<string, unknown>, area: string) => void>();
-  const event = {
-    addListener: (f: (changes: Record<string, unknown>, area: string) => void) => listeners.add(f),
-    removeListener: (f: (changes: Record<string, unknown>, area: string) => void) => listeners.delete(f),
-  };
+  const permissions = new Set<() => void>();
   vi.stubGlobal('chrome', {
     runtime: {},
-    storage: { onChanged: event },
-    permissions: { onRemoved: { addListener: () => {}, removeListener: () => {} } },
+    storage: {
+      onChanged: {
+        addListener: (f: (changes: Record<string, unknown>, area: string) => void) => listeners.add(f),
+        removeListener: (f: (changes: Record<string, unknown>, area: string) => void) => listeners.delete(f),
+      },
+    },
+    permissions: {
+      onRemoved: {
+        addListener: (f: () => void) => permissions.add(f),
+        removeListener: (f: () => void) => permissions.delete(f),
+      },
+    },
   });
   const data: Record<string, unknown> = {};
   const store = new SettingsStore(
@@ -41,6 +48,15 @@ it.each([
     },
     run => run(),
   );
+  return { listeners, permissions, store };
+}
+it.each([
+  ['tree.expanded.i', 'local', true],
+  ['siteRules', 'local', true],
+  ['modelSecurity', 'sync', true],
+  ['modelSecurity', 'local', false],
+] as const)('filters %s in %s without losing authority invalidation', async (key, area, completes) => {
+  const { listeners, store } = boundary();
   await store.load();
   const config = { adapter: 'openai-compatible' as const, baseUrl: 'https://model.test', model: 'm', timeoutMs: 10000 };
   await store.save(config, { fullUrl: true, bodyEnabled: false, excludedFolders: [] }, '', false);
@@ -68,6 +84,36 @@ it.each([
     transport.dispose();
     store.dispose();
     expect(listeners.size).toBe(0);
+    treeListeners.clear();
+    vi.unstubAllGlobals();
+  }
+});
+it('names the changed owner: tree port state, settings envelope, removed permission', async () => {
+  const { listeners, permissions, store } = boundary();
+  await store.load();
+  const authority = browserModelAuthority(store);
+  const changes: (ModelAuthorityChange | undefined)[] = [];
+  const stop = authority.subscribe(change => changes.push(change));
+  try {
+    expect(changes).toEqual(['tree']);
+    treeListeners.forEach(listener => listener({ status: 'loading' }));
+    await expect(authority.read()).rejects.toThrow('tree-unavailable');
+    treeListeners.forEach(listener =>
+      listener({
+        status: 'ready',
+        snapshot: { installationId: 'i', epoch: 'e', observedRevision: 1, roots: [], nodes: [] },
+      }),
+    );
+    expect((await authority.read()).tree.observedRevision).toBe(1);
+    await store.savePrivacy({ fullUrl: false, bodyEnabled: false, excludedFolders: [] });
+    for (const listener of listeners) listener({ modelSecurity: { newValue: {} } }, 'local');
+    permissions.forEach(listener => listener());
+    expect(changes).toEqual(['tree', 'tree', 'tree', 'settings', 'settings', 'permissions']);
+  } finally {
+    stop();
+    store.dispose();
+    expect(permissions.size).toBe(0);
+    expect(treeListeners.size).toBe(0);
     vi.unstubAllGlobals();
   }
 });

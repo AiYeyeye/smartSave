@@ -1,5 +1,5 @@
 import { importSourceItems } from './import-sources';
-import { importContextDigest as contextDigest } from './import-evidence';
+import { importContextCurrent, importContextDigest as contextDigest, importScopeFolders } from './import-evidence';
 import type { ModelAuthority } from '../adapters/model-authority';
 import type { ModelTransport } from '../adapters/model-transport';
 import { ImportCheckpointStore, type ImportCheckpoint } from '../persistence/import-checkpoints';
@@ -7,8 +7,8 @@ import type { ImportFormat, ImportResult, SourceCandidate } from '../import/cont
 import { candidateStructure, resolveSourceCandidates } from '../import/source-candidates';
 import { deduplicateImport } from './import-deduplication';
 import { importURLDiagnostic } from './import-url';
-import { serializeAiPayload, type AiRequest, type AiSample } from './ai-payload';
-import type { NodeRef, TreeSnapshot } from './node-reference';
+import type { AiRequest, AiSample } from './ai-payload';
+import type { NodeRef } from './node-reference';
 
 type Context = Awaited<ReturnType<ModelAuthority['read']>>;
 type Runtime = NonNullable<ImportCheckpoint['runtime']>;
@@ -19,9 +19,9 @@ type MappingGroup = {
   elements: Map<string, Map<string, SourceCandidate>>;
   url: boolean;
 };
+/** The root is validated against the authoritative tree read by this owner, never against a caller-supplied snapshot. */
 export interface ImportSelection {
   root: NodeRef;
-  tree: TreeSnapshot;
 }
 export type ImportPipelineResult =
   | { status: 'classified'; checkpoint: ImportCheckpoint }
@@ -55,41 +55,7 @@ function mappingGroups(runtime: Runtime): MappingGroup[] {
   return [...groups.values()].filter(group => group.url);
 }
 function scopedFolders(context: Context, root: NodeRef): string[] {
-  const tree = context.tree;
-  const nodes = new Map(tree.nodes.map(n => [n.ref.nativeId, n]));
-  const selected = nodes.get(root.nativeId);
-  if (
-    root.installationId !== tree.installationId ||
-    root.kind !== 'folder' ||
-    !selected ||
-    !equal(selected.ref, root) ||
-    selected.childrenWritable === false
-  )
-    throw Error('invalid-root');
-  const descendants = tree.nodes
-    .filter(n => {
-      if (n.ref.kind !== 'folder' || n.childrenWritable === false) return false;
-      let cursor: typeof n | undefined = n;
-      const seen = new Set<string>();
-      while (cursor) {
-        if (seen.has(cursor.ref.nativeId)) throw Error('invalid-tree');
-        seen.add(cursor.ref.nativeId);
-        if (cursor.ref.nativeId === root.nativeId) return true;
-        cursor = cursor.parentId === undefined ? undefined : nodes.get(cursor.parentId);
-      }
-      return false;
-    })
-    .map(n => n.ref.nativeId);
-  // Reuse the final privacy/scope owner, including excluded ancestors of the selected root.
-  const projected: { folders: { id: string }[] } = JSON.parse(
-    serializeAiPayload(tree, context.privacy, {
-      task: 'import-classify',
-      targetId: root.nativeId,
-      items: [],
-      folderIds: descendants,
-    }),
-  );
-  return projected.folders.map(f => f.id);
+  return importScopeFolders(context.tree, context.privacy, root);
 }
 
 /** Classification only. This owner has no bookmark writer, lease, UI or automatic resume path. */
@@ -131,8 +97,7 @@ export class ImportPipeline {
     // Recognized rows win: mapping runs only when no parser row exists, so unfamiliar strings never displace evidence or drive model calls.
     const mapping = !frozen.source.items.length && candidates.length > 0;
     const runtime: Runtime = {
-      version: 2,
-      semanticDigest: await contextDigest(context, frozen.root, true),
+      version: 3,
       contextDigest: await contextDigest(context, frozen.root),
       stage: mapping ? 'mapping' : 'classification',
       format: frozen.format,
@@ -164,7 +129,7 @@ export class ImportPipeline {
     await this.store.put(checkpoint, null);
     return this.execute(checkpoint);
   }
-  /** Explicit caller action after reload. Legacy checkpoints remain readable but cannot resume without provenance. */
+  /** Explicit caller action after reload or worker restart: continues only when the classification scope, privacy and route still match. */
   async resume(id: string, selection: ImportSelection): Promise<ImportPipelineResult> {
     return this.exclusive(async () => {
       const frozen = structuredClone(selection);
@@ -181,28 +146,9 @@ export class ImportPipeline {
       return this.execute(checkpoint);
     });
   }
-  /** Explicit rescan; semantic evidence never replaces the active epoch-bound stamp. */
-  async recover(id: string, selection: ImportSelection): Promise<ImportPipelineResult> {
-    return this.exclusive(async () => {
-      const frozen = structuredClone(selection);
-      const checkpoint = await this.store.get(id);
-      if (!checkpoint) throw Error('import-checkpoint-not-found');
-      try {
-        this.assertClassificationOwned(checkpoint);
-        const context = await this.authority.read();
-        this.validateSelection(context, frozen);
-        if (checkpoint.runtime?.version !== 2) throw Error('import-reclassification-required');
-        if (
-          !equal(checkpoint.root, frozen.root) ||
-          checkpoint.runtime.semanticDigest !== (await contextDigest(context, frozen.root, true))
-        )
-          throw Error('stale-context');
-        const binding = await contextDigest(context, frozen.root);
-        return this.execute(checkpoint, binding);
-      } catch (error) {
-        return { status: 'paused', reason: this.reason(error), checkpoint };
-      }
-    });
+  /** Same explicit continuation; runtime v3 evidence needs no separate rescan after a worker restart. */
+  recover(id: string, selection: ImportSelection): Promise<ImportPipelineResult> {
+    return this.resume(id, selection);
   }
   /** New classification task; the old checkpoint and all journal evidence remain untouched. */
   async reclassify(
@@ -217,7 +163,7 @@ export class ImportPipeline {
       const runtime = checkpoint.runtime;
       const source =
         frozen.source ??
-        (runtime?.version === 2
+        (runtime && runtime.version !== 1
           ? { text: '', encoding: 'utf-8' as const, items: runtime.sourceItems, candidates: runtime.candidates }
           : undefined);
       const format = frozen.format ?? runtime?.format;
@@ -265,17 +211,17 @@ export class ImportPipeline {
     return safe.includes(message) ? message : 'import-classification-failed';
   }
   private validateSelection(context: Context, selection: ImportSelection) {
-    if (!equal(context.tree, selection.tree)) throw Error('stale-context');
     scopedFolders(context, selection.root);
   }
-  private async validateCheckpoint(checkpoint: ImportCheckpoint, context: Context, binding?: string) {
-    if (!checkpoint.runtime) throw Error('unsupported-import-checkpoint');
+  /** v3 compares the scoped digest; v2 legacy records continue only while either legacy digest still matches. */
+  private async validateCheckpoint(checkpoint: ImportCheckpoint, context: Context) {
+    if (!checkpoint.runtime) throw Error('import-reclassification-required');
     this.assertClassificationOwned(checkpoint);
     scopedFolders(context, checkpoint.root);
-    if ((binding ?? checkpoint.runtime.contextDigest) !== (await contextDigest(context, checkpoint.root)))
-      throw Error('stale-context');
+    if (!(await importContextCurrent(checkpoint.runtime, context, checkpoint.root)))
+      throw Error(checkpoint.runtime.version === 3 ? 'stale-context' : 'import-reclassification-required');
   }
-  private async execute(initial: ImportCheckpoint, binding?: string): Promise<ImportPipelineResult> {
+  private async execute(initial: ImportCheckpoint): Promise<ImportPipelineResult> {
     let checkpoint = initial;
     const save = async (next: ImportCheckpoint) => {
       next.revision = checkpoint.revision + 1;
@@ -287,7 +233,7 @@ export class ImportPipeline {
       while (true) {
         if (this.cancelled) throw Error('cancelled');
         const context = await this.authority.read();
-        await this.validateCheckpoint(checkpoint, context, binding);
+        await this.validateCheckpoint(checkpoint, context);
         if (this.cancelled) throw Error('cancelled');
         const runtime = checkpoint.runtime!;
         const folderIds = scopedFolders(context, checkpoint.root);
@@ -353,7 +299,7 @@ export class ImportPipeline {
         const result = await this.transport.run({ ...context, config: context.config, request });
         if (result.status !== 'completed') return { status: 'paused', reason: result.reason, checkpoint };
         if (this.cancelled) throw Error('cancelled');
-        await this.validateCheckpoint(checkpoint, await this.authority.read(), binding);
+        await this.validateCheckpoint(checkpoint, await this.authority.read());
         const output = result.output;
         if (request.task === 'import-map' && 'urlPath' in output) {
           const { key, structure, fields, elements } = group!;

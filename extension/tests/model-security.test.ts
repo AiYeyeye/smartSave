@@ -46,6 +46,7 @@ describe('final AI payload boundary', () => {
 });
 
 import { parseModelEndpoint, ModelTransport } from '../adapters/model-transport';
+import type { ModelAuthority, ModelAuthorityChange } from '../adapters/model-authority';
 import { SettingsStore } from '../persistence/settings';
 import { parseModelOutput } from '../schemas/model-output';
 import { vi } from 'vitest';
@@ -176,6 +177,94 @@ describe('single attempt model transport', () => {
       expect.objectContaining({ credentials: 'omit', redirect: 'error', method: 'POST' }),
     ]);
     expect(contains).toHaveBeenCalledWith({ origins: ['https://model.example/*'] });
+  });
+});
+describe('dependency-scoped freshness', () => {
+  const request = { task: 'search' as const, query: 'find', itemIds: ['public'], folderIds: ['root'] };
+  function scoped() {
+    let current: TreeSnapshot = tree;
+    let release!: (response: Response) => void;
+    const fetcher = vi.fn(
+      () =>
+        new Promise<Response>(resolve => {
+          release = resolve;
+        }),
+    );
+    const listeners = new Set<(change?: ModelAuthorityChange) => void>();
+    const authority: ModelAuthority = {
+      read: async () => ({
+        version: 1 as const,
+        revision: 'r',
+        sessionRevision: 0,
+        key: '',
+        config,
+        privacy,
+        tree: structuredClone(current),
+      }),
+      subscribe: listener => {
+        listeners.add(listener);
+        return () => {
+          listeners.delete(listener);
+        };
+      },
+    };
+    const transport = new ModelTransport({ fetch: fetcher, contains: async () => true }, authority);
+    const start = () => transport.run({ config, key: '', tree, privacy, request });
+    return {
+      transport,
+      fetcher,
+      start,
+      setTree: (mutate: (next: TreeSnapshot) => void) => {
+        const next = structuredClone(current);
+        mutate(next);
+        current = next;
+      },
+      emit: (change: ModelAuthorityChange) => listeners.forEach(listener => listener(change)),
+      respond: () =>
+        release(new Response(JSON.stringify({ choices: [{ message: { content: '{"rankedIds":["public"]}' } }] }))),
+    };
+  }
+  it('completes when nodes outside the request scope change while the model answers', async () => {
+    const s = scoped();
+    const pending = s.start();
+    await vi.waitFor(() => expect(s.fetcher).toHaveBeenCalledOnce());
+    s.setTree(next => {
+      next.observedRevision = 9;
+      next.epoch = 'restarted';
+      next.nodes.push({ ...next.nodes[3]!, ref: { ...next.nodes[3]!.ref, nativeId: 'added' }, title: 'Added' });
+      next.nodes[1]!.title = 'Renamed private folder';
+    });
+    s.respond();
+    expect(await pending).toEqual({ status: 'completed', output: { rankedIds: ['public'] } });
+    s.transport.dispose();
+  });
+  it.each(['renamed', 'deleted'] as const)('fails with stale-context when an offered folder is %s', async change => {
+    const s = scoped();
+    const pending = s.start();
+    await vi.waitFor(() => expect(s.fetcher).toHaveBeenCalledOnce());
+    s.setTree(next => {
+      if (change === 'renamed') next.nodes[0]!.title = 'Renamed root';
+      else next.nodes = next.nodes.filter(n => n.ref.nativeId !== 'root');
+    });
+    s.respond();
+    expect(await pending).toEqual({ status: 'failed', reason: 'stale-context' });
+    s.transport.dispose();
+  });
+  it('a tree notification alone never cancels an in-flight request; settings and permissions do', async () => {
+    const s = scoped();
+    const pending = s.start();
+    await vi.waitFor(() => expect(s.fetcher).toHaveBeenCalledOnce());
+    s.emit('tree');
+    s.respond();
+    expect((await pending).status).toBe('completed');
+    for (const change of ['settings', 'permissions'] as const) {
+      const next = s.start();
+      await vi.waitFor(() => expect(s.fetcher).toHaveBeenCalledTimes(change === 'settings' ? 2 : 3));
+      s.emit(change);
+      s.respond();
+      expect(await next).toEqual({ status: 'cancelled', reason: 'cancelled' });
+    }
+    s.transport.dispose();
   });
 });
 

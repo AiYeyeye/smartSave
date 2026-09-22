@@ -91,7 +91,7 @@ async function setup(fault = 0, change = 'privacy', name = 'zhilan-operations') 
     ],
     phase: 'classified',
     runtime: {
-      version: 2,
+      version: 3,
       stage: 'classification',
       format: 'txt',
       sourceItems: items.map(i => i.item),
@@ -99,7 +99,6 @@ async function setup(fault = 0, change = 'privacy', name = 'zhilan-operations') 
       mappedGroups: [],
       mappedItems: [],
       contextDigest: await importContextDigest(context, root),
-      semanticDigest: await importContextDigest(context, root, true),
     },
   };
   await checkpoints.put(checkpoint, null);
@@ -214,8 +213,57 @@ async function setup(fault = 0, change = 'privacy', name = 'zhilan-operations') 
     tree,
     calls: () => calls,
     invalidate,
+    notify: () => events.forEach(cb => cb()),
   };
 }
+it('scope-independent prepare/validate: changes outside the classification scope keep the lease current, the coordinator still fails closed on its whole-tree baseline', async () => {
+  const h = await setup();
+  expect(h.authority.current(h.request)).toBe(true);
+  h.tree[0]!.children!.push({ id: 'aside', parentId: '0', title: 'Aside', url: 'https://aside.test/', syncing: false });
+  h.notify();
+  // Synchronous semantics: the projection published loading, so the lease is not current until the next ready state.
+  expect(h.authority.current(h.request)).toBe(false);
+  await h.projection.fresh();
+  expect(h.projection.state.status).toBe('ready');
+  expect(h.authority.current(h.request)).toBe(true);
+  expect(await h.authority.validate(h.request, h.sender)).toBe(true);
+  expect(h.authority.current(h.request)).toBe(true);
+  expect((await h.coordinator.submit(h.request, h.sender)).reason).toBe('preflight-conflict');
+  expect(h.calls()).toBe(0);
+});
+it.each(['root-title', 'scope-folder-title', 'scope-folder-removed'] as const)(
+  'a %s change inside the scope rejects validate and the synchronous current check',
+  async change => {
+    const h = await setup();
+    const bar = h.tree[0]!.children![0]!;
+    if (change === 'root-title') bar.title = 'Renamed root';
+    if (change === 'scope-folder-title') bar.children![0]!.title = 'Renamed scope folder';
+    if (change === 'scope-folder-removed') bar.children = [];
+    h.notify();
+    await h.projection.fresh();
+    expect(h.projection.state.status).toBe('ready');
+    expect(h.authority.current(h.request)).toBe(false);
+    expect(await h.authority.validate(h.request, h.sender)).toBe(false);
+    expect(['rejected', 'failed']).toContain((await h.coordinator.submit(h.request, h.sender)).status);
+    expect(h.calls()).toBe(0);
+  },
+);
+it('a fresh preview after an unrelated change registers and applies with the current baseline', async () => {
+  const h = await setup();
+  h.tree[0]!.children!.push({ id: 'aside', parentId: '0', title: 'Aside', url: 'https://aside.test/', syncing: false });
+  h.notify();
+  await h.projection.fresh();
+  const request = (await h.coordinator.registerImportPreview(
+    h.authority.open(h.sender),
+    'import',
+    0,
+    h.selection,
+    h.sender,
+  ))!;
+  expect(request.importBinding?.contextDigest).toBe(h.request.importBinding?.contextDigest);
+  expect((await h.coordinator.submit(request, h.sender)).status).toBe('completed');
+  expect(h.calls()).toBe(3);
+});
 it('real coordinator imports nested selected rows only and retains exact frozen source/plan without ephemeral IDB data', async () => {
   const h = await setup();
   expect((await h.coordinator.submit(h.request, h.sender)).status).toBe('completed');

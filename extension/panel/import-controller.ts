@@ -87,10 +87,10 @@ export class ImportController {
     if (['journal-owned', 'uncertain'].includes(this.submission(checkpointId).state))
       throw Error('import-checkpoint-recovery-required');
     if (this.applying) throw Error('import-apply-in-progress');
-    this.cancel();
+    this.invalidatePreview();
     const generation = this.generation;
     const lease = await this.openLease(() => {
-      this.cancel();
+      this.invalidatePreview();
     });
     if (generation !== this.generation) {
       lease.close();
@@ -117,14 +117,14 @@ export class ImportController {
       if (generation !== this.generation) throw Error('import-cancelled');
       if (response.status === 'rejected') throw Error(response.reason ?? 'import-preview-rejected');
       if (response.status === 'empty') {
-        this.cancel();
+        this.invalidatePreview();
         return undefined;
       }
       this.checkpointId = checkpointId;
       this.request = response.proposal;
       return structuredClone(response.proposal);
     } catch (error) {
-      if (generation === this.generation) this.cancel();
+      if (generation === this.generation) this.invalidatePreview();
       throw error;
     }
   }
@@ -164,12 +164,17 @@ export class ImportController {
     this.submissions.set(id, { ...state, result });
     return this.submission(id);
   }
-  cancel() {
+  /** Context invalidation: drops the unapplied proposal and its lease; an apply already handed to the worker keeps running. */
+  invalidatePreview() {
     this.generation++;
-    const request = this.request ?? this.applying;
     this.request = undefined;
     this.lease?.close();
     this.lease = undefined;
+  }
+  /** Explicit user cancellation: also signals the worker to stop steps not yet issued for an in-flight apply. */
+  cancel() {
+    const request = this.request ?? this.applying;
+    this.invalidatePreview();
     if (request)
       void this.transport({ version: 1, type: 'cancelMutation', requestId: request.requestId }).catch(() => {});
   }
