@@ -1,16 +1,20 @@
 import { expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { IDBFactory } from 'fake-indexeddb';
 import { ImportPipeline } from '../domain/import-pipeline';
 import { ImportCheckpointStore } from '../persistence/import-checkpoints';
-import { ModelTransport } from '../adapters/model-transport';
+import { ModelTransport, modelRequestBody } from '../adapters/model-transport';
+import { serializeAiPayload } from '../domain/ai-payload';
 import { parseImport } from '../import/parsers';
 import type { TreeSnapshot } from '../domain/node-reference';
 
-function setup(requestBytes = 2100) {
+function setup(slack = 1200) {
   const tree: TreeSnapshot = { installationId: 'i', epoch: 'e', observedRevision: 1, roots: ['root'], nodes: ['root', 'child', 'outside'].map((id, index) => ({ ref: { installationId: 'i', nativeId: id, kind: 'folder' }, title: id, parentId: index === 1 ? 'root' : undefined, index, childrenIds: [], readOnly: false, childrenWritable: true, observedRevision: 1 })) };
   const state = { version: 1 as const, revision: 'r', sessionRevision: 0, key: 'synthetic-key', config: { adapter: 'openai-compatible' as const, baseUrl: 'https://synthetic.test', model: 'm', timeoutMs: 10000 }, privacy: { fullUrl: false, bodyEnabled: false, excludedFolders: [] }, tree };
+  // Synthetic budget = measured fixed envelope (prompt, schema, folder context) + slack, so batching pressure survives prompt growth.
+  const requestBytes = new TextEncoder().encode(modelRequestBody(state.config, 'import-classify', serializeAiPayload(tree, state.privacy, { task: 'import-classify', targetId: 'root', items: [], folderIds: ['root', 'child'] }))).byteLength + slack;
   const authority = { read: async () => structuredClone(state), subscribe: () => () => {} };
-  const payloads: { task: string; items: { id: string; title: string; url: string }[]; folders: { id: string }[]; fields?: { path: string[] }[] }[] = [];
+  const payloads: { task: string; items: { id: string; title: string; url: string }[]; folders: { id: string }[]; fields?: { path: string[]; samples: string[] }[] }[] = [];
   let failure = 0;
   const fetcher = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
     const payload = JSON.parse(JSON.parse(String(init?.body)).messages[1].content); payloads.push(payload);
@@ -45,13 +49,53 @@ it('manually resumes in a new instance without repeating committed batches', asy
   expect(s.payloads.slice(before).flatMap(p => p.items.map(i => i.id)).some(id => completedIds.includes(id))).toBe(false);
   expect((await s.store.all())[0]!.classified).toHaveLength(20);
 });
-it('maps unfamiliar original paths through actual transport, not invented URLs', async () => {
-  const s = setup(10000); const source = parsed('[{"link":"https://source.test/a?secret=1","label":"Original"},{"link":"https://source.test/b","label":"Second"}]', 'json');
+it('maps isomorphic unfamiliar elements with one model decision per structure, at most five samples per field, never invented URLs', async () => {
+  const s = setup(10000); const rows = Array.from({ length: 7 }, (_, i) => ({ link: `https://source.test/${i}?secret=1`, label: `Label ${i}` }));
+  const source = parsed(JSON.stringify([...rows, { label: 'No link here' }]), 'json');
   expect((await s.make().start({ id: 'mapping', source, format: 'json', root: s.root, tree: s.state.tree })).status).toBe('classified');
   const checkpoint = (await s.store.all())[0]!;
-  expect(checkpoint.items.map(i => i.item.rawURL)).toEqual(['https://source.test/a?secret=1', 'https://source.test/b']);
-  expect(s.payloads.filter(p => p.task === 'import-map')).toHaveLength(2);
-  expect(checkpoint.classified.map(i => i.title)).toEqual(['Original', 'Second']);
+  expect(checkpoint.items.map(i => i.item.rawURL)).toEqual(rows.map(r => r.link));
+  expect(s.payloads.map(p => p.task)).toEqual(['import-map', 'import-classify']);
+  expect(s.payloads[0]!.fields!.map(f => [f.path.join('/'), f.samples.length]).sort()).toEqual([['*/label', 5], ['*/link', 5]]);
+  expect(JSON.stringify(s.payloads)).not.toContain('secret=1');
+  expect(checkpoint.classified.map(i => i.title)).toEqual(rows.map(r => r.label));
+  expect(checkpoint.diagnostics).toEqual([{ reason: 'unmapped-elements', count: 1 }]);
+  expect(checkpoint.runtime).toMatchObject({ stage: 'classification', mappedGroups: ['["*"]'] }); expect(checkpoint.runtime!.mappedItems).toHaveLength(7);
+});
+it('recognized rows skip mapping entirely: no import-map call and one counted diagnostic for ignored candidate fields', async () => {
+  const s = setup(10000);
+  const source = parsed('[{"link":"https://source.test","label":"First"},{"url":"https://source.test","title":"Later"}]', 'json');
+  expect((await s.make().start({ id: 'mixed', source, format: 'json', root: s.root, tree: s.state.tree })).status).toBe('classified');
+  const saved = (await s.store.all())[0]!;
+  expect(s.payloads.map(p => p.task)).toEqual(['import-classify']);
+  expect(saved.classified).toHaveLength(1); expect(saved.classified[0]!.title).toBe('Later'); expect(saved.items[0]!.titleLocked).toBe(true);
+  expect(saved.diagnostics).toEqual([{ reason: 'unmapped-candidates', count: 2 }]);
+  expect(saved.runtime).toMatchObject({ stage: 'classification', mappedGroups: [], mappedItems: [] }); expect(saved.runtime!.candidates).toHaveLength(2);
+});
+it('the extension export fixture never enters mapping: zero calls when every row exists, else classification only', async () => {
+  const s = setup(); const source = parsed(readFileSync('import/fixtures/export-v1.json', 'utf8'), 'json');
+  s.state.tree.nodes.push({ ...s.state.tree.nodes[0]!, ref: { installationId: 'i', nativeId: 'existing', kind: 'bookmark' }, parentId: 'root', url: source.items[0]!.rawURL });
+  expect((await s.make().start({ id: 'export-existing', source, format: 'json', root: s.root, tree: s.state.tree })).status).toBe('classified');
+  expect(s.fetcher).not.toHaveBeenCalled();
+  expect(await s.store.get('export-existing')).toMatchObject({ items: [], diagnostics: [{ sourceOrdinal: 0, reason: 'existing-url' }, { reason: 'unmapped-candidates', count: 8 }], runtime: { stage: 'classification', mappedGroups: [] } });
+  s.state.tree.nodes.pop();
+  expect((await s.make().start({ id: 'export', source, format: 'json', root: s.root, tree: s.state.tree })).status).toBe('classified');
+  expect(s.payloads.map(p => p.task)).toEqual(['import-classify']);
+  const checkpoint = (await s.store.get('export'))!;
+  expect(checkpoint.items.map(i => i.item.rawURL)).toEqual(['https://example.test/article?id=1#part']);
+  expect(checkpoint.classified).toMatchObject([{ sourceOrdinal: 0, title: '示例' }]);
+  expect(checkpoint.diagnostics).toEqual([{ reason: 'unmapped-candidates', count: 8 }]);
+});
+it('honors an explicit model refusal: the structure is marked mapped with zero rows and is never asked again', async () => {
+  const s = setup(10000);
+  s.fetcher.mockImplementationOnce(async () => new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ urlPath: null, titlePath: null }) } }] })));
+  const source = parsed('[{"link":"https://source.test/a","label":"A"},{"link":"https://source.test/b","label":"B"}]', 'json');
+  expect((await s.make().start({ id: 'refusal', source, format: 'json', root: s.root, tree: s.state.tree })).status).toBe('classified');
+  const checkpoint = (await s.store.get('refusal'))!;
+  expect(checkpoint.items).toEqual([]); expect(checkpoint.classified).toEqual([]); expect(checkpoint.diagnostics).toEqual([]);
+  expect(checkpoint.runtime).toMatchObject({ stage: 'classification', mappedGroups: ['["*"]'], mappedItems: [] });
+  expect((await s.make().resume('refusal', { root: s.root, tree: s.state.tree })).status).toBe('classified');
+  expect(s.fetcher).toHaveBeenCalledTimes(1);
 });
 it('duplicate-only imports do not call the model or propose folders', async () => {
   const s = setup(); s.state.tree.nodes.push({ ...s.state.tree.nodes[0]!, ref: { installationId: 'i', nativeId: 'existing', kind: 'bookmark' }, parentId: 'root', url: 'https://existing.test' });
@@ -93,13 +137,14 @@ it('cancels a provider call, preserves committed batches and resumes only manual
   const fresh = s.make(); expect((await s.store.all())[0]).toEqual(before);
   expect((await fresh.resume('cancel', { root: s.root, tree: s.state.tree })).status).toBe('classified');
 });
-it('preserves a completed mapping across interruption and reload', async () => {
+it('preserves a completed structure mapping across interruption and reload', async () => {
   const s = setup(10000); s.failAt(2);
-  const source = parsed('[{"link":"https://source.test/a","label":"A"},{"link":"https://source.test/b","label":"B"}]', 'json');
+  const source = parsed('{"a":[{"link":"https://source.test/a","label":"A"}],"b":[{"link":"https://source.test/b","label":"B"}]}', 'json');
   expect((await s.make().start({ id: 'map-resume', source, format: 'json', root: s.root, tree: s.state.tree })).status).toBe('paused');
   expect((await s.store.all())[0]!.runtime!.mappedGroups).toHaveLength(1);
   expect((await s.make().resume('map-resume', { root: s.root, tree: s.state.tree })).status).toBe('classified');
-  expect(s.payloads.filter(p => p.task === 'import-map').map(p => p.fields![0]!.path[0])).toEqual(['0', '1', '1']);
+  expect(s.payloads.filter(p => p.task === 'import-map').map(p => p.fields![0]!.path.slice(0, -1).join('/'))).toEqual(['a/*', 'b/*', 'b/*']);
+  expect((await s.store.all())[0]!.classified.map(r => r.title)).toEqual(['A', 'B']);
 });
 it('never repeats calls for duplicate checkpoint creation or a concurrent CAS conflict', async () => {
   const s = setup(10000); const input = { id: 'cas', source: parsed('https://example.test'), format: 'txt' as const, root: s.root, tree: s.state.tree };
@@ -124,14 +169,6 @@ it('preserves durable evidence on a real IDB quota fault and does not send anoth
     expect(result.status).toBe('paused'); expect(s.fetcher).toHaveBeenCalledTimes(2);
     const saved = (await s.store.all())[0]!; expect(saved.classified.length).toBeGreaterThan(0); expect(saved.classified.length).toBeLessThan(20);
   } finally { fault?.mockRestore(); }
-});
-it('deduplicates mixed mapped and deterministic sources in original order and keeps first valid locked title', async () => {
-  const s = setup(10000);
-  const source = parsed('[{"link":"https://source.test","label":"First"},{"url":"https://source.test","title":"Later"}]', 'json');
-  expect((await s.make().start({ id: 'mixed', source, format: 'json', root: s.root, tree: s.state.tree })).status).toBe('classified');
-  const saved = (await s.store.all())[0]!;
-  expect(saved.classified).toHaveLength(1); expect(saved.classified[0]!.title).toBe('First'); expect(saved.items[0]!.titleLocked).toBe(true);
-  expect(saved.diagnostics).toEqual([{ sourceOrdinal: 1, reason: 'file-duplicate', retainedSourceOrdinal: 0 }]);
 });
 it('rejects unsafe unknown text with URL privacy disabled before sending any model request', async () => {
   const s = setup(10000);

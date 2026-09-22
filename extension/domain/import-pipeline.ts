@@ -4,18 +4,37 @@ import type { ModelAuthority } from '../adapters/model-authority';
 import type { ModelTransport } from '../adapters/model-transport';
 import { ImportCheckpointStore, type ImportCheckpoint } from '../persistence/import-checkpoints';
 import type { ImportFormat, ImportResult, SourceCandidate } from '../import/contracts';
-import { resolveSourceCandidates } from '../import/source-candidates';
+import { candidateStructure, resolveSourceCandidates } from '../import/source-candidates';
 import { deduplicateImport } from './import-deduplication';
 import { importURLDiagnostic } from './import-url';
-import { serializeAiPayload, type AiRequest } from './ai-payload';
+import { serializeAiPayload, type AiRequest, type AiSample } from './ai-payload';
 import type { NodeRef, TreeSnapshot } from './node-reference';
 
 type Context = Awaited<ReturnType<ModelAuthority['read']>>;
+type Runtime = NonNullable<ImportCheckpoint['runtime']>;
+type MappingGroup = { key: string; structure: string[]; fields: Map<string, AiSample[]>; elements: Map<string, Map<string, SourceCandidate>>; url: boolean };
 export interface ImportSelection { root: NodeRef; tree: TreeSnapshot }
 export type ImportPipelineResult = { status: 'classified'; checkpoint: ImportCheckpoint } | { status: 'paused'; reason: string; checkpoint?: ImportCheckpoint };
 const equal = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 const parentPath = (candidate: SourceCandidate) => JSON.stringify(candidate.sourcePath.slice(0, -1));
 const itemId = (id: string, ordinal: number) => `import-item:${id}:${ordinal}`;
+/** One model decision per isomorphic structure, at most five samples per relative field; structures without any URL-shaped string need no decision. Legacy concrete-parent keys stay honored. */
+function mappingGroups(runtime: Runtime): MappingGroup[] {
+  const mapped = new Set(runtime.mappedGroups); const groups = new Map<string, MappingGroup>();
+  for (const candidate of runtime.candidates) {
+    if (mapped.has(parentPath(candidate))) continue;
+    const { structure, field, element } = candidateStructure(candidate.sourcePath); const key = JSON.stringify(structure);
+    if (mapped.has(key)) continue;
+    let group = groups.get(key);
+    if (!group) { group = { key, structure, fields: new Map(), elements: new Map(), url: false }; groups.set(key, group); }
+    const kind = importURLDiagnostic(candidate.value) ? 'text' : 'url'; group.url ||= kind === 'url';
+    const samples = group.fields.get(field) ?? []; if (!samples.length) group.fields.set(field, samples);
+    if (samples.length < 5) samples.push({ source: 'new-import', kind, value: candidate.value });
+    const fields = group.elements.get(element) ?? new Map<string, SourceCandidate>(); if (!fields.size) group.elements.set(element, fields);
+    fields.set(field, candidate);
+  }
+  return [...groups.values()].filter(group => group.url);
+}
 function scopedFolders(context: Context, root: NodeRef): string[] {
   const tree = context.tree; const nodes = new Map(tree.nodes.map(n => [n.ref.nativeId, n]));
   const selected = nodes.get(root.nativeId);
@@ -51,11 +70,13 @@ export class ImportPipeline {
       this.validateSelection(context, frozen);
       const knownParents = new Set(frozen.source.items.flatMap(i => i.provenance.sourcePath ? [JSON.stringify(i.provenance.sourcePath.slice(0, -1))] : []));
       const candidates = frozen.source.candidates.filter(c => !knownParents.has(parentPath(c)));
-      const dedup = deduplicateImport(frozen.source.items, context.tree);
+      // Recognized rows win: mapping runs only when no parser row exists, so unfamiliar strings never displace evidence or drive model calls.
+      const mapping = !frozen.source.items.length && candidates.length > 0;
+      const runtime: Runtime = { version: 2, semanticDigest: await contextDigest(context, frozen.root, true), contextDigest: await contextDigest(context, frozen.root), stage: mapping ? 'mapping' : 'classification', format: frozen.format, candidates, sourceItems: frozen.source.items, mappedGroups: [], mappedItems: [] };
+      const dedup = deduplicateImport(mapping ? [] : importSourceItems(runtime), context.tree);
       const checkpoint: ImportCheckpoint = { schemaVersion: 1, ...(sourceCheckpoint ? { sourceCheckpoint } : {}), id: frozen.id, revision: 0, installationId: context.tree.installationId, root: frozen.root,
-        items: candidates.length ? [] : dedup.pending,
-        diagnostics: candidates.length ? [] : dedup.diagnostics, classified: [], newFolders: [], phase: 'paused',
-        runtime: { version: 2, semanticDigest: await contextDigest(context, frozen.root, true), contextDigest: await contextDigest(context, frozen.root), stage: candidates.length ? 'mapping' : 'classification', format: frozen.format, candidates, sourceItems: frozen.source.items, mappedGroups: [], mappedItems: [] } };
+        items: dedup.pending,
+        diagnostics: [...dedup.diagnostics, ...(!mapping && candidates.length ? [{ reason: 'unmapped-candidates' as const, count: candidates.length }] : [])], classified: [], newFolders: [], phase: 'paused', runtime };
       await this.store.put(checkpoint, null);
       return this.execute(checkpoint);
   }
@@ -135,15 +156,13 @@ export class ImportPipeline {
         const context = await this.authority.read(); await this.validateCheckpoint(checkpoint, context, binding);
         if (this.cancelled) throw Error('cancelled');
         const runtime = checkpoint.runtime!; const folderIds = scopedFolders(context, checkpoint.root);
-        const groups = new Map<string, SourceCandidate[]>();
-        for (const candidate of runtime.candidates) { const key = parentPath(candidate); groups.set(key, [...(groups.get(key) ?? []), candidate]); }
-        const group = [...groups].find(([key]) => !runtime.mappedGroups.includes(key));
+        const group = runtime.stage === 'mapping' ? mappingGroups(runtime)[0] : undefined;
         let request: AiRequest;
         let batch = checkpoint.items.filter(i => !checkpoint.classified.some(c => c.sourceOrdinal === i.item.sourceOrdinal));
         if (runtime.stage === 'mapping' && !group) {
           const sources = importSourceItems(runtime);
           const dedup = deduplicateImport(sources, context.tree);
-          await save({ ...checkpoint, items: dedup.pending, diagnostics: dedup.diagnostics, runtime: { ...runtime, stage: 'classification' } });
+          await save({ ...checkpoint, items: dedup.pending, diagnostics: [...dedup.diagnostics, ...checkpoint.diagnostics], runtime: { ...runtime, stage: 'classification' } });
           continue;
         }
         if (runtime.stage === 'classification' && !batch.length) {
@@ -152,7 +171,7 @@ export class ImportPipeline {
         }
         if (!context.config) throw Error('configuration-unavailable');
         if (runtime.stage === 'mapping') {
-          request = { task: 'import-map', targetId: checkpoint.root.nativeId, folderIds, fields: group![1].map(c => ({ path: c.sourcePath.map(String), samples: [{ source: 'new-import', kind: importURLDiagnostic(c.value) ? 'text' : 'url', value: c.value }] })) };
+          request = { task: 'import-map', targetId: checkpoint.root.nativeId, folderIds, fields: [...group!.fields].map(([field, samples]) => ({ path: [...group!.structure, field], samples })) };
           if (!this.transport.fits({ ...context, config: context.config, request })) throw Error('mapping-payload-too-large');
         } else {
           const makeRequest = (rows: typeof batch): AiRequest => ({ task: 'import-classify', targetId: checkpoint.root.nativeId, folderIds, proposedFolders: checkpoint.newFolders, items: rows.map(({ item }) => ({ source: 'new-import', id: itemId(checkpoint.id, item.sourceOrdinal), title: item.title, url: item.rawURL })) });
@@ -169,15 +188,20 @@ export class ImportPipeline {
         await this.validateCheckpoint(checkpoint, await this.authority.read(), binding);
         const output = result.output;
         if (request.task === 'import-map' && 'urlPath' in output) {
-          const recover = (path: string[]) => {
-            const candidate = group![1].find(c => equal(c.sourcePath.map(String), path));
-            if (!candidate) throw Error('invalid-mapping');
-            return resolveSourceCandidates({ text: '', encoding: 'utf-8', items: [], candidates: runtime.candidates }, [candidate.sourcePath])[0]!;
-          };
-          const url = recover(output.urlPath); const title = output.titlePath ? recover(output.titlePath).value : '';
-          const sourceOrdinal = [...runtime.sourceItems, ...runtime.mappedItems].reduce((max, item) => Math.max(max, item.sourceOrdinal), -1) + 1;
-          const item = { sourceOrdinal, sourceSpan: url.sourceSpan, rawURL: url.value, title, oldPath: [], provenance: { format: runtime.format, sourcePath: url.sourcePath, urlSpan: url.sourceSpan } };
-          await save({ ...checkpoint, runtime: { ...runtime, mappedGroups: [...runtime.mappedGroups, group![0]], mappedItems: [...runtime.mappedItems, item] } });
+          const { key, structure, fields, elements } = group!;
+          // Model paths address the structure template; every URL/title value is recovered from the original parse at the concrete element path.
+          const relative = (path: string[]) => { const name = path.at(-1); if (name === undefined || !fields.has(name) || !equal(path.slice(0, -1), structure)) throw Error('invalid-mapping'); return name; };
+          const urlField = output.urlPath === null ? undefined : relative(output.urlPath); const titleField = output.titlePath === null ? undefined : relative(output.titlePath);
+          const rows = urlField === undefined ? [] : [...elements.values()].map(element => ({ url: element.get(urlField), title: titleField === undefined ? undefined : element.get(titleField) }));
+          const skipped = rows.filter(row => !row.url).length;
+          const resolved = resolveSourceCandidates({ text: '', encoding: 'utf-8', items: [], candidates: runtime.candidates }, rows.flatMap(row => row.url ? [row.url.sourcePath, ...(row.title ? [row.title.sourcePath] : [])] : []));
+          let sourceOrdinal = [...runtime.sourceItems, ...runtime.mappedItems].reduce((max, item) => Math.max(max, item.sourceOrdinal), -1) + 1; let cursor = 0;
+          const mapped = rows.flatMap(row => {
+            if (!row.url) return [];
+            const url = resolved[cursor++]!; const title = row.title ? resolved[cursor++]!.value : '';
+            return [{ sourceOrdinal: sourceOrdinal++, sourceSpan: url.sourceSpan, rawURL: url.value, title, oldPath: [], provenance: { format: runtime.format, sourcePath: url.sourcePath, urlSpan: url.sourceSpan } }];
+          });
+          await save({ ...checkpoint, diagnostics: skipped ? [...checkpoint.diagnostics, { reason: 'unmapped-elements', count: skipped }] : checkpoint.diagnostics, runtime: { ...runtime, mappedGroups: [...runtime.mappedGroups, key], mappedItems: [...runtime.mappedItems, ...mapped] } });
         } else if (request.task === 'import-classify' && 'assignments' in output) {
           const aliases = new Map(output.newFolders.map((folder, index) => [folder.id, `import-folder:${checkpoint.id}:${checkpoint.newFolders.length + index}`]));
           const target = (id: string) => aliases.get(id) ?? id;

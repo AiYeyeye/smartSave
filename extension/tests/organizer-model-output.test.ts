@@ -20,4 +20,12 @@ describe('organizer model output source identity', () => {
     const output = { newFolders: [], moves: [{ itemId: 'a', folderId: 'c' }], merges: [{ sourceId: 'b', targetId: 'c' }] };
     expect(parseModelOutput(output, context)).toEqual(output);
   });
+  it('caps new folder chains below the scope root only when the caller supplies policy and root', () => {
+    const scoped = { task: 'organize', items: [{ id: 'a', title: 'A' }], folders: [{ id: 'bar', ancestorIds: [] }, { id: 'left', ancestorIds: ['bar'] }] };
+    const policy = { ...scoped, rootId: 'bar', policy: { maxNewDepth: 2, allowRename: false } };
+    const output = (parentId: string) => ({ newFolders: [{ id: 'n1', parentId, title: 'One' }, { id: 'n2', parentId: 'n1', title: 'Two' }], moves: [{ itemId: 'a', folderId: 'n2' }], merges: [] });
+    expect(parseModelOutput(output('bar'), policy)).toEqual(output('bar'));
+    expect(() => parseModelOutput(output('left'), policy)).toThrow('invalid-output');
+    expect(parseModelOutput(output('left'), scoped)).toEqual(output('left'));
+  });
 });

@@ -32,6 +32,7 @@ it('configured automatic initialization reaches actual ModelTransport with prove
   const options = h.fetcher.mock.calls[0]![1]!;
   const wire = JSON.parse(String(options.body)); const payload = JSON.parse(wire.messages[1].content);
   expect(payload.items[0]).toMatchObject({ title: 'Page', url: 'https://page.test/' }); expect(payload.snippet).toBeUndefined();
+  expect(wire.messages).toHaveLength(2); expect(wire.messages[0].content).toMatch(/single best destination folder[\s\S]*at most 3 levels below the target root[\s\S]*rewriting existing titles is not allowed/);
   expect(options.headers).toMatchObject({ Authorization: 'Bearer session-key' });
   fireEvent.click(screen.getByRole('button', { name: '取消AI请求' })); expect(options.signal?.aborted).toBe(true);
   h.finish(); await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('已取消AI请求'));

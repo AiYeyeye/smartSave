@@ -28,7 +28,7 @@ async function setup(mode: 'completed' | 'rejected' | 'dropped' | 'unknown' | 'p
   const settings = new SettingsStore({ get: async key => ({ [key]: data[key] }), set: async value => { Object.assign(data, value); }, remove: async key => { delete data[key]; }, setAccessLevel: async () => {} }, run => run());
   await settings.load(); await settings.save({ adapter: 'openai-compatible', baseUrl: 'https://synthetic.test', model: 'm', timeoutMs: 10000 }, { fullUrl: true, bodyEnabled: false, excludedFolders: [] }, '', false);
   let authority = new ImportAuthority(settings, projection, persistence.importCheckpoints, 'test');
-  const sender = { id: 'test', url: 'chrome-extension://test/panel/index.html' };
+  const sender = { id: 'test', url: 'chrome-extension://test/options/index.html' };
   const create = vi.fn(async (details: { parentId: string; title: string; url?: string }) => {
     if (mode === 'unknown') throw Error('native response lost');
     const node = { ...details, id: `new${create.mock.calls.length}`, syncing: false };
@@ -104,10 +104,10 @@ it.each(['completed', 'rejected', 'dropped', 'unknown'] as const)('real UI pipel
 });
 it('real UI maps original fields, reloads manually, preserves empty drafts on same-job load and emits zero writes', async () => {
   const h = await setup(); await h.upload('[{"link":"https://source.test/a"},{"link":"https://source.test/b"}]', 'json');
-  expect(h.fetcher).toHaveBeenCalledTimes(3);
+  expect(h.fetcher).toHaveBeenCalledTimes(2);
   cleanup(); h.mount();
   await h.user.click(screen.getByRole('button', { name: '读取导入任务列表' })); await h.user.click(await screen.findByRole('button', { name: '加载任务' }));
-  expect(h.fetcher).toHaveBeenCalledTimes(3);
+  expect(h.fetcher).toHaveBeenCalledTimes(2);
   await screen.findByRole('button', { name: '手动继续剩余分类' });
   for (const checkbox of screen.getAllByRole('checkbox')) await h.user.click(checkbox);
   await h.user.clear(screen.getByLabelText('明确编辑标题 0')); await h.user.selectOptions(screen.getByLabelText('明确调整目标 0'), '');
@@ -141,12 +141,14 @@ it('selected empty destination visibly blocks preview until chosen or deselected
   await screen.findByText(/实际新建书签 1/); expect(h.create).not.toHaveBeenCalled();
 });
 
-it('mapping and deterministic duplicate/invalid rows display original identity and retained ordinal', async () => {
+it('recognized rows skip mapping: ignored field count and deterministic duplicate/invalid rows display original identity', async () => {
   const h = await setup();
-  await h.upload(JSON.stringify([{ link: 'https://mapped.test/', label: 'Mapped first' }, { url: 'https://mapped.test/', title: 'Duplicate source' }, { url: 'ftp://invalid.test/', title: 'Invalid source' }]), 'json');
+  await h.upload(JSON.stringify([{ url: 'https://mapped.test/', title: 'First' }, { url: 'https://mapped.test/', title: 'Duplicate source' }, { url: 'ftp://invalid.test/', title: 'Invalid source' }, { link: 'https://unmapped.test/', label: 'Ignored' }]), 'json');
+  expect(h.payloads.map(p => p.task)).toEqual(['import-classify']);
+  expect(screen.getByText(/忽略了 2 个未映射字段：unmapped-candidates/)).toBeVisible(); expect(screen.queryByText(/unmapped\.test/)).toBeNull();
   expect(screen.getByText(/https:\/\/mapped.test\/ · 原始标题：Duplicate source · 原目录：\[\].*来源路径：\[1,"url"\].*来源 1：file-duplicate；保留来源 0/)).toBeVisible();
   expect(screen.getByText(/ftp:\/\/invalid.test\/ · 原始标题：Invalid source · 原目录：\[\].*来源路径：\[2,"url"\].*来源 2：unsupported-protocol/)).toBeVisible();
-  expect(screen.getByLabelText('明确编辑标题 0')).toHaveValue('Mapped first');
+  expect(screen.getByLabelText('明确编辑标题 0')).toHaveValue('First');
   expect(h.create).not.toHaveBeenCalled();
 });
 

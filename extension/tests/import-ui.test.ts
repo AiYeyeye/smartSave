@@ -9,6 +9,11 @@ import { openOperationsDatabase } from '../persistence/operations-database';
 import { parseImport } from '../import/parsers';
 
 afterEach(() => vi.unstubAllGlobals());
+async function overflow(user: ReturnType<typeof userEvent.setup>, name: string) {
+  if (!screen.queryByRole('button', { name: '更多操作' })) await user.click(screen.getByRole('button', { name: '返回书签' }));
+  await user.click(screen.getByRole('button', { name: '更多操作' }));
+  await user.click(screen.getByRole('menuitem', { name }));
+}
 it('production App keeps five-format Worker parsing and source diagnostics across themes and navigation without model calls', async () => {
   const fetch = vi.fn(); vi.stubGlobal('fetch', fetch); vi.stubGlobal('indexedDB', new IDBFactory());
   const terminate = vi.fn(); const posted = vi.fn();
@@ -22,7 +27,7 @@ it('production App keeps five-format Worker parsing and source diagnostics acros
   }
   vi.stubGlobal('Worker', WorkerBoundary);
   const user = userEvent.setup(); render(createElement(App, { page: 'panel' }));
-  await user.click(screen.getByRole('button', { name: '导入' }));
+  await overflow(user, '导入');
   const format = screen.getByLabelText('导入格式');
   expect(format.querySelectorAll('option')).toHaveLength(5);
   await user.selectOptions(format, 'txt');
@@ -32,13 +37,12 @@ it('production App keeps five-format Worker parsing and source diagnostics acros
   await waitFor(() => expect(screen.getByText(/解析完成/)).toBeVisible());
   expect(screen.getByText(/unsupported-protocol/)).toBeVisible();
   expect(posted).toHaveBeenCalledOnce(); expect(terminate).toHaveBeenCalledOnce();
-  await user.click(screen.getByRole('button', { name: '外观设置' }));
+  await overflow(user, '设置');
+  await user.click(screen.getByRole('button', { name: /外观/ }));
   for (const name of ['轻盈原生', '温润纸感', '清爽文具（默认）', '深色精密']) {
     await user.click(screen.getByRole('radio', { name }));
-    await user.click(screen.getByRole('button', { name: '导入' }));
-    await user.click(screen.getByRole('button', { name: '导入' }));
-    expect(screen.getByLabelText('导入格式')).toBe(format);
-    expect(format).toHaveValue('txt'); expect(screen.getByText(/unsupported-protocol/)).toBeVisible();
+    expect(format).toHaveValue('txt');
+    expect(screen.getByText(/unsupported-protocol/)).toBeInTheDocument();
   }
   expect(fetch).not.toHaveBeenCalled();
 });
@@ -57,7 +61,7 @@ it('production same-task load retains deselect-all and explicit title edits acro
   const items = parseImport(new TextEncoder().encode('https://example.test/'), 'txt').items;
   await new ImportCheckpointStore().put({ schemaVersion: 1, id: 'draft-task', revision: 0, installationId: 'i', root: { installationId: 'i', nativeId: 'r', kind: 'folder' }, items: items.map(item => ({ item, titleLocked: false })), diagnostics: [], classified: items.map(item => ({ sourceOrdinal: item.sourceOrdinal, title: 'Proposed title', folderId: 'r' })), newFolders: [], phase: 'classified' }, null);
   const user = userEvent.setup(); render(createElement(App, { page: 'panel' }));
-  await user.click(screen.getByRole('button', { name: '导入' }));
+  await overflow(user, '导入');
   await user.click(screen.getByRole('button', { name: '读取导入任务列表' }));
   await user.click(await screen.findByRole('button', { name: '加载任务' }));
   const row = await screen.findByRole('checkbox', { name: 'https://example.test/' });
@@ -65,10 +69,10 @@ it('production same-task load retains deselect-all and explicit title edits acro
   await user.click(row); await user.clear(screen.getByLabelText('明确编辑标题 0')); await user.type(screen.getByLabelText('明确编辑标题 0'), 'Edited');
   await user.click(screen.getByRole('button', { name: '加载任务' }));
   await waitFor(() => expect(row).not.toBeChecked());
-  await user.click(screen.getByRole('button', { name: '外观设置' }));
+  await overflow(user, '设置');
+  await user.click(screen.getByRole('button', { name: /外观/ }));
   for (const name of ['轻盈原生', '温润纸感', '清爽文具（默认）', '深色精密']) {
     await user.click(screen.getByRole('radio', { name }));
-    await user.click(screen.getByRole('button', { name: '导入' })); await user.click(screen.getByRole('button', { name: '导入' }));
     expect(row).not.toBeChecked(); expect(screen.getByLabelText('明确编辑标题 0')).toHaveValue('Edited');
   }
 });

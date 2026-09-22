@@ -22,6 +22,7 @@ it('uses actual transport and privacy projection; explicit request only, no auto
   const call = f.fetcher.mock.calls[0] as unknown as [string, RequestInit];
   const body = JSON.parse(String(call[1].body)); const payload = JSON.parse(body.messages[1].content);
   expect(payload.query).toBe('example'); expect(payload.items).toHaveLength(8); expect(payload.folders).toEqual([]);
+  expect(body.messages).toHaveLength(2); expect(body.messages[0].content).toContain('rank the given items by relevance to the query'); expect(body.messages[0].content).not.toContain('Depth policy');
   expect(JSON.stringify(payload)).not.toContain('secret='); expect(JSON.stringify(payload)).not.toContain('#part');
   f.respond(['2', '1']); await pending;
   expect(f.state().hits[0]?.id).toBe('2'); expect(f.state().hits).toHaveLength(12);

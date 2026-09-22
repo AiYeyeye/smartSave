@@ -7,6 +7,6 @@ export function importSourceItems(runtime: NonNullable<ImportCheckpoint['runtime
     : runtime.sourceItems;
 }
 export function importDiagnosticSources(checkpoint: ImportCheckpoint) {
-  const sources = checkpoint.runtime ? importSourceItems(checkpoint.runtime) : checkpoint.items.map(row => row.item);
-  return checkpoint.diagnostics.map(diagnostic => ({ diagnostic, item: sources.find(item => item.sourceOrdinal === diagnostic.sourceOrdinal) }));
+  const sources = new Map((checkpoint.runtime ? importSourceItems(checkpoint.runtime) : checkpoint.items.map(row => row.item)).map(item => [item.sourceOrdinal, item]));
+  return checkpoint.diagnostics.map(diagnostic => ({ diagnostic, item: 'sourceOrdinal' in diagnostic ? sources.get(diagnostic.sourceOrdinal) : undefined }));
 }
