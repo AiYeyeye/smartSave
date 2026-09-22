@@ -1,22 +1,71 @@
 import { validateUrl } from '../domain/preflight';
-import { trustedMutationSender } from '../schemas/messages';
-import type { CapturedPage } from './ui-identity';
-import { uiRegistry } from './ui-identity';
+import { trustedMutationSender } from '../domain/trusted-sender';
+import type { ConfirmMutation } from '../schemas/messages';
+
 export const SAVE_PORT = 'zhilan.save.v1';
+export const SAVE_BADGE = '●';
+const BADGE_COLOR = '#6155A6';
+const PAGE_UNAVAILABLE = '当前页面资料不可用；仅支持 http(s) 网页，请切换到网页标签后重试。';
+const NO_ACTIVE_TAB = '无法确定当前标签页；请在浏览器窗口中重新打开智栏。';
+
 export interface SavePage {
   tabId: number;
   token: string;
   title: string;
   url: string;
 }
-export function startSaveEntrypoints(
-  onInvalidated: () => void = () => {},
-  show?: (tab: chrome.tabs.Tab | undefined, capture?: CapturedPage) => void,
-) {
-  const sessions = new Map<
-    number,
-    { page?: SavePage; port?: chrome.runtime.Port; generation: number; uiTabId?: number }
-  >();
+/** Brings the extension UI to the user after a capture; the default prefers the native popup and degrades to a badge. */
+export type OpenSaveUi = (tabId: number) => Promise<void>;
+
+type Session = { page?: SavePage; port?: chrome.runtime.Port; generation: number; uiKey?: string };
+type Sender = Pick<chrome.runtime.MessageSender, 'documentId' | 'tab'>;
+
+async function setBadge(tabId: number, on: boolean): Promise<void> {
+  const action = typeof chrome !== 'undefined' ? chrome.action : undefined;
+  if (!action || typeof action.setBadgeText !== 'function') return;
+  try {
+    await action.setBadgeText({ tabId, text: on ? SAVE_BADGE : '' });
+    if (on && typeof action.setBadgeBackgroundColor === 'function')
+      await action.setBadgeBackgroundColor({ tabId, color: BADGE_COLOR });
+  } catch {
+    /* The badge is advisory; the capture itself stays valid without it. */
+  }
+}
+/** Chrome 127+ can open the popup from a command; Chrome 114–126 (or a refused open) leaves a per-tab badge instead. */
+export async function openSaveUi(tabId: number): Promise<void> {
+  const action = typeof chrome !== 'undefined' ? chrome.action : undefined;
+  if (action && typeof action.openPopup === 'function') {
+    try {
+      await action.openPopup();
+      return;
+    } catch {
+      /* No focused window or another popup already open: fall through to the badge. */
+    }
+  }
+  await setBadge(tabId, true);
+}
+const uiKeyOf = (sender: Sender | undefined): string | undefined =>
+  sender?.documentId ?? (sender?.tab?.id !== undefined ? `tab:${sender.tab.id}` : undefined);
+function capturable(tab: chrome.tabs.Tab | undefined): tab is chrome.tabs.Tab & { id: number; url: string } {
+  if (tab?.id === undefined || !Number.isInteger(tab.windowId) || !tab.url) return false;
+  try {
+    validateUrl(tab.url);
+    return true;
+  } catch {
+    return false;
+  }
+}
+async function activeTab(): Promise<chrome.tabs.Tab | undefined> {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    return tab?.id !== undefined && Number.isInteger(tab.windowId) ? tab : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function startSaveEntrypoints(onInvalidated: () => void = () => {}, open: OpenSaveUi = openSaveUi) {
+  const sessions = new Map<number, Session>();
   const session = (id: number) => {
     let value = sessions.get(id);
     if (!value) {
@@ -39,39 +88,33 @@ export function startSaveEntrypoints(
     value.page = undefined;
     onInvalidated();
     post(value.port, { type: 'invalidated' });
-    uiRegistry().invalidateCapturedTab(tabId);
+    void setBadge(tabId, false);
   };
-  function capture(tab: chrome.tabs.Tab | undefined): CapturedPage | undefined {
-    if (tab?.id === undefined || !Number.isInteger(tab.windowId) || !tab.url) return;
-    try {
-      validateUrl(tab.url);
-    } catch {
-      return;
-    }
+  function capture(tab: chrome.tabs.Tab | undefined): SavePage | undefined {
+    if (!capturable(tab)) return;
     const value = session(tab.id);
     value.generation++;
     onInvalidated();
     value.page = { tabId: tab.id, token: crypto.randomUUID(), url: tab.url, title: tab.title ?? tab.url };
     post(value.port, { type: 'page', page: value.page });
-    return { tabId: tab.id, windowId: tab.windowId, url: tab.url, title: tab.title ?? tab.url };
+    return value.page;
   }
-  function activate(tab: chrome.tabs.Tab | undefined, capturePage: boolean) {
+  /** Shortcut and page menu: capture the gesture tab, then bring the UI up unless a popup already shows that tab. */
+  function activate(tab: chrome.tabs.Tab | undefined) {
     if (tab?.id === undefined || !Number.isInteger(tab.windowId)) return;
-    if (!capturePage) invalidateTab(tab.id);
-    const captured = capturePage ? capture(tab) : undefined;
-    if (capturePage && !captured)
-      post(session(tab.id).port, {
-        type: 'error',
-        reason: '当前页面资料不可用；请使用页面菜单或已配置命名快捷键激活收藏。',
-      });
-    show?.(tab, captured);
+    if (!capture(tab)) {
+      post(sessions.get(tab.id)?.port, { type: 'error', reason: PAGE_UNAVAILABLE });
+      return;
+    }
+    const owner = sessions.get(tab.id)?.port;
+    if (owner && owner.sender?.tab === undefined) return;
+    void open(tab.id).catch(() => {});
   }
-  chrome.action.onClicked.addListener(tab => activate(tab, false));
   chrome.commands.onCommand.addListener((command, tab) => {
-    if (command === 'save-current-page') activate(tab, true);
+    if (command === 'save-current-page') activate(tab);
   });
   chrome.contextMenus.onClicked.addListener((info, tab) => {
-    if (info.menuItemId === 'zhilan-save-page') activate(tab, true);
+    if (info.menuItemId === 'zhilan-save-page') activate(tab);
   });
   chrome.runtime.onInstalled.addListener(() => {
     chrome.contextMenus.create(
@@ -97,56 +140,72 @@ export function startSaveEntrypoints(
   chrome.runtime.onConnect.addListener(port => {
     if (port.name !== SAVE_PORT || !port.sender || !trustedMutationSender(port.sender, chrome.runtime.id)) return;
     let owner: number | undefined;
+    let alive = true;
     const owned = () => owner !== undefined && sessions.get(owner)?.port === port;
-    port.onDisconnect.addListener(() => {
+    const release = () => {
       if (!owned()) return;
+      const value = session(owner!);
+      value.port = undefined;
+      value.uiKey = undefined;
       invalidateTab(owner!);
-      session(owner!).port = undefined;
+    };
+    /** The popup has no tab of its own: the active tab of its window is the page it speaks for. */
+    function attach(tabId: number) {
+      if (owner === tabId && owned()) return;
+      release();
+      owner = tabId;
+      const value = session(tabId);
+      const old = value.port;
+      value.port = port;
+      value.uiKey = uiKeyOf(port.sender);
+      if (old && old !== port) {
+        post(old, { type: 'invalidated' });
+        old.disconnect();
+      }
+      if (value.page) post(port, { type: 'page', page: value.page });
+      // The badge only invites the user to open the UI for this tab; once a UI is attached it has served its purpose.
+      void setBadge(tabId, false);
+    }
+    async function bindActive(captureNow: boolean) {
+      const tab = await activeTab();
+      if (!alive) return;
+      if (!tab) {
+        if (captureNow) post(port, { type: 'error', reason: NO_ACTIVE_TAB });
+        return;
+      }
+      attach(tab.id!);
+      if (captureNow && !capture(tab)) post(port, { type: 'error', reason: PAGE_UNAVAILABLE });
+    }
+    port.onDisconnect.addListener(() => {
+      alive = false;
+      release();
     });
     port.onMessage.addListener((raw: unknown) => {
       if (!raw || typeof raw !== 'object' || !('type' in raw)) return;
       if (raw.type === 'register') {
-        const attach = () => {
-          const uiTab = port.sender?.tab;
-          const hostUrl = uiTab?.url ?? '';
-          const transferred =
-            uiTab?.id !== undefined && !/^https?:/i.test(hostUrl) ? uiRegistry().takeTransfer(uiTab.id) : undefined;
-          owner = transferred?.tabId ?? (/^https?:/i.test(hostUrl) ? uiTab?.id : undefined);
-          if (owner === undefined) return false;
-          const value = session(owner);
-          const old = value.port;
-          value.port = port;
-          value.uiTabId = uiTab?.id;
-          if (old && old !== port) {
-            post(old, { type: 'invalidated' });
-            old.disconnect();
-          }
-          if (value.page) post(port, { type: 'page', page: value.page });
-          return true;
-        };
-        if (attach()) return;
-        const uiTabId = port.sender?.tab?.id;
-        const hostUrl = port.sender?.tab?.url ?? '';
-        if (uiTabId !== undefined && !/^https?:/i.test(hostUrl)) uiRegistry().whenTransferBound(uiTabId, attach);
+        void bindActive(false);
+        return;
+      }
+      if (raw.type === 'capture') {
+        void bindActive(true);
         return;
       }
       if (!owned()) return;
-      if (raw.type === 'close') {
-        invalidateTab(owner!);
-        return;
-      }
-      if (raw.type === 'current') return;
+      if (raw.type === 'close') invalidateTab(owner!);
     });
   });
   return {
-    validateSaveContext: (request: import('../schemas/messages').ConfirmMutation) => {
+    validateSaveContext: (request: ConfirmMutation) => {
       if (!request.saveContext) return true;
       return [...sessions.values()].some(value => value.port && value.page?.token === request.saveContext);
     },
+    /** Exact popup document first; a lone tab-less popup is unambiguous, any tab-hosted sender must match exactly. */
     livePageForSender: (sender: chrome.runtime.MessageSender) => {
-      const uiTabId = sender.tab?.id ?? uiRegistry().mountFor(sender, chrome.runtime?.id ?? '')?.tabId;
-      if (uiTabId === undefined) return;
-      return [...sessions.values()].find(s => s.port && s.uiTabId === uiTabId && s.page)?.page;
+      const live = [...sessions.values()].filter(value => value.port && value.page);
+      const key = uiKeyOf(sender);
+      const exact = key === undefined ? undefined : live.find(value => value.uiKey === key);
+      if (exact) return exact.page;
+      return sender.tab === undefined && live.length === 1 ? live[0]!.page : undefined;
     },
   };
 }

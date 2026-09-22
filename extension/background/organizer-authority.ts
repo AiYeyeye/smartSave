@@ -1,5 +1,5 @@
 import type { ConfirmMutation } from '../schemas/messages';
-import { trustedMutationSender } from '../schemas/messages';
+import { trustedMutationSender } from '../domain/trusted-sender';
 import type { SettingsStore } from '../persistence/settings';
 
 type Sender = { id?: string; url?: string; tab?: unknown };

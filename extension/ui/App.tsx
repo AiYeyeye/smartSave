@@ -8,15 +8,48 @@ import { ThemeProvider } from './ThemeProvider';
 import './theme.css';
 import { BookmarkTree } from '../panel/BookmarkTree';
 import { PanelChrome, type Workbench } from './PanelChrome';
-import { SettingsNav, type SettingsJump, type SettingsPage } from './SettingsNav';
+import { SettingsNav, type SettingsJump, type SettingsPage, type WorkbenchLink } from './SettingsNav';
 
-export function App({ page }: { page: 'panel' | 'options' }) {
+export type Page = 'panel' | 'options';
+/** Long-running workbenches live in the options page; the popup opens them there through a routing hash. */
+export type OptionsRoute = 'browse' | 'organize' | 'import' | 'export' | 'settings';
+const OPTIONS_PAGE = 'options/index.html';
+
+/** The options page starts from its `#hash`; no hash is the settings hub. The popup always starts browsing. */
+export function initialRoute(page: Page, hash: string): { workbench: Workbench; settingsPage: SettingsPage } {
+  if (page === 'panel') return { workbench: 'browse', settingsPage: 'overview' };
+  switch (hash.replace(/^#/, '')) {
+    case 'browse':
+    case 'organize':
+    case 'import':
+      return { workbench: hash.replace(/^#/, '') as Workbench, settingsPage: 'overview' };
+    case 'export':
+      return { workbench: 'settings', settingsPage: 'export-backup' };
+    default:
+      return { workbench: 'settings', settingsPage: 'overview' };
+  }
+}
+/** Opens the options page at a route in a new tab; false means the browser boundary is unavailable (jsdom). */
+function openOptionsRoute(route: Exclude<OptionsRoute, 'settings'>): boolean {
+  if (typeof chrome === 'undefined' || typeof chrome.tabs?.create !== 'function' || !chrome.runtime?.getURL)
+    return false;
+  void Promise.resolve(chrome.tabs.create({ url: chrome.runtime.getURL(`${OPTIONS_PAGE}#${route}`) })).catch(() => {});
+  return true;
+}
+const WORKBENCH_LINKS: WorkbenchLink[] = [
+  { id: 'browse', title: '书签目录', hint: '浏览、搜索与批量管理书签' },
+  { id: 'organize', title: 'AI 整理', hint: '范围内整理与精确去重' },
+  { id: 'import', title: '导入书签', hint: '五种格式导入与分类' },
+];
+
+export function App({ page }: { page: Page }) {
   const [settingsStore] = useState(() =>
     typeof chrome !== 'undefined' && chrome.storage?.local ? new SettingsStore(chrome.storage.local) : undefined,
   );
   useEffect(() => () => settingsStore?.dispose(), [settingsStore]);
-  const [workbench, setWorkbench] = useState<Workbench>(page === 'options' ? 'settings' : 'browse');
-  const [settingsPage, setSettingsPage] = useState<SettingsPage>('overview');
+  const [route] = useState(() => initialRoute(page, typeof location === 'undefined' ? '' : location.hash));
+  const [workbench, setWorkbench] = useState<Workbench>(route.workbench);
+  const [settingsPage, setSettingsPage] = useState<SettingsPage>(route.settingsPage);
   const [batchNonce, setBatchNonce] = useState(0);
   const [settingsJump, setSettingsJump] = useState<SettingsJump>();
   const [query, setQuery] = useState('');
@@ -25,6 +58,15 @@ export function App({ page }: { page: 'panel' | 'options' }) {
     setSettingsPage(pageName);
     setSettingsJump({ page: pageName, nonce: Date.now(), ...extra });
     setWorkbench('settings');
+  }
+  /** The popup hands organize/import to the options page; the options page (or a jsdom popup) switches in place. */
+  function selectWorkbench(next: Workbench) {
+    if (page === 'panel' && (next === 'organize' || next === 'import') && openOptionsRoute(next)) return;
+    setWorkbench(next);
+  }
+  function exportBackup() {
+    if (page === 'panel' && openOptionsRoute('export')) return;
+    openSettings('export-backup', { recovery: page === 'options' });
   }
   return (
     <ThemeProvider>
@@ -36,10 +78,10 @@ export function App({ page }: { page: 'panel' | 'options' }) {
           page={page}
           workbench={workbench}
           settingsPage={settingsPage}
-          onWorkbench={setWorkbench}
+          onWorkbench={selectWorkbench}
           onSettingsPage={onSettingsPage}
           onBatch={() => setBatchNonce(value => value + 1)}
-          onExport={() => openSettings('export-backup', { recovery: false })}
+          onExport={exportBackup}
           onSettings={() => openSettings('overview')}
           onQuery={setQuery}
         />
@@ -49,24 +91,22 @@ export function App({ page }: { page: 'panel' | 'options' }) {
               <CurrentPageSave settings={settingsStore} />
             </div>
           )}
-          {page === 'panel' && (
-            <div hidden={workbench !== 'browse'}>
-              <SearchResults query={query} settings={settingsStore} onOrganize={() => setWorkbench('organize')} />
-            </div>
-          )}
-          {page === 'panel' && (
-            <section className="directory" hidden={workbench !== 'browse'} aria-label="书签目录">
-              <BookmarkTree batchNonce={batchNonce} />
-            </section>
-          )}
-          {page === 'panel' && <OrganizeWorkbench visible={workbench === 'organize'} settings={settingsStore} />}
-          {page === 'panel' && <ImportWorkbench visible={workbench === 'import'} settings={settingsStore} />}
+          <div hidden={workbench !== 'browse'}>
+            <SearchResults query={query} settings={settingsStore} onOrganize={() => selectWorkbench('organize')} />
+          </div>
+          <section className="directory" hidden={workbench !== 'browse'} aria-label="书签目录">
+            <BookmarkTree batchNonce={batchNonce} />
+          </section>
+          <OrganizeWorkbench visible={workbench === 'organize'} settings={settingsStore} />
+          <ImportWorkbench visible={workbench === 'import'} settings={settingsStore} />
           <SettingsNav
             visible={workbench === 'settings'}
             store={settingsStore}
             jump={settingsJump}
             page={settingsPage}
             onPage={onSettingsPage}
+            workbenches={page === 'options' ? WORKBENCH_LINKS : undefined}
+            onWorkbench={setWorkbench}
           />
         </main>
       </div>

@@ -8,12 +8,19 @@ import { ImportCheckpointStore } from '../persistence/import-checkpoints';
 import { openOperationsDatabase } from '../persistence/operations-database';
 import { parseImport } from '../import/parsers';
 
-afterEach(() => vi.unstubAllGlobals());
-async function overflow(user: ReturnType<typeof userEvent.setup>, name: string) {
-  if (!screen.queryByRole('button', { name: '更多操作' }))
-    await user.click(screen.getByRole('button', { name: '返回书签' }));
-  await user.click(screen.getByRole('button', { name: '更多操作' }));
-  await user.click(screen.getByRole('menuitem', { name }));
+afterEach(() => {
+  vi.unstubAllGlobals();
+  location.hash = '';
+});
+/** The import workbench lives in the options page; its settings hub is one '返回设置' away. */
+function openImportPage() {
+  location.hash = '#import';
+  render(createElement(App, { page: 'options' }));
+  expect(screen.getByRole('region', { name: '导入工作台' })).toBeVisible();
+}
+async function toAppearance(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole('button', { name: '返回设置' }));
+  await user.click(screen.getByRole('button', { name: /外观/ }));
 }
 it('production App keeps five-format Worker parsing and source diagnostics across themes and navigation without model calls', async () => {
   const fetch = vi.fn();
@@ -33,8 +40,7 @@ it('production App keeps five-format Worker parsing and source diagnostics acros
   }
   vi.stubGlobal('Worker', WorkerBoundary);
   const user = userEvent.setup();
-  render(createElement(App, { page: 'panel' }));
-  await overflow(user, '导入');
+  openImportPage();
   const format = screen.getByLabelText('导入格式');
   expect(format.querySelectorAll('option')).toHaveLength(5);
   await user.selectOptions(format, 'txt');
@@ -54,8 +60,7 @@ it('production App keeps five-format Worker parsing and source diagnostics acros
   expect(screen.getByText(/unsupported-protocol/)).toBeVisible();
   expect(posted).toHaveBeenCalledOnce();
   expect(terminate).toHaveBeenCalledOnce();
-  await overflow(user, '设置');
-  await user.click(screen.getByRole('button', { name: /外观/ }));
+  await toAppearance(user);
   for (const name of ['轻盈原生', '温润纸感', '清爽文具（默认）', '深色精密']) {
     await user.click(screen.getByRole('radio', { name }));
     expect(format).toHaveValue('txt');
@@ -115,8 +120,7 @@ it('production same-task load retains deselect-all and explicit title edits acro
     null,
   );
   const user = userEvent.setup();
-  render(createElement(App, { page: 'panel' }));
-  await overflow(user, '导入');
+  openImportPage();
   await user.click(screen.getByRole('button', { name: '读取导入任务列表' }));
   await user.click(await screen.findByRole('button', { name: '加载任务' }));
   const row = await screen.findByRole('checkbox', { name: 'https://example.test/' });
@@ -126,8 +130,7 @@ it('production same-task load retains deselect-all and explicit title edits acro
   await user.type(screen.getByLabelText('明确编辑标题 0'), 'Edited');
   await user.click(screen.getByRole('button', { name: '加载任务' }));
   await waitFor(() => expect(row).not.toBeChecked());
-  await overflow(user, '设置');
-  await user.click(screen.getByRole('button', { name: /外观/ }));
+  await toAppearance(user);
   for (const name of ['轻盈原生', '温润纸感', '清爽文具（默认）', '深色精密']) {
     await user.click(screen.getByRole('radio', { name }));
     expect(row).not.toBeChecked();

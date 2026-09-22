@@ -14,15 +14,17 @@ export function CurrentPageSave({ settings }: { settings?: SettingsStore }) {
   const current = useRef<Page | undefined>(undefined);
   const [tree, setTree] = useState<TreeState>({ status: 'loading' });
   const [message, setMessage] = useState('');
+  const [connected, setConnected] = useState(false);
   const [rules] = useState(() =>
     typeof chrome !== 'undefined' && chrome.storage?.local ? new SiteRulesStore(chrome.storage.local) : undefined,
   );
   const [lastSnapshot, setLastSnapshot] = useState<TreeSnapshot>();
   const port = useRef<chrome.runtime.Port | undefined>(undefined);
   useEffect(() => {
-    if (typeof chrome === 'undefined' || !chrome.runtime) return;
+    if (typeof chrome === 'undefined' || !chrome.runtime?.connect) return;
     const connection = chrome.runtime.connect({ name: SAVE_PORT });
     port.current = connection;
+    setConnected(true);
     connection.onMessage.addListener((raw: unknown) => {
       if (!raw || typeof raw !== 'object' || !('type' in raw)) return;
       if (raw.type === 'page' && 'page' in raw) {
@@ -38,14 +40,16 @@ export function CurrentPageSave({ settings }: { settings?: SettingsStore }) {
         setMessage(
           raw.type === 'error' && 'reason' in raw && typeof raw.reason === 'string'
             ? raw.reason
-            : '页面已切换或导航；请重新激活收藏。',
+            : '页面已切换或导航；请重新收藏当前页面。',
         );
       }
     });
     connection.onDisconnect.addListener(() => {
       current.current = undefined;
+      port.current = undefined;
+      setConnected(false);
       setPage(undefined);
-      setMessage('收藏入口连接已关闭；请重新打开侧栏。');
+      setMessage('收藏入口连接已关闭；请重新打开智栏。');
     });
     connection.postMessage({ type: 'register' });
     const stop = connectTree(chrome.runtime, next => {
@@ -75,7 +79,30 @@ export function CurrentPageSave({ settings }: { settings?: SettingsStore }) {
       });
     });
   }
-  if (!page) return null;
+  function requestCapture() {
+    const connection = port.current;
+    if (!connection) {
+      setMessage('收藏入口连接已关闭；请重新打开智栏。');
+      return;
+    }
+    setMessage('正在读取当前标签页…');
+    try {
+      connection.postMessage({ type: 'capture' });
+    } catch {
+      setMessage('收藏入口连接已关闭；请重新打开智栏。');
+    }
+  }
+  if (!page) {
+    // The popup opens in browse mode; capture is an explicit gesture, never inferred from the page behind it.
+    return (
+      <div className="current-page">
+        <button type="button" className="current-page-capture" disabled={!connected} onClick={requestCapture}>
+          收藏当前页面
+        </button>
+        {message && <p role="status">{message}</p>}
+      </div>
+    );
+  }
   const snapshot = tree.status === 'ready' ? tree.snapshot : lastSnapshot;
   return (
     <>
@@ -91,7 +118,12 @@ export function CurrentPageSave({ settings }: { settings?: SettingsStore }) {
           onClose={() => {
             current.current = undefined;
             setPage(undefined);
-            port.current?.postMessage({ type: 'close' });
+            setMessage('');
+            try {
+              port.current?.postMessage({ type: 'close' });
+            } catch {
+              /* A closed port already invalidated the capture. */
+            }
           }}
         />
       )}

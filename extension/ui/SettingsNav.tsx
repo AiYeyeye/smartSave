@@ -1,15 +1,17 @@
-import { Palette, Sparkles, Shield, Archive } from 'lucide-react';
+import { Palette, Sparkles, Shield, Archive, FolderTree, WandSparkles, Upload } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { ModelSettings } from '../options/ModelSettings';
 import { SiteRulesSettings } from '../options/SiteRulesSettings';
 import { RecoveryWorkbench } from '../options/RecoveryWorkbench';
 import { ExportSettings } from '../options/ExportSettings';
 import { ThemePicker, themes, useTheme } from './ThemeProvider';
-import { SidebarPosition } from './SidebarPosition';
 import type { SettingsStore } from '../persistence/settings';
 
 export type SettingsPage = 'overview' | 'appearance' | 'model' | 'privacy' | 'export-backup';
 export type SettingsJump = { page: SettingsPage; nonce: number; recovery?: boolean };
+/** A workbench the settings hub links to; only the options page (the full workbench host) offers these. */
+export type WorkbenchLink = { id: 'browse' | 'organize' | 'import'; title: string; hint: string };
+const workbenchIcons = { browse: FolderTree, organize: WandSparkles, import: Upload } as const;
 
 export function SettingsNav({
   visible,
@@ -17,12 +19,16 @@ export function SettingsNav({
   jump,
   page,
   onPage,
+  workbenches,
+  onWorkbench,
 }: {
   visible: boolean;
   store?: SettingsStore;
   jump?: SettingsJump;
   page: SettingsPage;
   onPage: (page: SettingsPage) => void;
+  workbenches?: WorkbenchLink[];
+  onWorkbench?: (workbench: WorkbenchLink['id']) => void;
 }) {
   const { theme } = useTheme();
   const currentName = (themes.find(item => item.id === theme)?.name ?? '清爽文具（默认）').replace(/（默认）$/, '');
@@ -40,6 +46,30 @@ export function SettingsNav({
   ];
   return (
     <div hidden={!visible} className="settings-nav">
+      {workbenches && workbenches.length > 0 && (
+        <section hidden={page !== 'overview'} className="settings-overview" aria-label="工作台">
+          {workbenches.map(link => {
+            const Icon = workbenchIcons[link.id];
+            return (
+              <button
+                key={link.id}
+                type="button"
+                className="settings-card"
+                title={link.hint}
+                onClick={() => onWorkbench?.(link.id)}
+              >
+                <span className="setting-icon">
+                  <Icon aria-hidden="true" />
+                </span>
+                <strong>{link.title}</strong>
+                <span className="setting-arrow" aria-hidden="true">
+                  ›
+                </span>
+              </button>
+            );
+          })}
+        </section>
+      )}
       <section hidden={page !== 'overview'} className="settings-overview" aria-label="设置">
         {cards.map(card => (
           <button
@@ -64,7 +94,6 @@ export function SettingsNav({
       </section>
       <section hidden={page !== 'appearance'} className="surface" aria-label="外观设置">
         <ThemePicker />
-        <SidebarPosition />
       </section>
       <div hidden={page !== 'model' && page !== 'privacy'}>
         <ModelSettings showHeading={false} store={store} fields={page === 'privacy' ? 'privacy' : 'model'} />

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { nodeRefSchema, nodeSchema } from '../domain/node-reference';
-export { trustedMutationSender } from '../background/ui-identity';
+export { trustedMutationSender } from '../domain/trusted-sender';
 const ref = nodeRefSchema.strict();
 const changes = z
   .object({ title: z.string().optional(), url: z.string().optional() })

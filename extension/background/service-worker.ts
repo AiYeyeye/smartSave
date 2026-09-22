@@ -6,15 +6,10 @@ import { startOrganizerAuthority } from './organizer-authority';
 import { startSaveEntrypoints } from './save-entrypoints';
 import { startTreeService } from './tree-service';
 import { startMutationService } from './mutation-service';
-import { startSidebarHost } from './sidebar-host';
 import { extractSaveBodyForUi } from './extract-coordinator';
-import { trustedMutationSender } from './ui-identity';
+import { trustedMutationSender } from '../domain/trusted-sender';
 
-const host = startSidebarHost();
-const { validateSaveContext, livePageForSender } = startSaveEntrypoints(
-  () => coordinator?.purgeSavePreviews(),
-  (tab, capture) => host.show(tab, capture),
-);
+const { validateSaveContext, livePageForSender } = startSaveEntrypoints(() => coordinator?.purgeSavePreviews());
 const projection = startTreeService();
 startFileOutput(projection);
 const settings = new SettingsStore(chrome.storage.local);

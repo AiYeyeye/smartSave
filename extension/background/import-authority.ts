@@ -5,7 +5,8 @@ import { compileImportPreview, importSelectionSchema, type ImportPreviewSelectio
 import { importContextCurrent, importContextDigest, importScopeFolders } from '../domain/import-evidence';
 import { dependencyDigest } from '../domain/context-dependencies';
 import { serializeAiPayload } from '../domain/ai-payload';
-import { confirmSchema, trustedMutationSender, type ConfirmMutation } from '../schemas/messages';
+import { confirmSchema, type ConfirmMutation } from '../schemas/messages';
+import { trustedMutationSender } from '../domain/trusted-sender';
 import type { TreeProjection } from './tree-projection';
 import type { TreeSnapshot } from '../domain/node-reference';
 

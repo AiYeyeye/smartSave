@@ -39,6 +39,14 @@ it('routes only mutation messages through trusted sender/schema validation witho
     ).toBe(true);
   });
   expect(response).toMatchObject({ status: 'rejected', reason: 'invalid-message-or-sender' });
+  const popup = await new Promise(resolve => {
+    handler!(
+      { version: 1, type: 'reconcileMutation', requestId: 'missing' },
+      { id: 'test', url: 'chrome-extension://test/panel/index.html', documentId: 'popup' },
+      resolve,
+    );
+  });
+  expect(popup).toMatchObject({ status: 'rejected', reason: 'request-not-found' });
   const trusted = await new Promise(resolve => {
     handler!(
       { version: 1, type: 'reconcileMutation', requestId: 'missing' },

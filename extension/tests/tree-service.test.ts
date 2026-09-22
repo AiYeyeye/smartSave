@@ -170,22 +170,18 @@ it('a port refresh on a ready tree answers only that port from the published sta
   expect(harness.getTree).toHaveBeenCalledTimes(reads);
 });
 
-it('publishes authoritative tree to exact trusted options page', async () => {
+it('publishes authoritative tree to exact trusted options page and toolbar popup', async () => {
   const harness = setup('get');
   harness.recover();
-  const port = harness.connect('chrome-extension://test/options/index.html');
-  await vi.waitFor(() => expect(port.state()?.status).toBe('ready'));
-});
-it('does not publish tree to unbound panel URL', async () => {
-  const harness = setup('get');
-  harness.recover();
-  const port = harness.connect('chrome-extension://test/panel/index.html');
-  await vi.waitFor(() => expect(harness.getTree).toHaveBeenCalled());
-  expect(port.state()).toBeUndefined();
+  const options = harness.connect('chrome-extension://test/options/index.html');
+  await vi.waitFor(() => expect(options.state()?.status).toBe('ready'));
+  const popup = harness.connect('chrome-extension://test/panel/index.html');
+  await vi.waitFor(() => expect(popup.state()?.status).toBe('ready'));
 });
 it.each([
   'https://evil.test/options/index.html',
   'chrome-extension://test/options/index.html?forged',
+  'chrome-extension://test/panel/index.html?forged',
   'chrome-extension://test/other.html',
 ])('rejects untrusted read consumer %s', async url => {
   const harness = setup('get');

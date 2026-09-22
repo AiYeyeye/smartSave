@@ -48,21 +48,19 @@ export function PanelChrome({
     privacy: '隐私',
     'export-backup': '导出与备份',
   };
+  // The popup returns to browsing; the options page returns to its settings hub.
+  const home: Workbench = page === 'panel' ? 'browse' : 'settings';
   function back() {
     if (settingsDetail) onSettingsPage('overview');
-    else onWorkbench('browse');
+    else onWorkbench(home);
   }
-  const showBack = (page === 'panel' && workbench !== 'browse') || (page === 'options' && settingsDetail);
+  const showBack = settingsDetail || workbench !== home;
+  const backLabel = settingsDetail || home === 'settings' ? '返回设置' : '返回书签';
   return (
     <>
       <header className="brand">
         {showBack ? (
-          <button
-            type="button"
-            className="header-back"
-            aria-label={settingsDetail ? '返回设置' : '返回书签'}
-            onClick={back}
-          >
+          <button type="button" className="header-back" aria-label={backLabel} onClick={back}>
             <ArrowLeft aria-hidden="true" />
           </button>
         ) : (
@@ -77,7 +75,7 @@ export function PanelChrome({
                 ? '导入书签'
                 : '智栏'}
         </h1>
-        {page === 'panel' && workbench === 'browse' && (
+        {workbench === 'browse' && (
           <>
             <button
               type="button"
@@ -110,7 +108,7 @@ export function PanelChrome({
           </>
         )}
       </header>
-      {page === 'panel' && searchOpen && (
+      {searchOpen && (
         <div className="search" hidden={workbench !== 'browse'}>
           <Search aria-hidden="true" />
           <input

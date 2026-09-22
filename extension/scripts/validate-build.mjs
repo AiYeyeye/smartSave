@@ -17,20 +17,15 @@ const manifestSchema = z.object({
   background: z.object({ service_worker: z.string(), type: z.literal('module') }),
   side_panel: z.never().optional(),
   options_ui: z.object({ page: z.string() }),
+  action: z.object({ default_popup: z.literal('panel/index.html'), default_title: z.string() }),
   host_permissions: z.never().optional(),
   optional_host_permissions: z.tuple([z.literal('https://*/*'), z.literal('http://*/*')]),
   content_security_policy: z.object({
     extension_pages: z.literal("script-src 'self'; object-src 'self'; connect-src https: http:"),
   }),
   content_scripts: z.never().optional(),
-  web_accessible_resources: z
-    .array(
-      z.object({
-        resources: z.array(z.literal('panel/index.html')).length(1),
-        matches: z.tuple([z.literal('http://*/*'), z.literal('https://*/*')]),
-      }),
-    )
-    .length(1),
+  // Native popup + options page only: no extension document may be exposed to web origins.
+  web_accessible_resources: z.never().optional(),
 });
 
 function rejectDynamicImports(node) {
@@ -81,7 +76,7 @@ export async function validateBuild(directory) {
   if (parserWorkers.length !== 1 || parserClients.length !== 1)
     throw new Error('Missing import Worker/client build contract');
   for (const name of [...parserWorkers, ...parserClients]) await check(resolve(root, 'assets', name));
-  for (const entry of [manifest.background.service_worker, manifest.options_ui.page, 'panel/index.html']) {
+  for (const entry of [manifest.background.service_worker, manifest.options_ui.page, manifest.action.default_popup]) {
     await check(resolve(root, entry));
   }
 }

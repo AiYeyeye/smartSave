@@ -2,7 +2,7 @@ import { bookmarksRead } from '../adapters/bookmarks-read';
 import { TREE_PORT } from '../domain/node-reference';
 import { installationIdentity } from './installation-identity';
 import { TreeProjection } from './tree-projection';
-import { trustedMutationSender } from '../schemas/messages';
+import { trustedMutationSender } from '../domain/trusted-sender';
 export function startTreeService() {
   const ensureIdentity = installationIdentity(chrome.storage.local);
   const projection = new TreeProjection(bookmarksRead(chrome.bookmarks), ensureIdentity, crypto.randomUUID());

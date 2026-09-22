@@ -14,7 +14,7 @@ import {
 import type { TreeSnapshot } from '../domain/node-reference';
 import { serializeExportJSON } from '../export/serializers';
 import { FileOutputStore, type FileOutputMetadata, type FileOutputRecord } from '../persistence/file-output';
-import { trustedMutationSender } from '../schemas/messages';
+import { trustedMutationSender } from '../domain/trusted-sender';
 import type { TreeProjection } from './tree-projection';
 
 const identity = (tree: TreeSnapshot) => JSON.stringify([tree.installationId, tree.epoch, tree.observedRevision]);

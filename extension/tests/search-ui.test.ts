@@ -23,6 +23,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   snapshot = searchTree();
+  location.hash = '';
 });
 function chromeStub() {
   vi.stubGlobal('chrome', {
@@ -166,18 +167,36 @@ it('explicit UI rerank uses shared settings and actual browser authority; accept
   settings.dispose();
   expect(invalidations.size).toBe(0);
 });
-it('actual App footer and08 write-intent route to retained organizer without model or write effects', () => {
+it('actual options App menu and08 write-intent route to retained organizer without model or write effects', () => {
   chromeStub();
   const fetcher = vi.spyOn(globalThis, 'fetch');
-  render(createElement(App, { page: 'panel' }));
+  location.hash = '#browse';
+  render(createElement(App, { page: 'options' }));
   fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
   fireEvent.click(screen.getByRole('menuitem', { name: 'AI 整理' }));
   expect(screen.getByRole('region', { name: '整理工作台' })).toBeVisible();
-  fireEvent.click(screen.getByRole('button', { name: '返回书签' }));
+  fireEvent.click(screen.getByRole('button', { name: '返回设置' }));
   expect(screen.queryByRole('region', { name: '整理工作台' })).toBeNull();
+  fireEvent.click(within(screen.getByRole('region', { name: '工作台' })).getByRole('button', { name: '书签目录' }));
   fireEvent.click(screen.getByRole('button', { name: '搜索' }));
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: '整理学习资料' } });
   fireEvent.click(screen.getByRole('button', { name: '前往整理工作台' }));
   expect(screen.getByRole('region', { name: '整理工作台' })).toBeVisible();
   expect(fetcher).not.toHaveBeenCalled();
+});
+it('popup write-intent search hands the organizer over to the options page instead of hosting it', () => {
+  chromeStub();
+  const create = vi.fn(async () => ({ id: 1 }));
+  vi.stubGlobal('chrome', {
+    ...chrome,
+    runtime: { ...chrome.runtime, getURL: (path: string) => `chrome-extension://i/${path}` },
+    tabs: { create },
+  });
+  render(createElement(App, { page: 'panel' }));
+  fireEvent.click(screen.getByRole('button', { name: '搜索' }));
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: '整理学习资料' } });
+  fireEvent.click(screen.getByRole('button', { name: '前往整理工作台' }));
+  expect(create).toHaveBeenCalledWith({ url: 'chrome-extension://i/options/index.html#organize' });
+  expect(screen.queryByRole('region', { name: '整理工作台' })).toBeNull();
+  expect(screen.getByRole('searchbox')).toHaveValue('整理学习资料');
 });

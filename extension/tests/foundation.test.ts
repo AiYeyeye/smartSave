@@ -43,8 +43,10 @@ describe('foundation appearance and context', () => {
   it('does not invent current-page data or installed example bookmarks', async () => {
     render(createElement(App, { page: 'panel' }));
     expect(screen.getByText('尚未连接书签')).toBeVisible();
-    expect(screen.queryByRole('button', { name: '收藏当前页面' })).not.toBeInTheDocument();
+    // The capture entry is an explicit gesture; without a worker it stays disabled and no page data is shown.
+    expect(screen.getByRole('button', { name: '收藏当前页面' })).toBeDisabled();
     expect(screen.queryByRole('region', { name: '收藏确认卡' })).not.toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/https?:\/\//);
   });
 });
 

@@ -361,11 +361,20 @@ it('last authority await invalidation and plan/sender tampering fail closed', as
       )
     ).status,
   ).toBe('rejected');
+  // A different trusted document is still a different lease owner: the popup cannot reuse the options page's lease.
   expect(
     (
       await other.coordinator.submit(other.request, {
         ...other.sender,
         url: 'chrome-extension://test/panel/index.html',
+      })
+    ).status,
+  ).toBe('rejected');
+  expect(
+    (
+      await other.coordinator.submit(other.request, {
+        ...other.sender,
+        id: 'foreign',
       })
     ).status,
   ).toBe('rejected');

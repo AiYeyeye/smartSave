@@ -12,9 +12,9 @@ import {
   confirmSchema,
   durableMutationRequestSchema,
   mutationMessageSchema,
-  trustedMutationSender,
   type MutationResult,
 } from '../schemas/messages';
+import { trustedMutationSender } from '../domain/trusted-sender';
 import {
   operationRecord,
   operationResult,

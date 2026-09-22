@@ -15,9 +15,8 @@ describe('MV3 distribution contract', () => {
     const manifest = JSON.parse(await readFile('dist/manifest.json', 'utf8'));
     expect(manifest.permissions).toEqual(['bookmarks', 'storage', 'activeTab', 'scripting', 'contextMenus', 'favicon']);
     expect(manifest.side_panel).toBeUndefined();
-    expect(manifest.web_accessible_resources).toEqual([
-      { resources: ['panel/index.html'], matches: ['http://*/*', 'https://*/*'] },
-    ]);
+    expect(manifest.web_accessible_resources).toBeUndefined();
+    expect(manifest.action.default_popup).toBe('panel/index.html');
     expect(manifest.host_permissions).toBeUndefined();
     expect(manifest.optional_host_permissions).toEqual(['https://*/*', 'http://*/*']);
     expect(manifest.content_security_policy.extension_pages).toContain('connect-src https: http:');

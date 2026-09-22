@@ -1,4 +1,4 @@
-import { trustedMutationSender } from './ui-identity';
+import { trustedMutationSender } from '../domain/trusted-sender';
 import type { SavePage } from './save-entrypoints';
 import { extractSaveBody, type ExtractionBoundary, type SaveBody } from '../panel/extract-save-body';
 
