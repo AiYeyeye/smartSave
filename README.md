@@ -4,6 +4,7 @@
 Chrome / Edge MV3 书签助手：浏览器原生书签是唯一事实源，AI 只产生经校验的数据，写入经唯一内核并留回执。
 
 - [产品需求 PRD 1.0 + 1.1 增补](docs/PRD-1.0.md)：2026-09-22 起主流程为「浏览器原生收藏 → 后台自动分类 → 先写后告知」，第 15 节记录标废条款。
+- [设计简报（供原型/样式生成）](docs/design-brief-2026-09-23.md)：自包含的界面清单、状态、视觉令牌与硬约束，可整份交给原型 AI。
 - [原生收藏自动分类任务树](.trellis/tasks/09-11-zhilan-native-ai-overhaul/prd.md)：R01–R18 与 P00–P08 子任务，尚在 planning。
 - [首版 v1 任务树](.trellis/tasks/09-08-zhilan-v1-development/README.md)：12 个子任务源码基本完成，浏览器/真实模型/P1–P4 运行验收未做。
 - [扩展工程说明](extension/README.md)：构建、检查、证据边界与各切片状态。
