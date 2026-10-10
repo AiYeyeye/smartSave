@@ -7,7 +7,7 @@ import { SettingsStore } from '../persistence/settings';
 import { ThemeProvider } from './ThemeProvider';
 import './theme.css';
 import { BookmarkTree } from '../panel/BookmarkTree';
-import { PanelChrome, type Workbench } from './PanelChrome';
+import { PanelChrome, PanelFooter, type Workbench } from './PanelChrome';
 import { SettingsNav, type SettingsJump, type SettingsPage, type WorkbenchLink } from './SettingsNav';
 import {
   AiServicesPage,
@@ -170,8 +170,18 @@ export function App({ page }: { page: Page }) {
             onWorkbench={setWorkbench}
             aiServices={{ services: ai.services, features: ai.features }}
             onOpenAiServices={openAiServices}
+            onAssignFeature={(featureId, connId, modelId) => {
+              void Promise.resolve(ai.assignFeature(featureId, connId, modelId));
+            }}
           />
         </main>
+        {page === 'panel' && workbench === 'browse' && (
+          <PanelFooter
+            onOrganize={() => selectWorkbench('organize')}
+            onImport={() => selectWorkbench('import')}
+            onExport={exportBackup}
+          />
+        )}
       </div>
     </ThemeProvider>
   );

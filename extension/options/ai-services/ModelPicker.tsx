@@ -3,20 +3,26 @@ import { ChevronDown, Search } from 'lucide-react';
 import type { ConnectedService, FeatureAssignment } from './mock-data';
 import { modelCtx } from './mock-data';
 
+/**
+ * In-place model picker: expands below the trigger inside the card/sidebar.
+ * Must NOT use position:fixed — keeps within ≈380px sidebar bounds (redesign SoT).
+ */
 export function ModelPicker({
   feature,
   services,
   onSelect,
+  compact = false,
 }: {
   feature: FeatureAssignment;
   services: ConnectedService[];
   onSelect: (connId: string, modelId: string) => void;
+  /** Sidebar summary uses slightly denser trigger. */
+  compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const popRef = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState<{ left: number; top: number }>({ left: 0, top: 0 });
 
   const conn = services.find(c => c.id === feature.connId);
   const ctx = modelCtx(services, feature.connId, feature.modelId);
@@ -24,22 +30,10 @@ export function ModelPicker({
   const sub = conn ? conn.name : '未绑定连接';
 
   useEffect(() => {
-    if (!open || !triggerRef.current || !popRef.current) return;
-    const rect = triggerRef.current.getBoundingClientRect();
-    const popW = popRef.current.offsetWidth || 340;
-    const popH = Math.min(420, window.innerHeight * 0.7);
-    let left = rect.right - popW;
-    let top = rect.bottom + 6;
-    if (left < 8) left = 8;
-    if (top + popH > window.innerHeight - 8) top = Math.max(8, rect.top - popH - 6);
-    setPos({ left, top });
-  }, [open, query]);
-
-  useEffect(() => {
     if (!open) return;
     function onDoc(e: MouseEvent) {
       const t = e.target as Node;
-      if (popRef.current?.contains(t) || triggerRef.current?.contains(t)) return;
+      if (rootRef.current?.contains(t)) return;
       setOpen(false);
     }
     function onKey(e: KeyboardEvent) {
@@ -64,7 +58,7 @@ export function ModelPicker({
     .filter(g => g.models.length > 0);
 
   return (
-    <>
+    <div ref={rootRef} className={`ai-svc-picker${compact ? ' is-compact' : ''}${open ? ' is-open' : ''}`}>
       <button
         ref={triggerRef}
         type="button"
@@ -80,10 +74,10 @@ export function ModelPicker({
           <span className="main">{main}</span>
           <span className="sub">{sub}</span>
         </span>
-        <ChevronDown aria-hidden="true" />
+        <ChevronDown className="chev" aria-hidden="true" />
       </button>
       {open && (
-        <div ref={popRef} className="ai-svc-picker-pop" style={{ left: pos.left, top: pos.top }} role="listbox">
+        <div className="ai-svc-picker-inline" role="listbox">
           <div className="ai-svc-picker-search">
             <Search aria-hidden="true" />
             <input
@@ -98,9 +92,9 @@ export function ModelPicker({
           <div className="ai-svc-picker-list">
             {groups.length === 0 ? (
               <div className="ai-svc-picker-empty">
-                没有匹配的模型
+                {services.length === 0 ? '请先连接 AI 服务' : '没有匹配的模型'}
                 <br />
-                <span style={{ fontSize: 12 }}>请先在「编辑 AI 服务」中启用模型</span>
+                <span style={{ fontSize: 11 }}>请先在「编辑 AI 服务」中启用模型</span>
               </div>
             ) : (
               groups.map(g => (
@@ -112,7 +106,7 @@ export function ModelPicker({
                       <button
                         key={`${g.conn.id}:${m.id}`}
                         type="button"
-                        className="ai-svc-picker-option"
+                        className={`ai-svc-picker-option${sel ? ' is-current' : ''}`}
                         role="option"
                         aria-selected={sel}
                         onClick={() => {
@@ -131,6 +125,6 @@ export function ModelPicker({
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }

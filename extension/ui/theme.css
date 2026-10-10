@@ -28,3 +28,157 @@ svg{width:20px;height:20px;flex-shrink:0;stroke-width:var(--stroke)}h1,h2,h3,p{m
 @media(forced-colors:active){:focus-visible{outline:2px solid Highlight;outline-offset:2px}.search:focus-within{outline:2px solid Highlight}.search input:focus-visible{outline:0}.theme-choice:has(:checked){outline:1px solid Highlight}}
 .recovery-group{margin-block:24px}.recovery-group>h3{margin-bottom:8px}.recovery-group>.hint{margin-bottom:12px}.recovery-list{list-style:none;padding:0;margin:0;display:grid;gap:12px}.recovery-list>li{background:var(--bg);border-radius:16px;padding:16px;min-width:0}.recovery-item-title{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px 12px;font-size:15px}.recovery-list .actions{margin-top:12px}.recovery-steps{margin:8px 0 0;padding-inline-start:20px;font-size:13px;color:var(--muted);line-height:1.7;overflow-wrap:anywhere}.recovery-advanced summary{min-height:44px;display:flex;align-items:center;gap:8px;cursor:pointer;color:var(--accent);font-size:14px}.recovery-advanced summary::before{content:'›';font-size:18px}.recovery-advanced[open] summary::before{content:'⌄'}.recovery-advanced summary::-webkit-details-marker{display:none}.recovery-advanced>section{margin-top:12px}
 /* Native toolbar popup: fixed viewport (Chrome clamps popups to 800x600); the shell keeps the approved 320-480 range and 44px targets. */body.popup{width:380px;min-width:320px;max-width:480px;height:580px;overflow:hidden}body.popup .theme-root{min-height:100%;height:100%}body.popup .shell.panel{height:100%}.current-page{margin-inline:0}.current-page .current-page-capture{flex:1 1 100%;min-height:44px;padding:12px 16px;background:var(--accent);color:var(--surface)}[data-theme="precision"] .current-page .current-page-capture{color:var(--bg)}.current-page>p{flex:1 1 100%;font-size:13px;color:var(--muted)}.settings-nav .settings-overview+.settings-overview{margin-top:24px}
+
+/* —— Bookmark sidebar + popup · redesign dark (scoped; do not flatten all options soft-ui) —— */
+body.popup{
+  width:380px;min-width:380px;max-width:380px;height:580px;overflow:hidden;
+  color-scheme:dark;
+}
+body.popup .theme-root,
+body.popup .shell.panel{
+  --bg:#1a1a1a;--bg-elevated:#1e1e1e;--surface:#242424;--card:#242424;--card-2:#2a2a2a;
+  --text:#f3f4f6;--muted:#9ca3af;--faint:#6b7280;--accent:#3b82f6;--accent-hover:#2563eb;
+  --accent-soft:rgba(59,130,246,.16);--hover:#242424;--current:rgba(59,130,246,.1);
+  --line:#333;--border:#333;--radius:12px;--small:8px;--row:32px;--pad:16px;
+  --shadow:0 1px 2px rgba(0,0,0,.4);--lift-shadow:0 8px 28px rgba(0,0,0,.45);
+  --halo:0 0 0 3px rgba(59,130,246,.16);--folder:#eab308;
+  background:var(--bg);color:var(--text);
+}
+body.popup .shell.panel{height:100%;position:relative}
+body.popup .shell.panel>main{padding:4px 8px 8px;background:var(--bg)}
+body.popup .brand{
+  height:auto;min-height:0;padding:16px 16px 12px;background:var(--bg-elevated);
+  border-bottom:0;gap:10px;
+}
+body.popup .brand.brand-zh h1{font-size:20px;font-weight:700;letter-spacing:.06em}
+body.popup .brand .header-back,
+body.popup .brand .chrome-icon,
+body.popup .brand .zh-gear{
+  width:36px;height:36px;min-height:36px;padding:0;border-radius:10px;
+  background:transparent;color:var(--muted);box-shadow:none;
+}
+body.popup .brand .header-back:hover,
+body.popup .brand .chrome-icon:hover,
+body.popup .brand .zh-gear:hover{background:var(--card);color:var(--text);transform:none}
+body.popup .zh-logo{
+  width:28px;height:32px;flex-shrink:0;background:var(--accent);color:#fff;
+  clip-path:polygon(0 0,100% 0,100% 100%,50% 82%,0 100%);
+  border-radius:6px 6px 2px 2px;display:grid;place-items:center;position:relative;
+}
+body.popup .zh-logo::before{
+  content:"";width:10px;height:7px;border:2px solid currentColor;border-top:0;
+  border-radius:0 0 8px 8px;position:absolute;top:8px;
+}
+body.popup .search.zh-search{
+  margin:0 16px 12px;padding:4px 12px;min-height:44px;
+  background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
+  box-shadow:none;
+}
+body.popup .search.zh-search>svg{color:var(--faint);width:16px;height:16px}
+body.popup .search.zh-search input{min-height:36px;font-size:13px;color:var(--text)}
+body.popup .search.zh-search input::placeholder{color:var(--faint)}
+body.popup .search.zh-search .search-dismiss{
+  width:28px;height:28px;min-height:28px;padding:0;border-radius:8px;color:var(--faint);
+}
+body.popup .search.zh-search .search-dismiss:hover{background:var(--card-2);color:var(--text)}
+body.popup .current-page{
+  margin:0 16px 10px;padding:10px 12px;gap:10px;flex-wrap:nowrap;
+  background:rgba(59,130,246,.1);border:1px solid rgba(59,130,246,.22);
+  border-radius:var(--radius);box-shadow:none;
+}
+body.popup .current-page .current-page-capture{
+  flex:0 0 auto;min-height:32px;padding:0 14px;border-radius:8px;
+  background:var(--accent);color:#fff;font-size:12px;font-weight:650;box-shadow:none;
+}
+body.popup .current-page .current-page-capture:hover:not(:disabled){background:var(--accent-hover);transform:none}
+body.popup .current-page>p{flex:1;font-size:12px;color:var(--muted);margin:0}
+body.popup .directory{padding:2px 0 8px}
+body.popup .bookmark-tree{padding:0 4px}
+body.popup .bookmark-row{
+  min-height:32px;border-radius:6px;gap:2px;
+  transition:background-color 120ms ease;
+}
+body.popup .bookmark-row:hover,
+body.popup .bookmark-row:focus-within{background:var(--card)}
+body.popup .bookmark-row.drop-into{
+  background:rgba(59,130,246,.18);
+  box-shadow:inset 0 0 0 1px rgba(59,130,246,.45);
+}
+body.popup .bookmark-row.drop-before::before,
+body.popup .bookmark-row.drop-after::after,
+body.popup .bookmark-row[data-placement="before"]::before,
+body.popup .bookmark-row[data-placement="after"]::after{
+  content:"";position:absolute;left:8px;right:8px;height:2px;
+  background:var(--accent);border-radius:2px;z-index:2;
+  box-shadow:0 0 0 2px rgba(59,130,246,.25);
+}
+body.popup .bookmark-row.drop-before::before,
+body.popup .bookmark-row[data-placement="before"]::before{top:-1px}
+body.popup .bookmark-row.drop-after::after,
+body.popup .bookmark-row[data-placement="after"]::after{bottom:-1px}
+body.popup .bookmark-row[data-placement="inside"]{
+  background:rgba(59,130,246,.18);
+  box-shadow:inset 0 0 0 1px rgba(59,130,246,.45);
+}
+body.popup .folder-row,
+body.popup .bookmark-label{
+  min-height:32px;padding:2px;border-radius:6px;gap:4px;font-size:12.5px;
+}
+body.popup .folder-row{font-weight:650}
+body.popup .folder-row svg{color:var(--folder);width:14px;height:14px}
+body.popup .bookmark-row svg{width:14px;height:14px}
+body.popup .bookmark-open{min-height:32px;font-size:12.5px}
+body.popup .bookmark-row .command-menu{opacity:0}
+body.popup .bookmark-row:hover .command-menu,
+body.popup .bookmark-row:focus-within .command-menu{opacity:1}
+body.popup .bookmark-row .command-trigger{
+  width:26px;min-height:26px;padding:0;border-radius:6px;color:var(--faint);
+}
+body.popup .bookmark-row .command-trigger:hover{background:var(--card-2);color:var(--text)}
+body.popup .command-menu-list{
+  min-width:180px;max-width:240px;padding:6px;
+  background:var(--card-2);border:1px solid var(--border);border-radius:10px;
+  box-shadow:var(--lift-shadow);
+}
+body.popup .command-menu-list [role="menuitem"]{
+  min-height:34px;padding:0 10px;border-radius:7px;font-size:12.5px;
+}
+body.popup .command-menu-list [role="menuitem"]:hover,
+body.popup .command-menu-list [role="menuitem"]:focus-visible{
+  background:var(--accent-soft);color:#93c5fd;
+}
+body.popup .zh-footer{
+  border-top:1px solid var(--border);
+  display:flex;padding:6px 8px;background:var(--bg-elevated);flex-shrink:0;
+}
+body.popup .zh-footer button{
+  flex:1;min-height:44px;border-radius:10px;box-shadow:none;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+  font-size:11px;font-weight:550;color:var(--muted);background:transparent;padding:4px;
+}
+body.popup .zh-footer button svg{width:16px;height:16px}
+body.popup .zh-footer button:hover:not(:disabled){background:var(--card);color:var(--text);transform:none}
+body.popup .settings-nav{padding:4px 6px 12px}
+body.popup .settings-card{
+  background:var(--card);border:1px solid var(--border);border-radius:12px;
+  box-shadow:var(--shadow);min-height:56px;padding:12px 14px;
+}
+body.popup .settings-card:hover{transform:none;background:var(--card-2)}
+body.popup .setting-icon{width:36px;height:36px;border-radius:10px;background:var(--bg)}
+body.popup .state{background:var(--card);border-radius:12px;box-shadow:var(--shadow);padding:16px}
+body.popup .batch-bar{background:var(--card);border-radius:12px;padding:12px}
+body.popup button{box-shadow:none}
+body.popup button:hover:not(:disabled){transform:none}
+@media(hover:none){body.popup .bookmark-row .command-menu{opacity:1}}
+
+/* Options AI management host inherits dark from .ai-svc; keep shell chrome readable */
+.shell.options.ai-services-wide{
+  background:#121212;color:#f3f4f6;color-scheme:dark;
+  --bg:#1a1a1a;--surface:#242424;--text:#f3f4f6;--muted:#9ca3af;--accent:#3b82f6;
+  --hover:#2a2a2a;--shadow:0 1px 2px rgba(0,0,0,.4);--lift-shadow:0 8px 28px rgba(0,0,0,.45);
+  --halo:0 0 0 3px rgba(59,130,246,.16);--radius:12px;--small:8px;
+}
+.shell.options.ai-services-wide .brand{
+  background:#1e1e1e;border-bottom:1px solid #333;height:56px;min-height:56px;
+}
+.shell.options.ai-services-wide>main{background:#1a1a1a;padding:12px 16px 24px}

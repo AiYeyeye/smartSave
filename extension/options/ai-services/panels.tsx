@@ -21,16 +21,23 @@ export function ConnectedPanel({
 }) {
   if (!services.length) {
     return (
-      <div className="ai-svc-empty">
-        <div>还没有已连接的 AI 服务</div>
-        <button type="button" onClick={onGoAdd}>
-          去添加服务
-        </button>
+      <div>
+        <h2 className="ai-svc-panel-title">已连接</h2>
+        <p className="ai-svc-panel-desc">管理当前 AI 连接：编辑配置、查看状态或断开。</p>
+        <div className="ai-svc-empty">
+          <div>还没有已连接的 AI 服务</div>
+          <button type="button" onClick={onGoAdd}>
+            去添加服务
+          </button>
+        </div>
       </div>
     );
   }
   return (
-    <div className="ai-svc-connected-list">
+    <div>
+      <h2 className="ai-svc-panel-title">已连接</h2>
+      <p className="ai-svc-panel-desc">管理当前 AI 连接：编辑配置、查看状态或断开。</p>
+      <div className="ai-svc-connected-list">
       {services.map(s => (
         <div key={s.id} className="ai-svc-connected-row">
           <Avatar letter={s.letter} avatarClass={s.avatarClass} size="lg" />
@@ -54,6 +61,7 @@ export function ConnectedPanel({
         </div>
       ))}
     </div>
+    </div>
   );
 }
 
@@ -68,7 +76,8 @@ export function FeaturesPanel({
 }) {
   return (
     <div>
-      <p className="ai-svc-feat-intro">为各 AI 功能指定连接与模型。下拉按连接分组，可搜索模型 ID。</p>
+      <h2 className="ai-svc-panel-title">功能用模</h2>
+      <p className="ai-svc-panel-desc">为各 AI 功能指定连接与模型。行内展开按连接分组，可搜索模型 ID。</p>
       <div className="ai-svc-feat-list">
         {features.map(f => (
           <div key={f.id} className="ai-svc-feat-row">
@@ -137,7 +146,10 @@ export function ImportExportPanel({
   }
 
   return (
-    <div className="ai-svc-io-grid">
+    <div>
+      <h2 className="ai-svc-panel-title">导入导出</h2>
+      <p className="ai-svc-panel-desc">备份或迁移 AI 服务配置（不含明文密钥）。</p>
+      <div className="ai-svc-io-grid">
       <div className="ai-svc-io-card">
         <h3>导入</h3>
         <p>从 JSON 文件恢复已连接的 AI 服务配置（不含明文密钥；导入后请重新输入密钥）。</p>
@@ -196,8 +208,10 @@ export function ImportExportPanel({
         {!services.length ? <p style={{ fontSize: 12, opacity: 0.75, marginTop: 8 }}>当前没有已连接服务。</p> : null}
       </div>
     </div>
+    </div>
   );
 }
+
 
 function VendorCard({ vendor, onClick }: { vendor: Vendor; onClick: () => void }) {
   return (
@@ -341,6 +355,8 @@ export function AddServicePanel({
 
   return (
     <div>
+      <h2 className="ai-svc-panel-title">添加服务</h2>
+      <p className="ai-svc-panel-desc">用订阅登录或 API Key 连接。自定义端点排在 Key 区首位。</p>
       <div className="ai-svc-search-wrap">
         <Search aria-hidden="true" />
         <input

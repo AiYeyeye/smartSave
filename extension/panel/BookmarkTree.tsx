@@ -199,13 +199,48 @@ export function TreeRows({
     setSelectedId(id);
     setIntentMode(mode);
   }
+  function siblingIndex(nodeId: string): { parentId: string; index: number; siblings: string[] } | undefined {
+    const node = byId.get(nodeId);
+    if (!node || node.parentId === undefined || node.readOnly) return;
+    const parent = byId.get(node.parentId);
+    if (!parent) return;
+    return { parentId: node.parentId, index: node.index, siblings: parent.childrenIds };
+  }
+  function moveBy(id: string, delta: -1 | 1) {
+    if (!connectionReady || moving || move || formActive) return;
+    const info = siblingIndex(id);
+    if (!info) return;
+    const next = info.index + delta;
+    if (next < 0 || next >= info.siblings.length) return;
+    try {
+      const request = prepareMove(snapshot, id, info.parentId, next);
+      preflight(request, snapshot);
+      setMove(request);
+      setDragError('');
+      setMoveResult(undefined);
+    } catch {
+      setDragError('无法移动：目标失效、只读、循环或树已变化。');
+    }
+  }
   function menuItems(id: string): CommandMenuItem[] {
     const node = byId.get(id);
     if (!node) return [];
     const items: CommandMenuItem[] = [];
-    if (node.ref.kind === 'folder' && node.childrenWritable) {
-      items.push({ id: 'bookmark', label: '新建书签', onSelect: () => act(id, 'bookmark') });
-      items.push({ id: 'folder', label: '新建目录', onSelect: () => act(id, 'folder') });
+    const info = siblingIndex(id);
+    const canReorder = !!info && !node.readOnly;
+    if (canReorder) {
+      items.push({
+        id: 'up',
+        label: '上移',
+        disabled: info!.index <= 0,
+        onSelect: () => moveBy(id, -1),
+      });
+      items.push({
+        id: 'down',
+        label: '下移',
+        disabled: info!.index >= info!.siblings.length - 1,
+        onSelect: () => moveBy(id, 1),
+      });
     }
     if (node.ref.kind === 'bookmark') {
       items.push({
@@ -218,9 +253,13 @@ export function TreeRows({
       });
     }
     if (!node.readOnly) {
-      items.push({ id: 'edit', label: '编辑 / 重命名', onSelect: () => act(id, 'edit') });
-      items.push({ id: 'move', label: '移动', onSelect: () => act(id, 'move') });
+      items.push({ id: 'edit', label: '重命名', onSelect: () => act(id, 'edit') });
+      items.push({ id: 'move', label: '移入…', onSelect: () => act(id, 'move') });
       items.push({ id: 'delete', label: '删除', onSelect: () => act(id, 'delete') });
+    }
+    if (node.ref.kind === 'folder' && node.childrenWritable) {
+      items.push({ id: 'bookmark', label: '新建书签', onSelect: () => act(id, 'bookmark') });
+      items.push({ id: 'folder', label: '新建目录', onSelect: () => act(id, 'folder') });
     }
     return items;
   }
@@ -307,7 +346,13 @@ export function TreeRows({
           return (
             <li
               key={id}
-              className="bookmark-row"
+              className={
+                'bookmark-row' +
+                (node.ref.kind === 'folder' ? ' is-folder' : ' is-bookmark') +
+                (placement?.id === id && placement.mode === 'inside' ? ' drop-into' : '') +
+                (placement?.id === id && placement.mode === 'before' ? ' drop-before' : '') +
+                (placement?.id === id && placement.mode === 'after' ? ' drop-after' : '')
+              }
               data-node-id={id}
               data-placement={placement?.id === id ? placement.mode : undefined}
               onPointerDown={() => {
@@ -346,7 +391,7 @@ export function TreeRows({
               }}
               style={{ paddingInlineStart: `${depth * 14}px` }}
               onContextMenu={event => {
-                if (node.ref.kind !== 'folder') return;
+                if (menuItems(id).length === 0) return;
                 event.preventDefault();
                 event.currentTarget.querySelector<HTMLButtonElement>('.command-trigger')?.click();
               }}

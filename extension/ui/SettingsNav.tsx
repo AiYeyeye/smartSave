@@ -25,6 +25,7 @@ export function SettingsNav({
   onWorkbench,
   aiServices,
   onOpenAiServices,
+  onAssignFeature,
 }: {
   visible: boolean;
   store?: SettingsStore;
@@ -38,6 +39,7 @@ export function SettingsNav({
     features: FeatureAssignment[];
   };
   onOpenAiServices?: (tab: AiServicesTab) => void;
+  onAssignFeature?: (featureId: string, connId: string, modelId: string) => void;
 }) {
   const { theme } = useTheme();
   const currentName = (themes.find(item => item.id === theme)?.name ?? '清爽文具（默认）').replace(/（默认）$/, '');
@@ -85,6 +87,7 @@ export function SettingsNav({
             services={aiServices.services}
             features={aiServices.features}
             onOpen={onOpenAiServices}
+            onAssign={onAssignFeature}
           />
         </section>
       ) : null}

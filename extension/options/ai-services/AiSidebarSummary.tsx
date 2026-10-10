@@ -1,23 +1,25 @@
 import { Download, Plus } from 'lucide-react';
 import type { ConnectedService, FeatureAssignment, AiServicesTab } from './mock-data';
 import { Avatar } from './Avatar';
+import { ModelPicker } from './ModelPicker';
 import './ai-services.css';
 
 export function AiSidebarSummary({
   services,
   features,
   onOpen,
+  onAssign,
 }: {
   services: ConnectedService[];
   features: FeatureAssignment[];
   onOpen: (tab: AiServicesTab) => void;
+  onAssign?: (featureId: string, connId: string, modelId: string) => void;
 }) {
-  const chips = services.slice(0, 3);
-  const featPreview = features.slice(0, 3);
+  const chips = services;
   return (
     <div className="ai-svc ai-svc-summary">
       <div>
-        <p className="ai-svc-section-label">AI 服务</p>
+        <p className="ai-svc-section-label">设置</p>
         <div className="ai-svc-block">
           <h2>AI 服务</h2>
           <div className="ai-svc-chip-list">
@@ -54,12 +56,24 @@ export function AiSidebarSummary({
         <p className="ai-svc-section-label">功能用模</p>
         <div className="ai-svc-block">
           <div className="ai-svc-feat-summary">
-            {featPreview.map(f => (
-              <div key={f.id} className="ai-svc-feat-chip">
-                <strong>{f.name}</strong>
-                <span className="model-tag" title={f.modelId}>
-                  {f.modelId || '未绑定'}
-                </span>
+            {features.map(f => (
+              <div key={f.id} className="ai-svc-sb-feat-row">
+                <span className="ai-svc-sb-feat-label">{f.name}</span>
+                {onAssign ? (
+                  <ModelPicker
+                    feature={f}
+                    services={services}
+                    compact
+                    onSelect={(connId, modelId) => onAssign(f.id, connId, modelId)}
+                  />
+                ) : (
+                  <div className="ai-svc-feat-chip">
+                    <strong>{f.name}</strong>
+                    <span className="model-tag" title={f.modelId}>
+                      {f.modelId || '未绑定'}
+                    </span>
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -68,7 +82,9 @@ export function AiSidebarSummary({
           </button>
         </div>
       </div>
-      <p className="ai-svc-hint">侧栏仅摘要。连接、模型与功能分配在管理页完成。</p>
+      <p className="ai-svc-hint">
+        五项功能均可在侧栏直接换模型（展开列表不溢出侧栏）。连接与模型清单在管理页完成。
+      </p>
     </div>
   );
 }
