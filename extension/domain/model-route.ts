@@ -1,6 +1,13 @@
 import { z } from 'zod';
 
-export const modelAdapterSchema = z.enum(['openai-compatible', 'ollama', 'lm-studio', 'anthropic']);
+export const modelAdapterSchema = z.enum([
+  'openai-compatible',
+  'openai-responses',
+  'anthropic',
+  'google-generative-ai',
+  'ollama',
+  'lm-studio',
+]);
 export type ModelAdapter = z.infer<typeof modelAdapterSchema>;
 
 export const modelConfigSchema = z.strictObject({
@@ -38,11 +45,28 @@ export function pathAlreadyVersioned(path: string): boolean {
 }
 
 /** Shared join: a base already ending in a version segment only gains the resource path once. */
-export function modelResourceSuffix(adapter: ModelAdapter, path: string, kind: ModelEndpointKind): string {
+export function modelResourceSuffix(
+  adapter: ModelAdapter,
+  path: string,
+  kind: ModelEndpointKind,
+  model?: string,
+): string {
   if (adapter === 'ollama') return kind === 'chat' ? '/api/chat' : '/api/tags';
   if (adapter === 'anthropic') {
     if (kind === 'chat') return path.endsWith('/v1') || /\/v\d+$/i.test(path) ? '/messages' : '/v1/messages';
     return path.endsWith('/v1') || /\/v\d+$/i.test(path) ? '/models' : '/v1/models';
+  }
+  if (adapter === 'google-generative-ai') {
+    // Native Generative Language API: bare host gets /v1beta; model id is in the generateContent path.
+    if (kind === 'models') return path ? '/models' : '/v1beta/models';
+    const modelId = (model ?? '').trim().replace(/^models\//, '');
+    if (!modelId) throw Error();
+    const encoded = encodeURIComponent(modelId);
+    return path ? `/models/${encoded}:generateContent` : `/v1beta/models/${encoded}:generateContent`;
+  }
+  if (adapter === 'openai-responses') {
+    if (pathAlreadyVersioned(path)) return kind === 'chat' ? '/responses' : '/models';
+    return kind === 'chat' ? '/v1/responses' : '/v1/models';
   }
   // openai-compatible + lm-studio
   if (pathAlreadyVersioned(path)) return kind === 'chat' ? '/chat/completions' : '/models';
@@ -53,7 +77,7 @@ export function parseModelEndpoint(input: ModelConfig, kind: ModelEndpointKind =
   try {
     const config = modelConfigSchema.parse(input);
     const { base, path, origin, permission } = parseBase(config.baseUrl);
-    const suffix = modelResourceSuffix(config.adapter, path, kind);
+    const suffix = modelResourceSuffix(config.adapter, path, kind, config.model);
     return {
       identity: JSON.stringify([config.adapter, base.origin, path]),
       url: `${origin}${path}${suffix}`,

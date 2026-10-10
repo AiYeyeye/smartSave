@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Search } from 'lucide-react';
 import type { ApiMode, ConnectedService, ModelMeta } from './mock-data';
+import { API_MODE_OPTIONS } from '../../domain/ai-providers';
 import { discoverModels, modelsToCatalog, requestHostPermission, testConnection } from '../../adapters/ai-connection';
 import { ModelTransport } from '../../adapters/model-transport';
 import { browserModelAuthority } from '../../adapters/model-authority';
@@ -319,9 +320,11 @@ export function EditServiceOverlay({
                 value={draft.mode}
                 onChange={e => setDraft(d => ({ ...d, mode: e.target.value as ApiMode }))}
               >
-                <option value="openai">OpenAI-compatible</option>
-                <option value="openai-responses">OpenAI Responses（暂按兼容协议）</option>
-                <option value="anthropic">Anthropic Messages</option>
+                {API_MODE_OPTIONS.map(opt => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
               </select>
             </div>
           </div>

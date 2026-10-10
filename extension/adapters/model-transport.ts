@@ -31,6 +31,13 @@ function requestHeaders(adapter: ModelConfig['adapter'], key: string): Record<st
       ...(key ? { 'x-api-key': key } : {}),
     };
   }
+  if (adapter === 'google-generative-ai') {
+    return {
+      'Content-Type': 'application/json',
+      ...(key ? { 'x-goog-api-key': key } : {}),
+    };
+  }
+  // openai-compatible, openai-responses, ollama, lm-studio
   return {
     'Content-Type': 'application/json',
     ...(key ? { Authorization: `Bearer ${key}` } : {}),
@@ -54,6 +61,24 @@ export function modelRequestBody(
       stream: false,
       system,
       messages: [{ role: 'user', content: payload }],
+    });
+  }
+  if (config.adapter === 'openai-responses') {
+    // OpenAI Responses: instructions + input (not messages); POST …/responses.
+    return JSON.stringify({
+      model: config.model,
+      stream: false,
+      instructions: system,
+      input: payload,
+      text: { format: { type: 'json_object' } },
+    });
+  }
+  if (config.adapter === 'google-generative-ai') {
+    // Google Generative AI: contents + systemInstruction; model is in the URL path.
+    return JSON.stringify({
+      systemInstruction: { parts: [{ text: system }] },
+      contents: [{ role: 'user', parts: [{ text: payload }] }],
+      generationConfig: { responseMimeType: 'application/json' },
     });
   }
   return JSON.stringify({
@@ -82,6 +107,49 @@ function extractAssistantText(adapter: ModelConfig['adapter'], raw: unknown): st
     const text = blocks
       .filter(block => block.type === 'text' && block.text)
       .map(block => block.text!)
+      .join('');
+    if (!text) throw Error('schema');
+    return text;
+  }
+  if (adapter === 'openai-responses') {
+    const parsed = z
+      .object({
+        output_text: z.string().optional(),
+        output: z
+          .array(
+            z.object({
+              type: z.string().optional(),
+              content: z
+                .array(z.object({ type: z.string().optional(), text: z.string().optional() }))
+                .optional(),
+            }),
+          )
+          .optional(),
+      })
+      .parse(raw);
+    if (parsed.output_text?.trim()) return parsed.output_text;
+    const text = (parsed.output ?? [])
+      .flatMap(item => item.content ?? [])
+      .filter(part => (part.type === 'output_text' || part.type === 'text') && part.text)
+      .map(part => part.text!)
+      .join('');
+    if (!text) throw Error('schema');
+    return text;
+  }
+  if (adapter === 'google-generative-ai') {
+    const parts = z
+      .object({
+        candidates: z
+          .array(
+            z.object({
+              content: z.object({ parts: z.array(z.object({ text: z.string().optional() })) }).optional(),
+            }),
+          )
+          .min(1),
+      })
+      .parse(raw).candidates[0]!.content?.parts;
+    const text = (parts ?? [])
+      .map(part => part.text ?? '')
       .join('');
     if (!text) throw Error('schema');
     return text;

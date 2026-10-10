@@ -1,7 +1,7 @@
 import type { ModelAdapter } from './model-route';
 
 /** UI protocol mode shown in the AI services edit form. */
-export type ApiMode = 'openai' | 'openai-responses' | 'anthropic';
+export type ApiMode = 'openai' | 'openai-responses' | 'anthropic' | 'google';
 
 export type ServiceKind = 'api' | 'sub';
 
@@ -29,14 +29,26 @@ export type ProviderVendor = {
   oauthNote?: string;
 };
 
+/** Display labels for the custom-endpoint protocol dropdown (PI-Desktop reference English). */
+export const API_MODE_OPTIONS: readonly { value: ApiMode; label: string }[] = [
+  { value: 'openai', label: 'OpenAI Chat Completions' },
+  { value: 'openai-responses', label: 'OpenAI Responses' },
+  { value: 'anthropic', label: 'Anthropic Messages' },
+  { value: 'google', label: 'Google Generative AI' },
+] as const;
+
 export function apiModeToAdapter(mode: ApiMode): ModelAdapter {
   if (mode === 'anthropic') return 'anthropic';
-  // openai-responses is not implemented in ModelTransport; treat as OpenAI-compatible chat.
+  if (mode === 'openai-responses') return 'openai-responses';
+  if (mode === 'google') return 'google-generative-ai';
   return 'openai-compatible';
 }
 
 export function adapterToApiMode(adapter: ModelAdapter): ApiMode {
-  return adapter === 'anthropic' ? 'anthropic' : 'openai';
+  if (adapter === 'anthropic') return 'anthropic';
+  if (adapter === 'openai-responses') return 'openai-responses';
+  if (adapter === 'google-generative-ai') return 'google';
+  return 'openai';
 }
 
 /** Subscription / OAuth tiles — UI stubs only until a real browser OAuth flow is implemented. */

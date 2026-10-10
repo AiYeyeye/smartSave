@@ -152,6 +152,169 @@ describe('Anthropic native chat mapping', () => {
   });
 });
 
+
+describe('OpenAI Responses chat mapping', () => {
+  it('POSTs /responses with instructions+input and reads output_text', async () => {
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ output_text: '{"rankedIds":[]}', output: [] })),
+    );
+    const box: { last?: Parameters<ModelTransport['run']>[0] } = {};
+    const authority = {
+      read: async () => ({ version: 1 as const, revision: 'r', sessionRevision: 0, ...box.last! }),
+      subscribe: () => () => {},
+    };
+    const transport = new ModelTransport({ fetch: fetcher, contains: async () => true }, authority);
+    const config = {
+      adapter: 'openai-responses' as const,
+      baseUrl: 'https://api.openai.com/v1',
+      model: 'gpt-4.1-mini',
+      timeoutMs: 10000,
+    };
+    const tree = {
+      installationId: 'i',
+      epoch: 'e',
+      observedRevision: 1,
+      roots: ['root'],
+      nodes: [
+        {
+          ref: { installationId: 'i', nativeId: 'root', kind: 'folder' as const },
+          title: 'Root',
+          index: 0,
+          childrenIds: [],
+          readOnly: false,
+          observedRevision: 1,
+        },
+      ],
+    };
+    const privacy = { fullUrl: true, bodyEnabled: false, excludedFolders: [] };
+    const input = {
+      config,
+      key: 'sk-test',
+      tree,
+      privacy,
+      request: { task: 'search' as const, query: '', itemIds: [], folderIds: [] },
+    };
+    box.last = structuredClone(input);
+    const result = await transport.run(input);
+    expect(result).toEqual({ status: 'completed', output: { rankedIds: [] } });
+    const chatCall = fetcher.mock.calls[0] as unknown as [string, RequestInit];
+    expect(chatCall[0]).toBe('https://api.openai.com/v1/responses');
+    expect(chatCall[1]).toEqual(
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'Bearer sk-test' }),
+      }),
+    );
+    const body = JSON.parse(String(chatCall[1].body));
+    expect(body).toMatchObject({
+      model: 'gpt-4.1-mini',
+      stream: false,
+      input: expect.any(String),
+      text: { format: { type: 'json_object' } },
+    });
+    expect(body.instructions).toContain('Return only one JSON object');
+    expect(body).not.toHaveProperty('messages');
+  });
+});
+
+describe('Google Generative AI chat and list mapping', () => {
+  it('GETs /models with x-goog-api-key and strips models/ prefix', async () => {
+    const fetcher = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            models: [{ name: 'models/gemini-2.5-flash' }, { name: 'models/gemini-2.0-flash' }],
+          }),
+        ),
+    );
+    const result = await listModels({
+      adapter: 'google-generative-ai',
+      baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+      timeoutMs: 5000,
+      key: 'gk-test',
+      fetch: fetcher,
+      contains: async () => true,
+    });
+    expect(result).toEqual({
+      status: 'completed',
+      models: ['gemini-2.0-flash', 'gemini-2.5-flash'],
+      source: 'remote',
+    });
+    expect(fetcher).toHaveBeenCalledWith(
+      'https://generativelanguage.googleapis.com/v1beta/models',
+      expect.objectContaining({
+        method: 'GET',
+        headers: expect.objectContaining({ 'x-goog-api-key': 'gk-test' }),
+      }),
+    );
+  });
+
+  it('POSTs generateContent with systemInstruction/contents and reads candidates', async () => {
+    const fetcher = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            candidates: [{ content: { parts: [{ text: '{"rankedIds":[]}' }] } }],
+          }),
+        ),
+    );
+    const box: { last?: Parameters<ModelTransport['run']>[0] } = {};
+    const authority = {
+      read: async () => ({ version: 1 as const, revision: 'r', sessionRevision: 0, ...box.last! }),
+      subscribe: () => () => {},
+    };
+    const transport = new ModelTransport({ fetch: fetcher, contains: async () => true }, authority);
+    const config = {
+      adapter: 'google-generative-ai' as const,
+      baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+      model: 'gemini-2.5-flash',
+      timeoutMs: 10000,
+    };
+    const tree = {
+      installationId: 'i',
+      epoch: 'e',
+      observedRevision: 1,
+      roots: ['root'],
+      nodes: [
+        {
+          ref: { installationId: 'i', nativeId: 'root', kind: 'folder' as const },
+          title: 'Root',
+          index: 0,
+          childrenIds: [],
+          readOnly: false,
+          observedRevision: 1,
+        },
+      ],
+    };
+    const privacy = { fullUrl: true, bodyEnabled: false, excludedFolders: [] };
+    const input = {
+      config,
+      key: 'gk-test',
+      tree,
+      privacy,
+      request: { task: 'search' as const, query: '', itemIds: [], folderIds: [] },
+    };
+    box.last = structuredClone(input);
+    const result = await transport.run(input);
+    expect(result).toEqual({ status: 'completed', output: { rankedIds: [] } });
+    const chatCall = fetcher.mock.calls[0] as unknown as [string, RequestInit];
+    expect(chatCall[0]).toBe(
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent',
+    );
+    expect(chatCall[1]).toEqual(
+      expect.objectContaining({
+        headers: expect.objectContaining({ 'x-goog-api-key': 'gk-test' }),
+      }),
+    );
+    const body = JSON.parse(String(chatCall[1].body));
+    expect(body.systemInstruction.parts[0].text).toContain('Return only one JSON object');
+    expect(body.contents[0].role).toBe('user');
+    expect(body.generationConfig.responseMimeType).toBe('application/json');
+    expect(body).not.toHaveProperty('model');
+    expect(body).not.toHaveProperty('messages');
+  });
+});
+
 describe('presetId restore', () => {
   it('persists optional presetId and restores without changing route identity', async () => {
     const data: Record<string, unknown> = {};

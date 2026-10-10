@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { Download, Search, Upload } from 'lucide-react';
 import type { ConnectedService, FeatureAssignment, Vendor } from './mock-data';
 import { KEY_VENDORS, SUB_VENDORS, catalogFromVendor } from './mock-data';
-import { adapterToApiMode } from '../../domain/ai-providers';
+import { adapterToApiMode, API_MODE_OPTIONS, type ApiMode } from '../../domain/ai-providers';
 import { discoverModels, modelsToCatalog, requestHostPermission } from '../../adapters/ai-connection';
 import { Avatar } from './Avatar';
 import { ModelPicker } from './ModelPicker';
@@ -223,7 +223,7 @@ export function AddServicePanel({
   const [busy, setBusy] = useState(false);
   const [displayName, setDisplayName] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
-  const [protocol, setProtocol] = useState<'openai' | 'anthropic'>('openai');
+  const [protocol, setProtocol] = useState<ApiMode>('openai');
   const [apiKey, setApiKey] = useState('');
   const [remember, setRemember] = useState(true);
 
@@ -235,7 +235,15 @@ export function AddServicePanel({
     setKeyVendor(v);
     setDisplayName('');
     setBaseUrl(v.baseUrl ?? '');
-    setProtocol(v.adapter === 'anthropic' || v.name === 'Anthropic' ? 'anthropic' : 'openai');
+    setProtocol(
+      v.adapter === 'anthropic' || v.name === 'Anthropic'
+        ? 'anthropic'
+        : v.adapter === 'google-generative-ai'
+          ? 'google'
+          : v.adapter === 'openai-responses'
+            ? 'openai-responses'
+            : 'openai',
+    );
     setApiKey('');
     setRemember(true);
   }
@@ -249,7 +257,7 @@ export function AddServicePanel({
   function buildService(
     v: Vendor,
     kind: 'api' | 'sub',
-    opts?: { name?: string; base?: string; mode?: 'openai' | 'anthropic'; catalog?: ConnectedService['catalog'] },
+    opts?: { name?: string; base?: string; mode?: ApiMode; catalog?: ConnectedService['catalog'] },
   ): ConnectedService {
     const name = opts?.name ?? v.name;
     const base = opts?.base ?? v.baseUrl ?? '';
@@ -278,7 +286,15 @@ export function AddServicePanel({
     const v = keyVendor;
     const name = v.isCustom ? displayName.trim() || '自定义端点' : v.name;
     const base = baseUrl.trim() || v.baseUrl || '';
-    const mode = v.isCustom ? protocol : v.adapter === 'anthropic' || v.name === 'Anthropic' ? 'anthropic' : 'openai';
+    const mode = v.isCustom
+      ? protocol
+      : v.adapter === 'anthropic' || v.name === 'Anthropic'
+        ? 'anthropic'
+        : v.adapter === 'google-generative-ai'
+          ? 'google'
+          : v.adapter === 'openai-responses'
+            ? 'openai-responses'
+            : 'openai';
     if (!base) {
       toast('请填写 Base URL');
       return;
@@ -427,10 +443,13 @@ export function AddServicePanel({
                   <select
                     id="ai-f-protocol"
                     value={protocol}
-                    onChange={e => setProtocol(e.target.value as 'openai' | 'anthropic')}
+                    onChange={e => setProtocol(e.target.value as ApiMode)}
                   >
-                    <option value="openai">OpenAI-compatible</option>
-                    <option value="anthropic">Anthropic Messages</option>
+                    {API_MODE_OPTIONS.map(opt => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div className="ai-svc-field">

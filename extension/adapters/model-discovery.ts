@@ -16,6 +16,10 @@ const anthropicListSchema = z.object({
   data: z.array(z.object({ id: z.string().min(1) })),
 });
 
+const googleListSchema = z.object({
+  models: z.array(z.object({ name: z.string().min(1), displayName: z.string().optional() })),
+});
+
 function authHeaders(adapter: ModelConfig['adapter'], key: string): Record<string, string> {
   if (adapter === 'anthropic') {
     return {
@@ -23,12 +27,19 @@ function authHeaders(adapter: ModelConfig['adapter'], key: string): Record<strin
       'anthropic-version': '2023-06-01',
     };
   }
+  if (adapter === 'google-generative-ai') {
+    return key ? { 'x-goog-api-key': key } : {};
+  }
+  // openai-compatible, openai-responses, lm-studio, ollama
   return key ? { Authorization: `Bearer ${key}` } : {};
 }
 
 function parseIds(adapter: ModelConfig['adapter'], raw: unknown): string[] {
   if (adapter === 'ollama') return ollamaListSchema.parse(raw).models.map(m => m.name);
   if (adapter === 'anthropic') return anthropicListSchema.parse(raw).data.map(m => m.id);
+  if (adapter === 'google-generative-ai') {
+    return googleListSchema.parse(raw).models.map(m => m.name.replace(/^models\//, ''));
+  }
   return openAiListSchema.parse(raw).data.map(m => m.id);
 }
 
@@ -80,11 +91,12 @@ export async function listModels(input: {
     if (!response.ok) {
       const reason = [401, 403, 429].includes(response.status) ? `http-${response.status}` : 'http-error';
       if (
-        input.adapter === 'anthropic' &&
+        (input.adapter === 'anthropic' || input.adapter === 'google-generative-ai') &&
         reason === 'http-error' &&
         (input.curatedFallback?.length || curatedModelsForPreset(input.presetId ?? '').length)
       ) {
-        const models = [...(input.curatedFallback ?? curatedModelsForPreset(input.presetId ?? 'claude'))];
+        const fallbackPreset = input.adapter === 'google-generative-ai' ? 'gemini' : 'claude';
+        const models = [...(input.curatedFallback ?? curatedModelsForPreset(input.presetId ?? fallbackPreset))];
         return { status: 'completed', models, source: 'curated' };
       }
       return { status: 'failed', reason };
@@ -97,8 +109,9 @@ export async function listModels(input: {
     if (controller.signal.aborted) return { status: 'failed', reason: 'cancelled' };
     if (error instanceof Error && error.message === 'response-too-large')
       return { status: 'failed', reason: 'response-too-large' };
-    if (input.adapter === 'anthropic') {
-      const models = [...(input.curatedFallback ?? curatedModelsForPreset(input.presetId ?? 'claude'))];
+    if (input.adapter === 'anthropic' || input.adapter === 'google-generative-ai') {
+      const fallbackPreset = input.adapter === 'google-generative-ai' ? 'gemini' : 'claude';
+      const models = [...(input.curatedFallback ?? curatedModelsForPreset(input.presetId ?? fallbackPreset))];
       if (models.length) return { status: 'completed', models, source: 'curated' };
     }
     // Schema/parse failures mean the endpoint is not a supported list API.

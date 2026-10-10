@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { KEY_VENDORS, SUB_VENDORS, apiModeToAdapter, findVendor } from '../domain/ai-providers';
+import { KEY_VENDORS, SUB_VENDORS, API_MODE_OPTIONS, apiModeToAdapter, findVendor } from '../domain/ai-providers';
 import { parseModelEndpoint, parseModelListEndpoint } from '../domain/model-route';
 import { curatedModelsForPreset, modelPresets } from '../domain/model-presets';
 
@@ -37,10 +37,20 @@ describe('AI provider catalog', () => {
     }
   });
 
-  it('maps UI modes to transport adapters', () => {
+  it('maps UI modes to distinct transport adapters', () => {
     expect(apiModeToAdapter('openai')).toBe('openai-compatible');
-    expect(apiModeToAdapter('openai-responses')).toBe('openai-compatible');
+    expect(apiModeToAdapter('openai-responses')).toBe('openai-responses');
     expect(apiModeToAdapter('anthropic')).toBe('anthropic');
+    expect(apiModeToAdapter('google')).toBe('google-generative-ai');
+  });
+
+  it('exposes four distinct PI-Desktop protocol labels', () => {
+    expect(API_MODE_OPTIONS.map(o => o.label)).toEqual([
+      'OpenAI Chat Completions',
+      'OpenAI Responses',
+      'Anthropic Messages',
+      'Google Generative AI',
+    ]);
   });
 
   it('joins versioned CN / Gemini bases without duplicating /v1', () => {

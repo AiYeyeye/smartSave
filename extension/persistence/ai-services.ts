@@ -5,7 +5,7 @@ import type { IdentityStorage } from '../background/installation-identity';
 import type { SettingsStore } from './settings';
 
 const modelMetaSchema = z.strictObject({ id: z.string().min(1), ctx: z.string() });
-const apiModeSchema = z.enum(['openai', 'openai-responses', 'anthropic']);
+const apiModeSchema = z.enum(['openai', 'openai-responses', 'anthropic', 'google']);
 const serviceKindSchema = z.enum(['api', 'sub']);
 const serviceStatusSchema = z.enum(['ok', 'warn']);
 

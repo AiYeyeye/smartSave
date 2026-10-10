@@ -64,4 +64,41 @@ describe('URL join rules for chat and models', () => {
       'http://localhost:11434/api/tags',
     );
   });
+
+  it('openai-responses joins /responses not /chat/completions', () => {
+    expect(parseModelEndpoint({ ...base, adapter: 'openai-responses', baseUrl: 'https://api.openai.com/v1' }).url).toBe(
+      'https://api.openai.com/v1/responses',
+    );
+    expect(parseModelEndpoint({ ...base, adapter: 'openai-responses', baseUrl: 'https://api.openai.com' }).url).toBe(
+      'https://api.openai.com/v1/responses',
+    );
+    expect(parseModelListEndpoint({ adapter: 'openai-responses', baseUrl: 'https://api.openai.com/v1' }).url).toBe(
+      'https://api.openai.com/v1/models',
+    );
+  });
+
+  it('google-generative-ai joins generateContent and models under v1beta', () => {
+    expect(
+      parseModelEndpoint({
+        ...base,
+        adapter: 'google-generative-ai',
+        baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+        model: 'gemini-2.5-flash',
+      }).url,
+    ).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent');
+    expect(
+      parseModelEndpoint({
+        ...base,
+        adapter: 'google-generative-ai',
+        baseUrl: 'https://generativelanguage.googleapis.com',
+        model: 'models/gemini-2.0-flash',
+      }).url,
+    ).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent');
+    expect(
+      parseModelListEndpoint({
+        adapter: 'google-generative-ai',
+        baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+      }).url,
+    ).toBe('https://generativelanguage.googleapis.com/v1beta/models');
+  });
 });

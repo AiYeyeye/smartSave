@@ -326,8 +326,10 @@ export function ModelSettings({
                 }}
               >
                 <option value="">请选择</option>
-                <option value="openai-compatible">OpenAI-compatible（JSON模式）</option>
+                <option value="openai-compatible">OpenAI Chat Completions</option>
+                <option value="openai-responses">OpenAI Responses</option>
                 <option value="anthropic">Anthropic Messages</option>
+                <option value="google-generative-ai">Google Generative AI</option>
                 <option value="ollama">Ollama native</option>
                 <option value="lm-studio">LM Studio structured</option>
               </Select>
