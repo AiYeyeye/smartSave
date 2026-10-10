@@ -3,7 +3,7 @@ import { importSelectionSchema } from '../domain/import-preview';
 import type { ImportAuthority } from './import-authority';
 import type { OrganizerAuthority } from './organizer-authority';
 import type { ConfirmMutation } from '../schemas/messages';
-import { bookmarksWrite } from '../adapters/bookmarks-write';
+import { bookmarksWrite, type BookmarkWriter } from '../adapters/bookmarks-write';
 import { OperationsStore, type OperationJournal } from '../persistence/operations';
 import { MutationCoordinator } from './mutation-coordinator';
 import type { TreeProjection } from './tree-projection';
@@ -13,10 +13,11 @@ export function startMutationService(
   organizerAuthority?: OrganizerAuthority,
   importAuthority?: ImportAuthority,
   journal: OperationJournal = new OperationsStore(),
+  writer: BookmarkWriter = bookmarksWrite(chrome.bookmarks),
 ) {
   const coordinator = new MutationCoordinator(
     projection,
-    bookmarksWrite(chrome.bookmarks),
+    writer,
     journal,
     chrome.runtime.id,
     validateSaveContext,
