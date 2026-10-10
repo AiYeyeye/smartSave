@@ -42,6 +42,20 @@ describe('URL join rules for chat and models', () => {
     );
   });
 
+  it('treats /v3 /v4 and /openai bases as already versioned', () => {
+    expect(parseModelListEndpoint({ adapter: 'openai-compatible', baseUrl: 'https://open.bigmodel.cn/api/paas/v4' }).url).toBe(
+      'https://open.bigmodel.cn/api/paas/v4/models',
+    );
+    expect(
+      parseModelEndpoint({
+        adapter: 'openai-compatible',
+        baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+        model: 'gemini-2.5-flash',
+        timeoutMs: 1000,
+      }).url,
+    ).toBe('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions');
+  });
+
   it('keeps Ollama tags/chat routes separate from OpenAI join', () => {
     expect(parseModelEndpoint({ ...base, adapter: 'ollama', baseUrl: 'http://localhost:11434' }).url).toBe(
       'http://localhost:11434/api/chat',

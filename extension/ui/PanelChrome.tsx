@@ -3,7 +3,7 @@ import { ArrowLeft, Bookmark, Search, X } from 'lucide-react';
 import { CommandMenu } from './CommandMenu';
 import type { SettingsPage } from './SettingsNav';
 
-export type Workbench = 'browse' | 'organize' | 'import' | 'settings';
+export type Workbench = 'browse' | 'organize' | 'import' | 'settings' | 'ai-services';
 
 export function PanelChrome({
   page,
@@ -73,7 +73,9 @@ export function PanelChrome({
               ? 'AI 整理'
               : workbench === 'import'
                 ? '导入书签'
-                : '智栏'}
+                : workbench === 'ai-services'
+                  ? 'AI 服务管理'
+                  : '智栏'}
         </h1>
         {workbench === 'browse' && (
           <>

@@ -6,6 +6,8 @@ import { RecoveryWorkbench } from '../options/RecoveryWorkbench';
 import { ExportSettings } from '../options/ExportSettings';
 import { ThemePicker, themes, useTheme } from './ThemeProvider';
 import type { SettingsStore } from '../persistence/settings';
+import { AiSidebarSummary } from '../options/ai-services';
+import type { AiServicesTab, ConnectedService, FeatureAssignment } from '../options/ai-services';
 
 export type SettingsPage = 'overview' | 'appearance' | 'model' | 'privacy' | 'export-backup';
 export type SettingsJump = { page: SettingsPage; nonce: number; recovery?: boolean };
@@ -21,6 +23,8 @@ export function SettingsNav({
   onPage,
   workbenches,
   onWorkbench,
+  aiServices,
+  onOpenAiServices,
 }: {
   visible: boolean;
   store?: SettingsStore;
@@ -29,6 +33,11 @@ export function SettingsNav({
   onPage: (page: SettingsPage) => void;
   workbenches?: WorkbenchLink[];
   onWorkbench?: (workbench: WorkbenchLink['id']) => void;
+  aiServices?: {
+    services: ConnectedService[];
+    features: FeatureAssignment[];
+  };
+  onOpenAiServices?: (tab: AiServicesTab) => void;
 }) {
   const { theme } = useTheme();
   const currentName = (themes.find(item => item.id === theme)?.name ?? '清爽文具（默认）').replace(/（默认）$/, '');
@@ -40,7 +49,7 @@ export function SettingsNav({
   }, [jump, onPage]);
   const cards: { id: SettingsPage; title: string; hint: string; icon: typeof Palette }[] = [
     { id: 'appearance', title: '外观', icon: Palette, hint: `四种风格 · 当前为${currentName}` },
-    { id: 'model', title: 'AI 模型', icon: Sparkles, hint: '未配置时整理前需要设置' },
+    { id: 'model', title: 'AI 模型（旧）', icon: Sparkles, hint: '旧单连接配置；新管理页见上方摘要' },
     { id: 'privacy', title: '隐私', icon: Shield, hint: '控制发送内容与 AI 排除目录' },
     { id: 'export-backup', title: '导出与备份', icon: Archive, hint: '手动导出、JSON 自动输出与恢复' },
   ];
@@ -70,6 +79,15 @@ export function SettingsNav({
           })}
         </section>
       )}
+      {page === 'overview' && aiServices && onOpenAiServices ? (
+        <section className="settings-overview" aria-label="AI 服务摘要">
+          <AiSidebarSummary
+            services={aiServices.services}
+            features={aiServices.features}
+            onOpen={onOpenAiServices}
+          />
+        </section>
+      ) : null}
       <section hidden={page !== 'overview'} className="settings-overview" aria-label="设置">
         {cards.map(card => (
           <button

@@ -1,5 +1,8 @@
 # User-configured models (real-provider validation NOT RUN)
 
+The options workbench `#ai-services` manages multiple API-key connections (OpenAI, Anthropic, Gemini, xAI, Kimi, DeepSeek, DashScope, Zhipu, SiliconFlow, Volcano Ark, MiniMax, OpenRouter, Groq, Mistral, Z.AI, custom). Subscription tiles explain that browser OAuth is not wired yet. Saving a service persists to `aiServices` and syncs the primary (智能收藏) route into the legacy single `SettingsStore` used by save/search/organize.
+
+
 No model is needed for native CRUD, local search or manual export. Save AI failure permits manual confirmation; search failure retains local results; import classification pauses and does not write half-classified items. Organizer proposals never apply without preview, confirmation and backup.
 
 In `模型与隐私`, pick a **模型服务** vendor (DeepSeek / OpenAI / Claude / Ollama / LM Studio / 自定义). The vendor fills adapter, base URL and suggested models as a draft only. Protocol, base URL and timeout live under **高级**. Enter optional `API Key`, choose or type a `模型名称`, then `保存模型设置`. There is no built-in endpoint/key.
