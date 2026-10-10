@@ -12,7 +12,7 @@ import { dependencyDigest, settingsIdentity } from '../domain/context-dependenci
 import type { TreeSnapshot } from '../domain/node-reference';
 import { modelOutputJsonSchema, parseModelOutput, type ModelOutputContext } from '../schemas/model-output';
 import { z } from 'zod';
-export { parseModelEndpoint } from '../domain/model-route';
+export { parseModelEndpoint, parseModelListEndpoint } from '../domain/model-route';
 export type ModelResult =
   | { status: 'completed'; output: ReturnType<typeof parseModelOutput> }
   | { status: 'failed' | 'cancelled'; reason: string };
@@ -20,6 +20,23 @@ interface ModelBoundary {
   fetch: typeof fetch;
   contains: (request: { origins: string[] }) => Promise<boolean>;
 }
+const ANTHROPIC_VERSION = '2023-06-01';
+const ANTHROPIC_MAX_TOKENS = 4096;
+
+function requestHeaders(adapter: ModelConfig['adapter'], key: string): Record<string, string> {
+  if (adapter === 'anthropic') {
+    return {
+      'Content-Type': 'application/json',
+      'anthropic-version': ANTHROPIC_VERSION,
+      ...(key ? { 'x-api-key': key } : {}),
+    };
+  }
+  return {
+    'Content-Type': 'application/json',
+    ...(key ? { Authorization: `Bearer ${key}` } : {}),
+  };
+}
+
 /** Shared final adapter envelope: local planning and fetch measure identical bytes. */
 export function modelRequestBody(
   config: ModelConfig,
@@ -28,14 +45,22 @@ export function modelRequestBody(
   policy: ClassificationPolicy = DEFAULT_CLASSIFICATION_POLICY,
 ): string {
   const schema = modelOutputJsonSchema(task);
+  const system = `${modelSystemPrompt(task, classificationPolicySchema.parse(policy))} Output schema: ${JSON.stringify(schema)}`;
+  if (config.adapter === 'anthropic') {
+    // Native Messages API: system is top-level; no chat/completions response_format; JSON via schema in system.
+    return JSON.stringify({
+      model: config.model,
+      max_tokens: ANTHROPIC_MAX_TOKENS,
+      stream: false,
+      system,
+      messages: [{ role: 'user', content: payload }],
+    });
+  }
   return JSON.stringify({
     model: config.model,
     stream: false,
     messages: [
-      {
-        role: 'system',
-        content: `${modelSystemPrompt(task, classificationPolicySchema.parse(policy))} Output schema: ${JSON.stringify(schema)}`,
-      },
+      { role: 'system', content: system },
       { role: 'user', content: payload },
     ],
     ...(config.adapter === 'ollama'
@@ -45,6 +70,26 @@ export function modelRequestBody(
         : { response_format: { type: 'json_object' } }),
   });
 }
+
+function extractAssistantText(adapter: ModelConfig['adapter'], raw: unknown): string {
+  if (adapter === 'ollama') {
+    return z.object({ message: z.object({ content: z.string() }) }).parse(raw).message.content;
+  }
+  if (adapter === 'anthropic') {
+    const blocks = z
+      .object({ content: z.array(z.object({ type: z.string(), text: z.string().optional() })).min(1) })
+      .parse(raw).content;
+    const text = blocks
+      .filter(block => block.type === 'text' && block.text)
+      .map(block => block.text!)
+      .join('');
+    if (!text) throw Error('schema');
+    return text;
+  }
+  return z.object({ choices: z.array(z.object({ message: z.object({ content: z.string() }) })).min(1) }).parse(raw)
+    .choices[0]!.message.content;
+}
+
 export class ModelTransport {
   private generation = 0;
   private active?: AbortController;
@@ -141,10 +186,7 @@ export class ModelTransport {
         cancelled,
         this.boundary.fetch(route.url, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(frozen.key ? { Authorization: `Bearer ${frozen.key}` } : {}),
-          },
+          headers: requestHeaders(frozen.config.adapter, frozen.key),
           body,
           signal: controller.signal,
           credentials: 'omit',
@@ -186,12 +228,10 @@ export class ModelTransport {
       if (!(await fresh())) return { status: 'failed', reason: 'stale-context' };
       if (generation !== this.generation) return { status: 'cancelled', reason: 'cancelled' };
       try {
-        const text =
-          frozen.config.adapter === 'ollama'
-            ? z.object({ message: z.object({ content: z.string() }) }).parse(raw).message.content
-            : z.object({ choices: z.array(z.object({ message: z.object({ content: z.string() }) })).min(1) }).parse(raw)
-                .choices[0]!.message.content;
-        return { status: 'completed', output: parseModelOutput(JSON.parse(text), context) };
+        return {
+          status: 'completed',
+          output: parseModelOutput(JSON.parse(extractAssistantText(frozen.config.adapter, raw)), context),
+        };
       } catch {
         return { status: 'failed', reason: 'schema' };
       }

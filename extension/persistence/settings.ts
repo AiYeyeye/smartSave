@@ -11,6 +11,8 @@ const privacySchema = z.strictObject({
 const settingsSchema = z.strictObject({
   version: z.literal(1),
   config: modelConfigSchema.optional(),
+  /** Optional vendor preset id for UI restore; not part of route identity or capability claims. */
+  presetId: z.string().min(1).optional(),
   privacy: privacySchema,
   revision: z.string(),
 });
@@ -110,9 +112,21 @@ export class SettingsStore {
   credential() {
     return this.session?.revision === this.value.revision ? this.session.key : '';
   }
-  async save(config: ModelConfig, privacy: ModelSettingsValue['privacy'], key: string, remember: boolean) {
+  async save(
+    config: ModelConfig,
+    privacy: ModelSettingsValue['privacy'],
+    key: string,
+    remember: boolean,
+    presetId?: string,
+  ) {
     const route = parseModelEndpoint(config).identity;
-    const value = settingsSchema.parse({ version: 1, config, privacy, revision: crypto.randomUUID() });
+    const value = settingsSchema.parse({
+      version: 1,
+      config,
+      ...(presetId && presetId !== 'custom' ? { presetId } : {}),
+      privacy,
+      revision: crypto.randomUUID(),
+    });
     const credential = remember && key ? { route, key } : undefined;
     try {
       return await this.lock(async () => {
@@ -145,6 +159,7 @@ export class SettingsStore {
         const settings = settingsSchema.parse({
           version: 1,
           ...(envelope.settings.config ? { config: envelope.settings.config } : {}),
+          ...(envelope.settings.presetId ? { presetId: envelope.settings.presetId } : {}),
           privacy,
           revision: crypto.randomUUID(),
         });

@@ -1,34 +1,73 @@
 import { z } from 'zod';
+
+export const modelAdapterSchema = z.enum(['openai-compatible', 'ollama', 'lm-studio', 'anthropic']);
+export type ModelAdapter = z.infer<typeof modelAdapterSchema>;
+
 export const modelConfigSchema = z.strictObject({
-  adapter: z.enum(['openai-compatible', 'ollama', 'lm-studio']),
+  adapter: modelAdapterSchema,
   baseUrl: z.string().min(1),
   model: z.string().trim().min(1),
   timeoutMs: z.number().int().positive().max(2147483647),
 });
 export type ModelConfig = z.infer<typeof modelConfigSchema>;
-export function parseModelEndpoint(input: ModelConfig) {
+
+export type ModelEndpointKind = 'chat' | 'models';
+
+function parseBase(baseUrl: string) {
+  const base = new URL(baseUrl);
+  const loopback =
+    base.hostname === 'localhost' || base.hostname === '[::1]' || /^127\.(\d{1,3}\.){2}\d{1,3}$/.test(base.hostname);
+  if (
+    base.username ||
+    base.password ||
+    base.search ||
+    base.hash ||
+    (base.protocol !== 'https:' && !(base.protocol === 'http:' && loopback))
+  )
+    throw Error();
+  const path = base.pathname.replace(/\/+$/, '');
+  return { base, path, origin: base.origin, permission: `${base.protocol}//${base.hostname}/*` };
+}
+
+/** Shared join: a base already ending in /v1 only gains the resource path once. */
+export function modelResourceSuffix(adapter: ModelAdapter, path: string, kind: ModelEndpointKind): string {
+  if (adapter === 'ollama') return kind === 'chat' ? '/api/chat' : '/api/tags';
+  if (adapter === 'anthropic') {
+    if (kind === 'chat') return path.endsWith('/v1') ? '/messages' : '/v1/messages';
+    return path.endsWith('/v1') ? '/models' : '/v1/models';
+  }
+  // openai-compatible + lm-studio
+  if (kind === 'chat') return path.endsWith('/v1') ? '/chat/completions' : '/v1/chat/completions';
+  return path.endsWith('/v1') ? '/models' : '/v1/models';
+}
+
+export function parseModelEndpoint(input: ModelConfig, kind: ModelEndpointKind = 'chat') {
   try {
     const config = modelConfigSchema.parse(input);
-    const base = new URL(config.baseUrl);
-    const loopback =
-      base.hostname === 'localhost' || base.hostname === '[::1]' || /^127\.(\d{1,3}\.){2}\d{1,3}$/.test(base.hostname);
-    if (
-      base.username ||
-      base.password ||
-      base.search ||
-      base.hash ||
-      (base.protocol !== 'https:' && !(base.protocol === 'http:' && loopback))
-    )
-      throw Error();
-    const path = base.pathname.replace(/\/+$/, '');
-    // A base already ending in /v1 keeps its identity (saved credentials stay bound) and only gains /chat/completions.
-    const suffix =
-      config.adapter === 'ollama' ? '/api/chat' : path.endsWith('/v1') ? '/chat/completions' : '/v1/chat/completions';
+    const { base, path, origin, permission } = parseBase(config.baseUrl);
+    const suffix = modelResourceSuffix(config.adapter, path, kind);
     return {
       identity: JSON.stringify([config.adapter, base.origin, path]),
-      url: `${base.origin}${path}${suffix}`,
-      origin: base.origin,
-      permission: `${base.protocol}//${base.hostname}/*`,
+      url: `${origin}${path}${suffix}`,
+      origin,
+      permission,
+    };
+  } catch {
+    throw Error('invalid-endpoint');
+  }
+}
+
+/** List/discovery uses the same base validation and /v1 join rules as chat; model id is not required. */
+export function parseModelListEndpoint(input: Pick<ModelConfig, 'adapter' | 'baseUrl'>) {
+  try {
+    const adapter = modelAdapterSchema.parse(input.adapter);
+    const { base, path, origin, permission } = parseBase(input.baseUrl);
+    const suffix = modelResourceSuffix(adapter, path, 'models');
+    return {
+      identity: JSON.stringify([adapter, base.origin, path]),
+      url: `${origin}${path}${suffix}`,
+      origin,
+      permission,
     };
   } catch {
     throw Error('invalid-endpoint');

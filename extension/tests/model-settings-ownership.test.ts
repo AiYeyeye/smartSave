@@ -88,11 +88,44 @@ it('preset changes are draft-only, clear credentials, and retain custom protocol
   await user.selectOptions(view.getByLabelText('模型服务'), 'deepseek');
   expect(view.getByLabelText('API Key')).toHaveValue('');
   expect(view.getByRole('checkbox', { name: /明确记住/ })).not.toBeChecked();
+  // Advanced fields remain accessible and filled by the vendor preset.
   expect(view.getByLabelText('服务基础地址')).toHaveValue('https://api.deepseek.com');
   expect(view.getByLabelText('模型名称')).toHaveValue('deepseek-chat');
-  await user.selectOptions(view.getByLabelText('预设模型'), '');
+  await user.selectOptions(view.getByLabelText('模型'), '');
+  await user.clear(view.getByLabelText('模型名称'));
   await user.type(view.getByLabelText('模型名称'), 'custom-id');
   expect(view.getByLabelText('模型名称')).toHaveValue('custom-id');
   expect(view.getByRole('status')).toHaveTextContent('尚未保存');
+  expect(view.getByRole('button', { name: '授权并获取模型' })).toBeEnabled();
+  view.unmount();
+});
+
+it('restores saved presetId into the vendor dropdown', async () => {
+  const data: Record<string, unknown> = {};
+  const store = new SettingsStore(
+    {
+      get: async key => ({ [key]: data[key] }),
+      set: async value => {
+        Object.assign(data, value);
+      },
+      remove: async key => {
+        delete data[key];
+      },
+      setAccessLevel: async () => {},
+    },
+    run => run(),
+  );
+  await store.load();
+  await store.save(
+    { adapter: 'anthropic', baseUrl: 'https://api.anthropic.com', model: 'claude-sonnet-4-5', timeoutMs: 60000 },
+    { fullUrl: true, bodyEnabled: false, excludedFolders: [] },
+    '',
+    false,
+    'claude',
+  );
+  const view = render(createElement(ModelSettings, { store, fields: 'model' }));
+  await waitFor(() => expect(view.getByLabelText('模型服务')).toHaveValue('claude'));
+  expect(view.getByLabelText('接口协议')).toHaveValue('anthropic');
+  expect(view.getByLabelText('服务基础地址')).toHaveValue('https://api.anthropic.com');
   view.unmount();
 });

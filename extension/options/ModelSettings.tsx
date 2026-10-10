@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { SettingsStore, type ModelConfig } from '../persistence/settings';
 import { ModelTransport, parseModelEndpoint } from '../adapters/model-transport';
+import { listModels } from '../adapters/model-discovery';
 import type { TreeState } from '../domain/node-reference';
 import { connectTree } from '../panel/tree-client';
 import { browserModelAuthority } from '../adapters/model-authority';
@@ -27,11 +28,20 @@ export function ModelSettings({
   const [model, setModel] = useState('');
   const [timeout, setTimeoutValue] = useState('');
   const [presetId, setPresetId] = useState('custom');
+  const [discoveredModels, setDiscoveredModels] = useState<string[]>([]);
+  const [listSource, setListSource] = useState<'remote' | 'curated' | ''>('');
   const preset = modelPresets.find(item => item.id === presetId);
+  const modelChoices = discoveredModels.length
+    ? discoveredModels
+    : preset && preset.models.length > 0
+      ? [...preset.models]
+      : [];
   function choosePreset(id: string) {
     cancel();
     setKey('');
     setRemember(false);
+    setDiscoveredModels([]);
+    setListSource('');
     setPresetId(id);
     const next = modelPresets.find(item => item.id === id);
     if (next) {
@@ -50,8 +60,10 @@ export function ModelSettings({
   const [error, setError] = useState(false);
   const [busy, setBusy] = useState(false);
   const transport = useRef<ModelTransport | undefined>(undefined);
+  const listAbort = useRef<AbortController | undefined>(undefined);
   const cancel = () => {
     transport.current?.cancel();
+    listAbort.current?.abort();
   };
   useEffect(() => {
     let live = true;
@@ -63,11 +75,18 @@ export function ModelSettings({
           if (store.legacyCredentialDiscarded) setStatus('旧密钥未绑定服务，已移除；请重新输入。');
           setPrivacy(value.privacy);
           setKey(store.credential());
+          if (value.presetId) setPresetId(value.presetId);
           if (value.config) {
             setAdapter(value.config.adapter);
             setBaseUrl(value.config.baseUrl);
             setModel(value.config.model);
             setTimeoutValue(String(value.config.timeoutMs));
+            if (!value.presetId) {
+              const matched = modelPresets.find(
+                item => item.adapter === value.config!.adapter && item.baseUrl === value.config!.baseUrl,
+              );
+              setPresetId(matched?.id ?? 'custom');
+            }
           }
         })
         .catch(() => {
@@ -96,6 +115,7 @@ export function ModelSettings({
     return () => {
       live = false;
       changed();
+      listAbort.current?.abort();
       transport.current?.dispose();
       stop?.();
       if (!supplied) store?.dispose();
@@ -103,12 +123,24 @@ export function ModelSettings({
       window.removeEventListener('pagehide', changed);
     };
   }, [store, supplied]);
+  function draftRoute(): Pick<ModelConfig, 'adapter' | 'baseUrl' | 'timeoutMs'> {
+    if (!adapter) throw Error();
+    const timeoutMs = Number(timeout || '60000');
+    const config = {
+      adapter: adapter as ModelConfig['adapter'],
+      baseUrl,
+      model: model || 'pending',
+      timeoutMs,
+    };
+    parseModelEndpoint(config);
+    return { adapter: config.adapter, baseUrl: config.baseUrl, timeoutMs: config.timeoutMs };
+  }
   function configuration(): ModelConfig {
     const config = { adapter: adapter as ModelConfig['adapter'], baseUrl, model, timeoutMs: Number(timeout) };
     parseModelEndpoint(config);
     return config;
   }
-  async function run(action: 'save' | 'authorize' | 'test' | 'delete') {
+  async function run(action: 'save' | 'authorize-list' | 'test' | 'delete') {
     cancel();
     setError(false);
     setBusy(true);
@@ -126,19 +158,54 @@ export function ModelSettings({
         setStatus('隐私设置已保存；未配置模型不影响浏览。');
         return;
       }
+      if (action === 'authorize-list') {
+        const route = draftRoute();
+        const permission = parseModelEndpoint({ ...route, model: model || 'pending' }).permission;
+        const granted =
+          typeof chrome !== 'undefined' && chrome.permissions
+            ? await chrome.permissions.request({ origins: [permission] })
+            : false;
+        if (!granted) {
+          setError(true);
+          setStatus('模型主机权限被拒绝。');
+          return;
+        }
+        listAbort.current = new AbortController();
+        const result = await listModels({
+          ...route,
+          key,
+          fetch: globalThis.fetch.bind(globalThis),
+          contains: request => chrome.permissions.contains(request),
+          signal: listAbort.current.signal,
+          presetId,
+        });
+        if (result.status !== 'completed') {
+          setError(true);
+          setDiscoveredModels([]);
+          setListSource('');
+          setStatus(
+            `未能获取模型列表：${result.reason}。可手填模型 ID；401检查密钥；403检查服务鉴权/Origin；429稍后重试；permission重新授权；list-unsupported 请手填。`,
+          );
+          return;
+        }
+        setDiscoveredModels(result.models);
+        setListSource(result.source);
+        if (result.models.length && !result.models.includes(model)) setModel(result.models[0]!);
+        setStatus(
+          result.source === 'curated'
+            ? '已授权；列表接口不可用，已填入常用模型，仍可手填自定义 ID。'
+            : `已授权并获取 ${result.models.length} 个模型；尚未证明任务能力。`,
+        );
+        return;
+      }
       const config = configuration();
       if (action === 'save') {
-        await store.save(config, privacy, key, remember);
+        await store.save(config, privacy, key, remember, presetId);
         setStatus('模型设置已保存；尚未证明服务能力。');
-      }
-      if (action === 'authorize') {
-        const granted = await chrome.permissions.request({ origins: [parseModelEndpoint(config).permission] });
-        setError(!granted);
-        setStatus(granted ? '已授权此主机；端口和路径由应用层限制。' : '模型主机权限被拒绝。');
       }
       if (action === 'test') {
         if (!transport.current || tree.status !== 'ready') throw Error();
-        await store.save(config, privacy, key, remember);
+        await store.save(config, privacy, key, remember, presetId);
         const result = await transport.current.run({
           config,
           key,
@@ -160,7 +227,7 @@ export function ModelSettings({
       }
     } catch {
       setError(true);
-      setStatus('配置或存储不可用：请选择协议、模型和超时；远程地址须HTTPS，HTTP仅限回环地址。');
+      setStatus('配置或存储不可用：请选择服务商或协议、模型和超时；远程地址须HTTPS，HTTP仅限回环地址。');
     } finally {
       setBusy(false);
     }
@@ -185,7 +252,7 @@ export function ModelSettings({
           <label className="field">
             模型服务
             <Select aria-label="模型服务" value={presetId} onChange={e => choosePreset(e.target.value)}>
-              <option value="custom">自定义兼容服务 / 已有配置</option>
+              <option value="custom">自定义</option>
               {modelPresets.map(item => (
                 <option key={item.id} value={item.id}>
                   {item.name}
@@ -193,99 +260,12 @@ export function ModelSettings({
               ))}
             </Select>
           </label>
-          {preset && preset.models.length > 0 && (
-            <label className="field">
-              预设模型
-              <Select
-                aria-label="预设模型"
-                value={preset.models.includes(model) ? model : ''}
-                onChange={e => {
-                  cancel();
-                  setModel(e.target.value);
-                }}
-              >
-                <option value="">自定义模型 ID</option>
-                {preset.models.map(id => (
-                  <option key={id} value={id}>
-                    {id}
-                  </option>
-                ))}
-              </Select>
-            </label>
-          )}
-          <details className="settings-help">
-            <summary>如何选择模型</summary>
-            <p className="hint">
-              预设只是填写起点，不保证型号仍可用或支持全部任务。可随时填写自定义模型
-              ID；本地请填写已安装模型。不会自动获取模型列表。
-            </p>
-          </details>
-          <label className="field">
-            接口协议
-            <Select
-              aria-label="接口协议"
-              value={adapter}
-              onChange={e => {
-                cancel();
-                setKey('');
-                setRemember(false);
-                setPresetId('custom');
-                setAdapter(e.target.value);
-              }}
-            >
-              <option value="">请选择</option>
-              <option value="openai-compatible">OpenAI-compatible（JSON模式）</option>
-              <option value="ollama">Ollama native</option>
-              <option value="lm-studio">LM Studio structured</option>
-            </Select>
-          </label>
-          <label className="field">
-            服务基础地址
-            <input
-              value={baseUrl}
-              onChange={e => {
-                cancel();
-                setKey('');
-                setRemember(false);
-                setPresetId('custom');
-                setBaseUrl(e.target.value);
-              }}
-            />
-          </label>
-          <details className="settings-help">
-            <summary>地址填写与本地服务</summary>
-            <p className="hint">
-              填写服务根/代理前缀（可以以 /v1 结尾，不会重复拼接），不含 /chat/completions 或
-              /api/chat。主机权限不能精确限定端口/路径。Ollama需允许当前扩展Origin；不要通配放开服务。
-            </p>
-          </details>
-          <label className="field">
-            模型名称
-            <input
-              value={model}
-              onChange={e => {
-                cancel();
-                setModel(e.target.value);
-              }}
-            />
-          </label>
-          <label className="field">
-            超时（毫秒）
-            <input
-              type="number"
-              min="1"
-              value={timeout}
-              onChange={e => {
-                cancel();
-                setTimeoutValue(e.target.value);
-              }}
-            />
-          </label>
           <label className="field">
             API Key
             <input
               type="password"
               autoComplete="off"
+              aria-label="API Key"
               value={key}
               onChange={e => {
                 cancel();
@@ -298,6 +278,94 @@ export function ModelSettings({
             明确记住密钥（本地明文存储）
           </label>
           <p className="hint">记住的密钥不是操作系统保险库保护的数据。</p>
+          <label className="field">
+            模型
+            <Select
+              aria-label="模型"
+              value={modelChoices.includes(model) ? model : ''}
+              onChange={e => {
+                cancel();
+                if (e.target.value) setModel(e.target.value);
+              }}
+            >
+              <option value="">手填模型 ID</option>
+              {modelChoices.map(id => (
+                <option key={id} value={id}>
+                  {id}
+                </option>
+              ))}
+            </Select>
+          </label>
+          <label className="field">
+            模型名称
+            <input
+              aria-label="模型名称"
+              value={model}
+              onChange={e => {
+                cancel();
+                setModel(e.target.value);
+              }}
+            />
+          </label>
+          {listSource === 'curated' && <p className="hint">当前列表为常用模型兜底，不是实时发现结果。</p>}
+          <details className="settings-help">
+            <summary>高级：协议、地址与超时</summary>
+            <label className="field">
+              接口协议
+              <Select
+                aria-label="接口协议"
+                value={adapter}
+                onChange={e => {
+                  cancel();
+                  setKey('');
+                  setRemember(false);
+                  setDiscoveredModels([]);
+                  setListSource('');
+                  setPresetId('custom');
+                  setAdapter(e.target.value);
+                }}
+              >
+                <option value="">请选择</option>
+                <option value="openai-compatible">OpenAI-compatible（JSON模式）</option>
+                <option value="anthropic">Anthropic Messages</option>
+                <option value="ollama">Ollama native</option>
+                <option value="lm-studio">LM Studio structured</option>
+              </Select>
+            </label>
+            <label className="field">
+              服务基础地址
+              <input
+                aria-label="服务基础地址"
+                value={baseUrl}
+                onChange={e => {
+                  cancel();
+                  setKey('');
+                  setRemember(false);
+                  setDiscoveredModels([]);
+                  setListSource('');
+                  setPresetId('custom');
+                  setBaseUrl(e.target.value);
+                }}
+              />
+            </label>
+            <p className="hint">
+              填写服务根/代理前缀（可以以 /v1 结尾，不会重复拼接）。Anthropic 使用 /v1/messages；兼容协议使用
+              /v1/chat/completions；Ollama 使用 /api/chat。主机权限不能精确限定端口/路径。
+            </p>
+            <label className="field">
+              超时（毫秒）
+              <input
+                type="number"
+                min="1"
+                aria-label="超时（毫秒）"
+                value={timeout}
+                onChange={e => {
+                  cancel();
+                  setTimeoutValue(e.target.value);
+                }}
+              />
+            </label>
+          </details>
         </>
       )}
       {showPrivacy && (
@@ -367,8 +435,8 @@ export function ModelSettings({
         </button>
         {showModel && (
           <>
-            <button disabled={busy} onClick={() => void run('authorize')}>
-              授权模型主机
+            <button disabled={busy} onClick={() => void run('authorize-list')}>
+              授权并获取模型
             </button>
             <button disabled={busy} onClick={() => void run('test')}>
               使用合成数据测试连接
