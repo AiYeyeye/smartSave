@@ -1,5 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Download, FolderKanban, ListChecks, Search, Settings, Upload, X } from 'lucide-react';
+import {
+  ArrowLeft,
+  Download,
+  FolderKanban,
+  ListChecks,
+  PanelLeftClose,
+  Search,
+  Settings,
+  Upload,
+  X,
+} from 'lucide-react';
 
 /** Popup views. Long-running workbenches live in the options page. */
 export type PopupView = 'browse' | 'settings';
@@ -50,12 +60,15 @@ export function PanelChrome({
   onQuery,
   onSettings,
   onBack,
+  onClose,
 }: {
   view: PopupView;
   query: string;
   onQuery: (query: string) => void;
   onSettings: () => void;
   onBack: () => void;
+  /** Overlay sidebar only: slide the sidebar away. */
+  onClose?: () => void;
 }) {
   const browse = view === 'browse';
   return (
@@ -72,6 +85,11 @@ export function PanelChrome({
         {browse ? (
           <button type="button" className="chrome-icon zh-gear" aria-label="设置" title="设置" onClick={onSettings}>
             <Settings aria-hidden="true" />
+          </button>
+        ) : null}
+        {onClose ? (
+          <button type="button" className="chrome-icon" aria-label="收起侧栏" title="收起（Esc）" onClick={onClose}>
+            <PanelLeftClose aria-hidden="true" />
           </button>
         ) : null}
       </header>

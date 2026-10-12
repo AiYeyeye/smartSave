@@ -12,6 +12,7 @@ import { BookmarkTree } from '../panel/BookmarkTree';
 import { PanelChrome, PanelFooter, SearchBox, type PopupView } from './PanelChrome';
 import { OptionsNav, parseOptionsHash, ROUTE_META, type OptionsRoute } from './OptionsNav';
 import { PopupSettings } from './PopupSettings';
+import { PanelModePicker } from './PanelModePicker';
 import { ModelSettings } from '../options/ModelSettings';
 import { SiteRulesSettings } from '../options/SiteRulesSettings';
 import { RecoveryWorkbench } from '../options/RecoveryWorkbench';
@@ -65,20 +66,39 @@ function useShared() {
   return { settingsStore, ai, aiController };
 }
 
-export function App({ page }: { page: Page }) {
-  return <ThemeProvider>{page === 'panel' ? <PopupApp /> : <OptionsApp />}</ThemeProvider>;
+export function App({ page, overlay = false }: { page: Page; overlay?: boolean }) {
+  return <ThemeProvider>{page === 'panel' ? <PopupApp overlay={overlay} /> : <OptionsApp />}</ThemeProvider>;
 }
 
-function PopupApp() {
+/** Overlay sidebar: ask the injected host (our content script) to slide the sidebar away. */
+function closeOverlay() {
+  try {
+    window.parent.postMessage({ type: 'zhilan-overlay-close' }, '*');
+  } catch {
+    /* not framed */
+  }
+}
+
+function PopupApp({ overlay = false }: { overlay?: boolean }) {
   const { settingsStore, ai } = useShared();
   const [view, setView] = useState<PopupView>('browse');
   const [query, setQuery] = useState('');
   const [batchNonce, setBatchNonce] = useState(0);
 
-  // The side panel stays open beside the page; workbenches open in a settings tab next to it.
+  // Workbenches open in a settings tab; the overlay sidebar gets out of the way, the side panel stays.
   function open(route: string) {
-    openOptionsRoute(route);
+    if (openOptionsRoute(route) && overlay) closeOverlay();
   }
+
+  useEffect(() => {
+    if (!overlay) return;
+    // Esc closes the overlay unless a field or menu already used it (e.g. clearing the search box).
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !event.defaultPrevented) closeOverlay();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [overlay]);
 
   return (
     <div className="shell panel">
@@ -94,6 +114,7 @@ function PopupApp() {
           setView('settings');
         }}
         onBack={() => setView('browse')}
+        onClose={overlay ? closeOverlay : undefined}
       />
       <main id="main" tabIndex={-1}>
         <div hidden={view !== 'browse'}>
@@ -217,7 +238,7 @@ function OptionsApp() {
           </div>
           <div className="view" hidden={route !== 'appearance'}>
             <section className="surface" aria-label="外观设置">
-              <ThemePicker />
+              <ThemePicker extra={<PanelModePicker />} />
             </section>
           </div>
           {mounted('privacy') && (

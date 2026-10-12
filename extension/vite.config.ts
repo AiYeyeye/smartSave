@@ -13,6 +13,7 @@ export default defineConfig({
       name: 'current-page-extraction',
       async closeBundle() {
         await build(contentScriptConfig('content/extract-current-page.ts', 'dist'));
+        await build(contentScriptConfig('content/overlay-sidebar.ts', 'dist', 'overlay-sidebar.js'));
       },
     },
   ],

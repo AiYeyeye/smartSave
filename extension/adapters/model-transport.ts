@@ -28,6 +28,7 @@ interface ModelBoundary {
 }
 const ANTHROPIC_VERSION = '2023-06-01';
 const ANTHROPIC_MAX_TOKENS = 4096;
+const RESPONSES_MAX_OUTPUT_TOKENS = 16000;
 
 function requestHeaders(adapter: ModelConfig['adapter'], key: string): Record<string, string> {
   if (adapter === 'anthropic') {
@@ -76,6 +77,8 @@ export function modelRequestBody(
       stream: false,
       instructions: system,
       input: payload,
+      // Reasoning models spend output tokens on thinking first; a small proxy default ends them before the JSON.
+      max_output_tokens: RESPONSES_MAX_OUTPUT_TOKENS,
       text: { format: { type: 'json_object' } },
     });
   }
@@ -102,7 +105,7 @@ export function modelRequestBody(
   });
 }
 
-function extractAssistantText(adapter: ModelConfig['adapter'], raw: unknown): string {
+export function extractAssistantText(adapter: ModelConfig['adapter'], raw: unknown): string {
   if (adapter === 'ollama') {
     return z.object({ message: z.object({ content: z.string() }) }).parse(raw).message.content;
   }
@@ -118,27 +121,32 @@ function extractAssistantText(adapter: ModelConfig['adapter'], raw: unknown): st
     return text;
   }
   if (adapter === 'openai-responses') {
-    const parsed = z
-      .object({
-        output_text: z.string().optional(),
-        output: z
-          .array(
-            z.object({
-              type: z.string().optional(),
-              content: z.array(z.object({ type: z.string().optional(), text: z.string().optional() })).optional(),
-            }),
-          )
-          .optional(),
-      })
-      .parse(raw);
-    if (parsed.output_text?.trim()) return parsed.output_text;
-    const text = (parsed.output ?? [])
-      .flatMap(item => item.content ?? [])
-      .filter(part => (part.type === 'output_text' || part.type === 'text') && part.text)
-      .map(part => part.text!)
-      .join('');
-    if (!text) throw Error('schema');
-    return text;
+    // Responses API: output_text is an SDK convenience that raw HTTP replies (and most proxies) omit, so walk
+    // output[] and collect every text part of message items; reasoning items carry no answer text.
+    const record = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+    if (typeof record.output_text === 'string' && record.output_text.trim()) return record.output_text;
+    const items = Array.isArray(record.output) ? (record.output as unknown[]) : [];
+    const texts: string[] = [];
+    for (const item of items) {
+      if (!item || typeof item !== 'object') continue;
+      const content = (item as { content?: unknown }).content;
+      if (typeof content === 'string') texts.push(content);
+      else if (Array.isArray(content))
+        for (const part of content) {
+          if (!part || typeof part !== 'object') continue;
+          const { type, text } = part as { type?: unknown; text?: unknown };
+          if (typeof text === 'string' && (type === undefined || type === 'output_text' || type === 'text'))
+            texts.push(text);
+        }
+    }
+    const text = texts.join('');
+    if (text.trim()) return text;
+    const kinds = items.map(item => String((item as { type?: unknown })?.type ?? '?')).join('+') || 'none';
+    if (record.status === 'incomplete') {
+      const details = record.incomplete_details as { reason?: unknown } | undefined;
+      throw new ModelParseError('incomplete', `${String(details?.reason ?? 'unknown')}; output=${kinds}`);
+    }
+    throw new ModelParseError('empty', `status=${String(record.status ?? '?')}; output=${kinds}`);
   }
   if (adapter === 'google-generative-ai') {
     const parts = z
@@ -174,14 +182,17 @@ function extractAssistantText(adapter: ModelConfig['adapter'], raw: unknown): st
     })
     .parse(raw).choices[0]!.message.content;
   const text = Array.isArray(content) ? content.map(part => part.text ?? '').join('') : (content ?? '');
-  if (!text.trim()) throw new ModelParseError('empty');
+  if (!text.trim()) {
+    const finish = (raw as { choices?: { finish_reason?: unknown }[] }).choices?.[0]?.finish_reason;
+    throw new ModelParseError(finish === 'length' ? 'incomplete' : 'empty', `finish_reason=${String(finish ?? '?')}`);
+  }
   return text;
 }
 
 /** Where parsing a model reply failed; recorded in the opt-in debug trail only. */
 export class ModelParseError extends Error {
   constructor(
-    readonly stage: 'envelope' | 'empty' | 'json' | 'validate',
+    readonly stage: 'envelope' | 'empty' | 'incomplete' | 'json' | 'validate',
     readonly issue?: string,
   ) {
     super(stage);
@@ -473,5 +484,10 @@ function rawShape(raw: unknown): string {
   const keys = Object.keys(record).slice(0, 8).join(',');
   const choice = Array.isArray(record.choices) ? (record.choices[0] as Record<string, unknown> | undefined) : undefined;
   const message = choice?.message as Record<string, unknown> | undefined;
-  return message ? `{${keys}} message:{${Object.keys(message).join(',')}}` : `{${keys}}`;
+  if (message) return `{${keys}} message:{${Object.keys(message).join(',')}}`;
+  if (Array.isArray(record.output)) {
+    const kinds = (record.output as unknown[]).map(item => String((item as { type?: unknown })?.type ?? '?')).join('+');
+    return `{${keys}} status=${String(record.status ?? '?')} output=[${kinds}]`;
+  }
+  return `{${keys}}`;
 }

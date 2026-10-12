@@ -262,9 +262,10 @@ export function AddServicePanel({
   const [showKey, setShowKey] = useState(false);
 
   const q = query.trim().toLowerCase();
+  // Only vendors with a real, sanctioned sign-in are shown; the rest connect through their API key cards.
   const subList = SUB_VENDORS.filter(
-    v => !q || v.name.toLowerCase().includes(q) || v.subtitle.toLowerCase().includes(q),
-  ).sort((a, b) => Number(b.oauth === 'ready') - Number(a.oauth === 'ready'));
+    v => v.oauth === 'ready' && (!q || v.name.toLowerCase().includes(q) || v.subtitle.toLowerCase().includes(q)),
+  );
   const keyList = KEY_VENDORS.filter(
     v => !q || v.name.toLowerCase().includes(q) || v.subtitle.toLowerCase().includes(q),
   );
@@ -420,7 +421,7 @@ export function AddServicePanel({
   return (
     <div>
       <h2 className="ai-svc-panel-title">添加服务</h2>
-      <p className="ai-svc-panel-desc">用订阅登录或 API Key 连接。自定义端点排在 Key 区首位。</p>
+      <p className="ai-svc-panel-desc">用账号登录或 API Key 连接。自定义端点排在 Key 区首位。</p>
       <div className="ai-svc-search-wrap">
         <Search aria-hidden="true" />
         <input
@@ -435,15 +436,10 @@ export function AddServicePanel({
         />
       </div>
 
-      <section className="ai-svc-section" aria-labelledby="ai-title-sub">
+      <section className="ai-svc-section" aria-labelledby="ai-title-sub" hidden={subList.length === 0}>
         <h2 className="ai-svc-section-title" id="ai-title-sub">
-          用订阅登录
+          用账号登录
         </h2>
-        <p className="ai-svc-empty-hint" style={{ marginTop: 0 }}>
-          目前只有 OpenRouter 提供面向扩展的官方登录；其他订阅厂商不开放或明确禁止第三方使用，点卡片查看原因并转到对应的
-          API Key。
-        </p>
-        {subList.length === 0 ? <p className="ai-svc-empty-hint">没有匹配的服务</p> : null}
         {subList.length > 0 && (
           <div className="ai-svc-card-grid" role="list">
             {subList.map(v => (

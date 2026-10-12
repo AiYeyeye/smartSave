@@ -32,3 +32,31 @@ it('accepts numeric ids, commentary keys and a missing empty newFolders, but sti
     parseModelOutput(normalizeModelJson({ rankedIds: [2506], url: 'x' }, 'search'), { ...context, task: 'search' }),
   ).toThrow('invalid-output');
 });
+
+it('reads raw Responses API replies (no output_text) by walking output[] message parts', async () => {
+  const { extractAssistantText } = await import('../adapters/model-transport');
+  const raw = {
+    id: 'resp_1',
+    object: 'response',
+    created_at: 1,
+    model: 'gpt-5.6-sol',
+    status: 'completed',
+    output: [
+      { id: 'rs_1', type: 'reasoning', summary: [], content: null },
+      {
+        id: 'msg_1',
+        type: 'message',
+        role: 'assistant',
+        content: [{ type: 'output_text', text: '{"assignments":[{"itemId":"2508","folderId":"17"}],"newFolders":[]}' }],
+      },
+    ],
+  };
+  expect(JSON.parse(extractAssistantText('openai-responses', raw))).toMatchObject({ newFolders: [] });
+  expect(() =>
+    extractAssistantText('openai-responses', {
+      status: 'incomplete',
+      incomplete_details: { reason: 'max_output_tokens' },
+      output: [{ type: 'reasoning', summary: [] }],
+    }),
+  ).toThrow('incomplete');
+});

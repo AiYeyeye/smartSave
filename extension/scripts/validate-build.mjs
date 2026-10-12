@@ -28,8 +28,11 @@ const manifestSchema = z.object({
     extension_pages: z.literal("script-src 'self'; object-src 'self'; connect-src https: http:"),
   }),
   content_scripts: z.never().optional(),
-  // Native popup + options page only: no extension document may be exposed to web origins.
-  web_accessible_resources: z.never().optional(),
+  // Only the panel document is exposed, for the click-injected overlay sidebar frame; trust still requires the
+  // one-time overlay token (see background/overlay-host.ts).
+  web_accessible_resources: z.tuple([
+    z.object({ resources: z.tuple([z.literal('panel/index.html')]), matches: z.tuple([z.literal('<all_urls>')]) }),
+  ]),
 });
 
 function rejectDynamicImports(node) {

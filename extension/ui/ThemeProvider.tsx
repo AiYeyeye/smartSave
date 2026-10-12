@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import type { PropsWithChildren } from 'react';
+import type { PropsWithChildren, ReactNode } from 'react';
 import { Monitor, Moon, Sun } from 'lucide-react';
 
 export type ThemeMode = 'system' | 'light' | 'dark';
@@ -170,9 +170,10 @@ export function AccentPicker({ compact = false }: { compact?: boolean }) {
   );
 }
 
-export function ThemePicker() {
+export function ThemePicker({ extra }: { extra?: ReactNode } = {}) {
   return (
     <div className="appearance">
+      {extra}
       <fieldset>
         <legend>颜色模式</legend>
         <ModeSwitch />

@@ -5,19 +5,54 @@ import { startImportAuthority } from './import-authority';
 import { SettingsStore } from '../persistence/settings';
 import { AiServicesStore } from '../persistence/ai-services';
 import { startOrganizerAuthority } from './organizer-authority';
-import { startSaveEntrypoints } from './save-entrypoints';
+import { openSaveUi, startSaveEntrypoints } from './save-entrypoints';
+import {
+  isClaimedOverlayDocument,
+  overlayInjectable,
+  panelMode,
+  startOverlayHost,
+  toggleOverlay,
+  watchPanelMode,
+} from './overlay-host';
 import { startTreeService } from './tree-service';
 import { startMutationService } from './mutation-service';
 import { extractSaveBodyForUi } from './extract-coordinator';
-import { trustedMutationSender } from '../domain/trusted-sender';
+import { setOverlayDocumentTrust, trustedMutationSender } from '../domain/trusted-sender';
 import { OwnWriteGuard } from './own-write-guard';
 import { nativeSaveBadge, startNativeBookmarkIngress } from './native-bookmark-ingress';
 import { SaveReceiptLog } from '../persistence/save-receipts';
 
-// The toolbar button opens the full-height side panel (Chrome 116+).
-void Promise.resolve(chrome.sidePanel?.setPanelBehavior?.({ openPanelOnActionClick: true })).catch(() => {});
+// Toolbar click: overlay sidebar sliding in from the left (default) or the browser's native side panel.
+void Promise.resolve(chrome.sidePanel?.setPanelBehavior?.({ openPanelOnActionClick: false })).catch(() => {});
+setOverlayDocumentTrust(sender => isClaimedOverlayDocument(sender as Parameters<typeof isClaimedOverlayDocument>[0]));
+startOverlayHost();
+watchPanelMode();
+chrome.action.onClicked.addListener(tab => {
+  if (tab.id === undefined) return;
+  const tabId = tab.id;
+  if (panelMode() === 'sidepanel' || !overlayInjectable(tab.url)) {
+    // Must stay synchronous inside the click gesture.
+    void Promise.resolve(chrome.sidePanel?.open?.({ tabId })).catch(() => {});
+    return;
+  }
+  void toggleOverlay(tabId, tab.url).then(ok => {
+    if (!ok) void Promise.resolve(chrome.sidePanel?.open?.({ tabId })).catch(() => {});
+  });
+});
 
-const { validateSaveContext, livePageForSender } = startSaveEntrypoints(() => coordinator?.purgeSavePreviews());
+/** Shortcut / page menu saves: show the UI for the captured tab in the chosen mode. */
+async function openSaveSurface(tabId: number) {
+  if (panelMode() === 'overlay') {
+    const tab = await chrome.tabs.get(tabId).catch(() => undefined);
+    if (tab && (await toggleOverlay(tabId, tab.url, true))) return;
+  }
+  await openSaveUi(tabId);
+}
+
+const { validateSaveContext, livePageForSender } = startSaveEntrypoints(
+  () => coordinator?.purgeSavePreviews(),
+  openSaveSurface,
+);
 const projection = startTreeService();
 startFileOutput(projection);
 const settings = new SettingsStore(chrome.storage.local);

@@ -30,13 +30,23 @@ function extensionOrigin(url: string, extensionId: string): URL | undefined {
   return parsed.protocol === 'chrome-extension:' && parsed.host === extensionId ? parsed : undefined;
 }
 
+/**
+ * Overlay sidebar exception: the service worker vouches for exactly the panel documents that claimed a
+ * one-time token minted for an explicit toolbar click. Unset (tests, pages) means no exception.
+ */
+let overlayDocumentTrusted: ((sender: SenderLite) => boolean) | undefined;
+export function setOverlayDocumentTrust(check: ((sender: SenderLite) => boolean) | undefined) {
+  overlayDocumentTrusted = check;
+}
+
 /** An extension document can only be hosted inside a web tab through an iframe; that host is never trusted. */
 function hostedOutsideExtension(sender: SenderLite, extensionId: string): boolean {
   const tab = sender.tab;
   if (!tab || typeof tab !== 'object' || !('url' in tab)) return false;
   const url = (tab as { url?: unknown }).url;
   if (typeof url !== 'string' || !url) return false;
-  return extensionOrigin(url, extensionId) === undefined;
+  if (extensionOrigin(url, extensionId) !== undefined) return false;
+  return !(overlayDocumentTrusted?.(sender) ?? false);
 }
 
 /**

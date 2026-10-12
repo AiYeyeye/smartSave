@@ -24,7 +24,7 @@ describe('MV3 distribution contract', () => {
     ]);
     expect(manifest.optional_permissions).toEqual(['identity']);
     expect(manifest.side_panel).toEqual({ default_path: 'panel/index.html' });
-    expect(manifest.web_accessible_resources).toBeUndefined();
+    expect(manifest.web_accessible_resources).toEqual([{ resources: ['panel/index.html'], matches: ['<all_urls>'] }]);
     expect(manifest.action.default_popup).toBeUndefined();
     expect(manifest.host_permissions).toBeUndefined();
     expect(manifest.optional_host_permissions).toEqual(['https://*/*', 'http://*/*']);

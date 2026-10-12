@@ -40,6 +40,7 @@ async function worker(withOpenPopup = false) {
   >(async () => undefined);
   const createTab = vi.fn(async () => ({ id: 99 }));
   const openPopup = vi.fn(async () => {});
+  const openSidePanel = vi.fn(async () => {});
   const setBadgeText = vi.fn(async () => {});
   const setBadgeBackgroundColor = vi.fn(async () => {});
   const nativeWrite = vi.fn();
@@ -50,6 +51,7 @@ async function worker(withOpenPopup = false) {
       ? { onClicked: clicked, openPopup, setBadgeText, setBadgeBackgroundColor }
       : { onClicked: clicked, setBadgeText, setBadgeBackgroundColor },
     commands: { onCommand: commanded },
+    sidePanel: { open: openSidePanel, setPanelBehavior: vi.fn(async () => {}) },
     contextMenus: { onClicked: event(), create: vi.fn((_options, done: () => void) => done()) },
     runtime: {
       id: 'i',
@@ -75,6 +77,7 @@ async function worker(withOpenPopup = false) {
         get: async () => ({ installationId: 'test-install' }),
         set: async () => {},
       },
+      onChanged: event(),
     },
     bookmarks: {
       getTree: async () => [],
@@ -131,6 +134,7 @@ async function worker(withOpenPopup = false) {
     sendTabMessage,
     createTab,
     openPopup,
+    openSidePanel,
     setBadgeText,
     nativeWrite,
     setActive: (tab: chrome.tabs.Tab) => {
@@ -139,9 +143,9 @@ async function worker(withOpenPopup = false) {
   };
 }
 
-it('cold worker registers no toolbar click listener and never injects into pages', async () => {
+it('cold worker injects nothing until the toolbar is clicked', async () => {
   const h = await worker();
-  expect(h.clicked.count()).toBe(0);
+  expect(h.clicked.count()).toBe(1);
   const ui = h.popup();
   await ui.ready();
   expect(h.executeScript).not.toHaveBeenCalled();
@@ -149,19 +153,26 @@ it('cold worker registers no toolbar click listener and never injects into pages
   expect(ui.received).not.toContainEqual(expect.objectContaining({ type: 'page' }));
   expect(h.nativeWrite).not.toHaveBeenCalled();
 });
-it('cold worker shortcut sets the badge on Chrome 114-126 and opens the popup on Chrome 127+', async () => {
-  const badge = await worker(false);
-  badge.save();
-  await flush();
-  expect(badge.setBadgeText).toHaveBeenCalledWith({ tabId: 4, text: SAVE_BADGE });
-  expect(badge.openPopup).not.toHaveBeenCalled();
-  const native = await worker(true);
-  native.save();
-  await flush();
-  expect(native.openPopup).toHaveBeenCalledOnce();
-  expect(native.setBadgeText).not.toHaveBeenCalledWith({ tabId: 4, text: SAVE_BADGE });
-  expect(native.executeScript).not.toHaveBeenCalled();
-  expect(native.createTab).not.toHaveBeenCalled();
+it('toolbar click slides the overlay sidebar into web pages and opens the side panel on browser pages', async () => {
+  const h = await worker();
+  h.clicked.emit({ id: 4, windowId: 1, url: 'https://page1.test/' } as chrome.tabs.Tab);
+  await vi.waitFor(() => expect(h.executeScript).toHaveBeenCalledTimes(2));
+  expect(h.executeScript.mock.calls[1]![0]).toMatchObject({ files: ['overlay-sidebar.js'] });
+  expect(h.openSidePanel).not.toHaveBeenCalled();
+  h.clicked.emit({ id: 5, windowId: 1, url: 'chrome://newtab/' } as chrome.tabs.Tab);
+  expect(h.openSidePanel).toHaveBeenCalledWith({ tabId: 5 });
+});
+it('save shortcut shows the overlay, and falls back to the side panel, then the badge, when it cannot', async () => {
+  const overlay = await worker();
+  overlay.save();
+  await vi.waitFor(() => expect(overlay.executeScript).toHaveBeenCalledTimes(2));
+  expect(overlay.setBadgeText).not.toHaveBeenCalledWith({ tabId: 4, text: SAVE_BADGE });
+  const blocked = await worker();
+  blocked.executeScript.mockRejectedValue(Error('Cannot access contents of the page'));
+  blocked.openSidePanel.mockRejectedValue(Error('user gesture'));
+  blocked.save();
+  await vi.waitFor(() => expect(blocked.setBadgeText).toHaveBeenCalledWith({ tabId: 4, text: SAVE_BADGE }));
+  expect(blocked.createTab).not.toHaveBeenCalled();
 });
 it('named save command captures before UI registration and the popup retrieves it', async () => {
   const h = await worker();
