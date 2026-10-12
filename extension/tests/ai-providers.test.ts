@@ -30,10 +30,11 @@ describe('AI provider catalog', () => {
     expect(modelPresets.find(p => p.id === 'claude')?.name).toBe('Anthropic');
   });
 
-  it('marks every subscription vendor as not silently succeeding OAuth', () => {
+  it('only OpenRouter has a real sign-in; every other subscription explains why it cannot', () => {
     for (const v of SUB_VENDORS) {
-      expect(v.oauth === 'needs-browser-flow' || v.oauth === 'unsupported').toBe(true);
       expect(v.oauthNote?.length).toBeGreaterThan(10);
+      if (v.id === 'openrouter-oauth') expect(v.oauth).toBe('ready');
+      else expect(['blocked', 'unsupported']).toContain(v.oauth);
     }
   });
 
@@ -54,12 +55,17 @@ describe('AI provider catalog', () => {
   });
 
   it('joins versioned CN / Gemini bases without duplicating /v1', () => {
-    expect(parseModelListEndpoint({ adapter: 'openai-compatible', baseUrl: 'https://open.bigmodel.cn/api/paas/v4' }).url).toBe(
-      'https://open.bigmodel.cn/api/paas/v4/models',
-    );
-    expect(parseModelEndpoint({ adapter: 'openai-compatible', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', model: 'm', timeoutMs: 1 }).url).toBe(
-      'https://ark.cn-beijing.volces.com/api/v3/chat/completions',
-    );
+    expect(
+      parseModelListEndpoint({ adapter: 'openai-compatible', baseUrl: 'https://open.bigmodel.cn/api/paas/v4' }).url,
+    ).toBe('https://open.bigmodel.cn/api/paas/v4/models');
+    expect(
+      parseModelEndpoint({
+        adapter: 'openai-compatible',
+        baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
+        model: 'm',
+        timeoutMs: 1,
+      }).url,
+    ).toBe('https://ark.cn-beijing.volces.com/api/v3/chat/completions');
     expect(
       parseModelListEndpoint({
         adapter: 'openai-compatible',

@@ -14,6 +14,8 @@ const manifestSchema = z.object({
     z.literal('contextMenus'),
     z.literal('favicon'),
   ]),
+  // identity is optional and requested only when the user starts an OAuth sign-in (e.g. OpenRouter).
+  optional_permissions: z.tuple([z.literal('identity')]),
   background: z.object({ service_worker: z.string(), type: z.literal('module') }),
   side_panel: z.never().optional(),
   options_ui: z.object({ page: z.string() }),

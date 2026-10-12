@@ -7,7 +7,9 @@ export type ServiceKind = 'api' | 'sub';
 
 /** Honest OAuth readiness — never claim success without a real browser flow. */
 export type OAuthStatus =
-  | 'unsupported' // no public OAuth for extensions yet
+  | 'ready' // real browser sign-in wired (chrome.identity + official OAuth)
+  | 'blocked' // vendor explicitly forbids third-party use of the subscription
+  | 'unsupported' // no official OAuth for third-party extensions
   | 'needs-browser-flow' // possible later via chrome.identity / launchWebAuthFlow; not wired
   | 'api-key-only'; // subscription tile is decorative; use API key path
 
@@ -51,7 +53,7 @@ export function adapterToApiMode(adapter: ModelAdapter): ApiMode {
   return 'openai';
 }
 
-/** Subscription / OAuth tiles — UI stubs only until a real browser OAuth flow is implemented. */
+/** Subscription / OAuth tiles. Only `ready` vendors have a real sign-in; others explain why and point to API keys. */
 export const SUB_VENDORS: readonly ProviderVendor[] = [
   {
     id: 'anthropic-sub',
@@ -63,8 +65,9 @@ export const SUB_VENDORS: readonly ProviderVendor[] = [
     adapter: 'anthropic',
     baseUrl: 'https://api.anthropic.com',
     curatedModels: ['claude-sonnet-4-5', 'claude-opus-4-1', 'claude-haiku-4-5'],
-    oauth: 'needs-browser-flow',
-    oauthNote: 'Claude Pro/Max 订阅登录需要浏览器 OAuth（chrome.identity / launchWebAuthFlow），当前未接入。请改用 API Key。',
+    oauth: 'blocked',
+    oauthNote:
+      'Anthropic 自 2026 年 2 月起明确禁止第三方工具使用 Claude Pro/Max 订阅登录。请改用 Anthropic API Key（console.anthropic.com）。',
   },
   {
     id: 'github-copilot',
@@ -74,8 +77,8 @@ export const SUB_VENDORS: readonly ProviderVendor[] = [
     letter: 'G',
     kind: 'sub',
     adapter: 'openai-compatible',
-    oauth: 'needs-browser-flow',
-    oauthNote: 'GitHub Copilot 需要 GitHub OAuth + 设备码/令牌交换，扩展内尚未实现。',
+    oauth: 'unsupported',
+    oauthNote: 'GitHub Copilot 没有向第三方扩展开放模型调用授权。非官方的设备码方案违反其条款，智栏不接入。',
   },
   {
     id: 'kimi-code',
@@ -86,8 +89,8 @@ export const SUB_VENDORS: readonly ProviderVendor[] = [
     kind: 'sub',
     adapter: 'openai-compatible',
     baseUrl: 'https://api.moonshot.cn/v1',
-    oauth: 'needs-browser-flow',
-    oauthNote: 'Kimi 订阅登录需要官方 OAuth；请使用「月之暗面」API Key 连接。',
+    oauth: 'unsupported',
+    oauthNote: 'Kimi 目前没有面向第三方扩展的官方订阅登录。请使用「月之暗面」API Key 连接。',
   },
   {
     id: 'meta-sub',
@@ -110,8 +113,8 @@ export const SUB_VENDORS: readonly ProviderVendor[] = [
     adapter: 'openai-compatible',
     baseUrl: 'https://api.openai.com/v1',
     curatedModels: ['gpt-4.1', 'gpt-4.1-mini', 'gpt-4o', 'o3-mini'],
-    oauth: 'needs-browser-flow',
-    oauthNote: 'ChatGPT 订阅登录需要 OpenAI OAuth；当前未接入。请改用 API Key（可自定义 Base URL）。',
+    oauth: 'unsupported',
+    oauthNote: 'OpenAI 没有向第三方扩展开放 ChatGPT 订阅登录。请改用 OpenAI API Key（platform.openai.com）。',
   },
   {
     id: 'openrouter-oauth',
@@ -122,8 +125,9 @@ export const SUB_VENDORS: readonly ProviderVendor[] = [
     kind: 'sub',
     adapter: 'openai-compatible',
     baseUrl: 'https://openrouter.ai/api/v1',
-    oauth: 'needs-browser-flow',
-    oauthNote: 'OpenRouter OAuth/PKCE 需浏览器授权回调，尚未接线。请使用 OpenRouter API Key。',
+    oauth: 'ready',
+    oauthNote:
+      '在 openrouter.ai 登录并授权后，智栏会拿到一把只属于你的 API Key（可随时在 OpenRouter 后台撤销），不经过任何第三方服务器。',
   },
   {
     id: 'xai-sub',
@@ -134,8 +138,8 @@ export const SUB_VENDORS: readonly ProviderVendor[] = [
     kind: 'sub',
     adapter: 'openai-compatible',
     baseUrl: 'https://api.x.ai/v1',
-    oauth: 'needs-browser-flow',
-    oauthNote: 'xAI/Grok 订阅登录需要浏览器 OAuth，尚未实现。请使用 xAI API Key。',
+    oauth: 'unsupported',
+    oauthNote: 'xAI 目前没有面向第三方扩展的官方订阅登录。请使用 xAI API Key。',
   },
 ];
 

@@ -12,6 +12,7 @@ import { dependencyDigest, settingsIdentity } from '../domain/context-dependenci
 import type { TreeSnapshot } from '../domain/node-reference';
 import { modelOutputJsonSchema, parseModelOutput, type ModelOutputContext } from '../schemas/model-output';
 import { z } from 'zod';
+import { traceModel } from '../domain/debug-log';
 export { parseModelEndpoint, parseModelListEndpoint } from '../domain/model-route';
 export type ModelResult =
   | { status: 'completed'; output: ReturnType<typeof parseModelOutput> }
@@ -119,9 +120,7 @@ function extractAssistantText(adapter: ModelConfig['adapter'], raw: unknown): st
           .array(
             z.object({
               type: z.string().optional(),
-              content: z
-                .array(z.object({ type: z.string().optional(), text: z.string().optional() }))
-                .optional(),
+              content: z.array(z.object({ type: z.string().optional(), text: z.string().optional() })).optional(),
             }),
           )
           .optional(),
@@ -148,9 +147,7 @@ function extractAssistantText(adapter: ModelConfig['adapter'], raw: unknown): st
           .min(1),
       })
       .parse(raw).candidates[0]!.content?.parts;
-    const text = (parts ?? [])
-      .map(part => part.text ?? '')
-      .join('');
+    const text = (parts ?? []).map(part => part.text ?? '').join('');
     if (!text) throw Error('schema');
     return text;
   }
@@ -199,7 +196,36 @@ export class ModelTransport {
       ).byteLength <= this.limits.requestBytes
     );
   }
+  private lastHttpStatus?: number;
   async run(input: {
+    config: ModelConfig;
+    key: string;
+    tree: TreeSnapshot;
+    privacy: AiPrivacy;
+    request: AiRequest;
+    policy?: ClassificationPolicy;
+  }): Promise<ModelResult> {
+    const started = Date.now();
+    let host = '';
+    try {
+      host = new URL(input.config.baseUrl).host;
+    } catch {
+      /* invalid base URL is reported by the call itself */
+    }
+    const route = { task: input.request.task, adapter: input.config.adapter, model: input.config.model, host };
+    traceModel('call-start', { ...route, hasKey: input.key.length > 0 });
+    this.lastHttpStatus = undefined;
+    const result = await this.runInner(input);
+    traceModel('call-end', {
+      ...route,
+      status: result.status,
+      reason: result.status === 'completed' ? undefined : result.reason,
+      httpStatus: this.lastHttpStatus,
+      ms: Date.now() - started,
+    });
+    return result;
+  }
+  private async runInner(input: {
     config: ModelConfig;
     key: string;
     tree: TreeSnapshot;
@@ -264,6 +290,7 @@ export class ModelTransport {
         }),
       ]);
       if (timedOut) return { status: 'failed', reason: 'timeout' };
+      this.lastHttpStatus = response.status;
       if (generation !== this.generation) return { status: 'cancelled', reason: 'cancelled' };
       if (response.redirected || (response.url && response.url !== route.url))
         return { status: 'failed', reason: 'redirect' };

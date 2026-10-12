@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { parseModelListEndpoint, type ModelConfig } from '../domain/model-route';
 import { curatedModelsForPreset } from '../domain/model-presets';
 import { readModelResponse, MODEL_BYTE_LIMITS } from './model-byte-limits';
+import { traceModel } from '../domain/debug-log';
 
 export type ListModelsResult =
   { status: 'completed'; models: string[]; source: 'remote' | 'curated' } | { status: 'failed'; reason: string };
@@ -44,7 +45,28 @@ function parseIds(adapter: ModelConfig['adapter'], raw: unknown): string[] {
 }
 
 /** Discover model IDs without requiring a selected model or bookmark tree. */
-export async function listModels(input: {
+export async function listModels(input: Parameters<typeof listModelsInner>[0]): Promise<ListModelsResult> {
+  const started = Date.now();
+  let host = '';
+  try {
+    host = new URL(input.baseUrl).host;
+  } catch {
+    /* reported below */
+  }
+  traceModel('list-start', { adapter: input.adapter, host, hasKey: input.key.length > 0 });
+  const result = await listModelsInner(input);
+  traceModel('list-end', {
+    adapter: input.adapter,
+    host,
+    status: result.status,
+    reason: result.status === 'failed' ? result.reason : undefined,
+    models: result.status === 'completed' ? result.models.length : undefined,
+    ms: Date.now() - started,
+  });
+  return result;
+}
+
+async function listModelsInner(input: {
   adapter: ModelConfig['adapter'];
   baseUrl: string;
   timeoutMs: number;

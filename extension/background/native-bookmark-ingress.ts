@@ -1,19 +1,24 @@
 import type { BookmarkWriter } from '../adapters/bookmarks-write';
+import type { ModelAuthority, ModelAuthorityChange } from '../adapters/model-authority';
 import { ModelTransport } from '../adapters/model-transport';
+import { apiModeToAdapter, type ApiMode } from '../domain/ai-providers';
 import { DEFAULT_CLASSIFICATION_POLICY } from '../domain/classification-policy';
 import { createDebugLog, type DebugLog } from '../domain/debug-log';
+import type { ModelConfig } from '../domain/model-route';
 import { planNativeSaveApply } from '../domain/native-save-apply';
 import type { TreeSnapshot } from '../domain/node-reference';
 import { AiServicesStore } from '../persistence/ai-services';
+import type { SaveReceipt, SaveReceiptLog } from '../persistence/save-receipts';
 import type { SettingsStore } from '../persistence/settings';
 import type { OwnWriteGuard } from './own-write-guard';
 import type { TreeProjection } from './tree-projection';
-import { workerModelAuthority } from './worker-model-authority';
 
 export type NativeClassifyResult =
   | { status: 'skipped'; reason: string; bookmarkId: string }
   | { status: 'failed'; reason: string; bookmarkId: string }
   | { status: 'completed'; bookmarkId: string; destinationId: string; createdFolderIds: string[] };
+
+export type BadgeState = 'working' | 'done' | 'attention' | 'clear';
 
 export type NativeBookmarkIngressOptions = {
   projection: TreeProjection;
@@ -35,11 +40,16 @@ export type NativeBookmarkIngressOptions = {
   fetch?: typeof fetch;
   settlingMs?: number;
   debug?: DebugLog;
-  /** Optional UI hint after a successful auto-classify (badge). Never throws. */
+  /** Receipts the popup shows (where it went / why AI did not run). Optional for tests. */
+  receipts?: SaveReceiptLog;
+  /** Toolbar badge hint; never throws. */
+  badge?: (state: BadgeState) => void;
+  /** Optional UI hint after a successful auto-classify. Never throws. */
   notify?: (result: Extract<NativeClassifyResult, { status: 'completed' }>) => void;
 };
 
 const DEFAULT_SETTLING_MS = 800;
+const LOOPBACK = /^(localhost|127\.\d+\.\d+\.\d+|\[::1\])$/i;
 
 /** True when AiServicesStore「智能收藏」has a connection+model assignment. */
 export function isSaveFeatureConfigured(ai: AiServicesStore): boolean {
@@ -49,23 +59,109 @@ export function isSaveFeatureConfigured(ai: AiServicesStore): boolean {
   return services.some(s => s.id === feat.connId && s.baseUrl.trim().length > 0);
 }
 
-async function loadSaveRoute(ai: AiServicesStore, settings: SettingsStore) {
-  await ai.load();
-  if (!isSaveFeatureConfigured(ai)) return undefined;
+export type SaveRoute =
+  | { status: 'ok'; config: ModelConfig; key: string; label: string }
+  | { status: 'skip'; reason: 'save-feature-unconfigured' | 'service-missing' | 'no-key' | 'settings-unavailable' };
+
+/**
+ * The route for background auto-classify comes straight from the AI services「智能收藏」assignment.
+ * It no longer depends on the legacy single-connection settings, which made saves silently skip.
+ */
+export async function resolveSaveRoute(ai: AiServicesStore): Promise<SaveRoute> {
   try {
-    await settings.load();
+    await ai.load();
   } catch {
-    return undefined;
+    return { status: 'skip', reason: 'settings-unavailable' };
   }
-  const snap = await settings.snapshot();
-  if (!snap.config) return undefined;
-  return snap;
+  const { features, services } = ai.snapshotServices();
+  const feat = features.find(f => f.id === 'save');
+  if (!feat?.connId || !feat.modelId) return { status: 'skip', reason: 'save-feature-unconfigured' };
+  const service = services.find(s => s.id === feat.connId);
+  if (!service?.baseUrl.trim()) return { status: 'skip', reason: 'service-missing' };
+  const config: ModelConfig = {
+    adapter: apiModeToAdapter(service.mode as ApiMode),
+    baseUrl: service.baseUrl,
+    model: feat.modelId,
+    timeoutMs: service.timeoutMs ?? 60000,
+  };
+  const key = ai.credential(service.id);
+  let host: string;
+  try {
+    host = new URL(service.baseUrl).hostname;
+  } catch {
+    return { status: 'skip', reason: 'service-missing' };
+  }
+  if (!key && !LOOPBACK.test(host)) return { status: 'skip', reason: 'no-key' };
+  return { status: 'ok', config, key, label: `${feat.modelId} · ${service.name}` };
+}
+
+/** Model authority whose route identity is the AI services「智能收藏」assignment plus current privacy settings. */
+export function saveFeatureAuthority(
+  projection: TreeProjection,
+  settings: SettingsStore,
+  ai: AiServicesStore,
+): ModelAuthority {
+  const listeners = new Set<(change?: ModelAuthorityChange) => void>();
+  let stop: (() => void) | undefined;
+  const changed = (change: ModelAuthorityChange) => {
+    for (const listener of listeners) listener(change);
+  };
+  const permissionsRemoved = () => changed('permissions');
+  return {
+    async read() {
+      const tree = await projection.fresh();
+      const snapshot = await settings.snapshot();
+      const route = await resolveSaveRoute(ai);
+      return {
+        ...snapshot,
+        ...(route.status === 'ok' ? { config: route.config, key: route.key } : { config: undefined, key: '' }),
+        tree: structuredClone(tree) as TreeSnapshot,
+      };
+    },
+    subscribe(listener) {
+      listeners.add(listener);
+      if (!stop) {
+        const stopTree = projection.subscribe(() => changed('tree'));
+        const stopStore = settings.subscribe(() => changed('settings'));
+        const stopAi = ai.subscribe(() => changed('settings'));
+        if (typeof chrome !== 'undefined' && chrome.permissions?.onRemoved)
+          chrome.permissions.onRemoved.addListener(permissionsRemoved);
+        stop = () => {
+          stopTree();
+          stopStore();
+          stopAi();
+          if (typeof chrome !== 'undefined' && chrome.permissions?.onRemoved)
+            chrome.permissions.onRemoved.removeListener(permissionsRemoved);
+        };
+      }
+      return () => {
+        listeners.delete(listener);
+        if (!listeners.size) {
+          stop?.();
+          stop = undefined;
+        }
+      };
+    },
+  };
+}
+
+/** "书签栏 / 开发 / 前端" for a folder id in a snapshot. */
+export function folderPath(tree: TreeSnapshot, folderId: string | undefined): string {
+  const byId = new Map(tree.nodes.map(node => [node.ref.nativeId, node]));
+  const parts: string[] = [];
+  let cursor = folderId ? byId.get(folderId) : undefined;
+  let guard = 0;
+  while (cursor && guard++ < 64) {
+    if (cursor.title) parts.unshift(cursor.title);
+    cursor = cursor.parentId ? byId.get(cursor.parentId) : undefined;
+  }
+  return parts.join(' / ');
 }
 
 /**
  * Listen to chrome.bookmarks.onCreated after the browser has written the star/Ctrl+D bookmark.
  * When「智能收藏」is configured, run ModelTransport task save and move/create folders.
- * Does not hijack browser shortcuts. Skips plugin-created ids via OwnWriteGuard.
+ * Every observed user save leaves a receipt, so the popup can say whether AI ran and where the bookmark went.
  */
 export function startNativeBookmarkIngress(options: NativeBookmarkIngressOptions) {
   const {
@@ -75,8 +171,10 @@ export function startNativeBookmarkIngress(options: NativeBookmarkIngressOptions
     writer,
     guard,
     settlingMs = DEFAULT_SETTLING_MS,
-    debug = createDebugLog(),
+    debug = createDebugLog('save'),
     notify,
+    receipts,
+    badge,
   } = options;
   const bookmarksApi = options.bookmarks ?? chrome.bookmarks;
   const permissionsApi = options.permissions ?? chrome.permissions;
@@ -86,6 +184,21 @@ export function startNativeBookmarkIngress(options: NativeBookmarkIngressOptions
   const pending = new Map<string, ReturnType<typeof setTimeout>>();
   let disposed = false;
   let active: { id: string; transport: ModelTransport } | undefined;
+
+  const setBadge = (state: BadgeState) => {
+    try {
+      badge?.(state);
+    } catch {
+      /* advisory */
+    }
+  };
+  const record = async (receipt: SaveReceipt) => {
+    try {
+      await receipts?.upsert(receipt);
+    } catch {
+      /* receipts are advisory */
+    }
+  };
 
   const clearPending = (id: string) => {
     const timer = pending.get(id);
@@ -97,35 +210,35 @@ export function startNativeBookmarkIngress(options: NativeBookmarkIngressOptions
     if (disposed) return;
     guard.sweep();
     if (importing) {
-      debug('native-save-skip', { bookmarkId: id, reason: 'importing' });
+      debug('skip', { bookmarkId: id, reason: 'importing' });
       return;
     }
     if (guard.isOwn(id)) {
-      debug('native-save-skip', { bookmarkId: id, reason: 'plugin-created' });
+      debug('skip', { bookmarkId: id, reason: 'plugin-created' });
       return;
     }
     if (!node.url) {
-      debug('native-save-skip', { bookmarkId: id, reason: 'folder' });
+      debug('skip', { bookmarkId: id, reason: 'folder' });
       return;
     }
     try {
       const url = new URL(node.url);
       if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-        debug('native-save-skip', { bookmarkId: id, reason: 'unsafe-url' });
+        debug('skip', { bookmarkId: id, reason: 'unsafe-url' });
         return;
       }
     } catch {
-      debug('native-save-skip', { bookmarkId: id, reason: 'bad-url' });
+      debug('skip', { bookmarkId: id, reason: 'bad-url' });
       return;
     }
     clearPending(id);
-    debug('native-save-observed', { bookmarkId: id, parentId: node.parentId });
+    debug('observed', { bookmarkId: id, parentId: node.parentId });
     pending.set(
       id,
       setTimeout(() => {
         pending.delete(id);
         void classify(id).catch(error =>
-          debug('native-save-error', {
+          debug('error', {
             bookmarkId: id,
             reason: error instanceof Error ? error.message : 'unknown',
           }),
@@ -139,7 +252,7 @@ export function startNativeBookmarkIngress(options: NativeBookmarkIngressOptions
     if (active?.id === id) {
       active.transport.cancel();
       active = undefined;
-      debug('native-save-cancel', { bookmarkId: id, reason: 'removed' });
+      debug('cancel', { bookmarkId: id, reason: 'removed' });
     }
   };
 
@@ -147,33 +260,62 @@ export function startNativeBookmarkIngress(options: NativeBookmarkIngressOptions
     if (disposed) return { status: 'skipped', reason: 'disposed', bookmarkId };
     if (guard.isOwn(bookmarkId)) return { status: 'skipped', reason: 'plugin-created', bookmarkId };
 
-    const route = await loadSaveRoute(aiServices, settings);
-    if (!route?.config) {
-      debug('native-save-skip', { bookmarkId, reason: 'save-feature-unconfigured' });
-      return { status: 'skipped', reason: 'save-feature-unconfigured', bookmarkId };
-    }
-
     let tree: TreeSnapshot;
     try {
       tree = await projection.fresh();
     } catch {
-      debug('native-save-skip', { bookmarkId, reason: 'tree-unavailable' });
+      debug('skip', { bookmarkId, reason: 'tree-unavailable' });
       return { status: 'skipped', reason: 'tree-unavailable', bookmarkId };
     }
-
     const node = tree.nodes.find(n => n.ref.nativeId === bookmarkId && n.ref.kind === 'bookmark');
     if (!node?.url) {
-      debug('native-save-skip', { bookmarkId, reason: 'missing-bookmark' });
+      debug('skip', { bookmarkId, reason: 'missing-bookmark' });
       return { status: 'skipped', reason: 'missing-bookmark', bookmarkId };
+    }
+    const parent = tree.nodes.find(n => n.ref.nativeId === node.parentId);
+    const receipt: SaveReceipt = {
+      id: typeof crypto?.randomUUID === 'function' ? crypto.randomUUID() : `${Date.now()}-${bookmarkId}`,
+      bookmarkId,
+      title: node.title,
+      url: node.url,
+      at: Date.now(),
+      status: 'classifying',
+      fromParentId: node.parentId ?? '',
+      fromIndex: Math.max(0, parent?.childrenIds.indexOf(bookmarkId) ?? 0),
+      fromPath: folderPath(tree, node.parentId),
+    };
+    const started = Date.now();
+    const finish = async (status: SaveReceipt['status'], extra: Partial<SaveReceipt> = {}): Promise<void> => {
+      await record({ ...receipt, ...extra, status, ms: Date.now() - started });
+    };
+
+    const route = await resolveSaveRoute(aiServices);
+    if (route.status !== 'ok') {
+      debug('skip', { bookmarkId, reason: route.reason });
+      await finish('skipped', { reason: route.reason });
+      setBadge('attention');
+      return { status: 'skipped', reason: route.reason, bookmarkId };
     }
 
     const root = tree.nodes.find(n => n.parentId === undefined && n.ref.kind === 'folder');
-    if (!root) return { status: 'failed', reason: 'no-root', bookmarkId };
-
     const folderIds = tree.nodes.filter(n => n.childrenWritable).map(n => n.ref.nativeId);
-    if (!folderIds.length) return { status: 'failed', reason: 'no-writable-folders', bookmarkId };
+    if (!root || !folderIds.length) {
+      await finish('failed', { reason: 'no-writable-folders', model: route.label });
+      setBadge('attention');
+      return { status: 'failed', reason: root ? 'no-writable-folders' : 'no-root', bookmarkId };
+    }
 
-    const authority = workerModelAuthority(projection, settings);
+    let privacy: Awaited<ReturnType<SettingsStore['snapshot']>>['privacy'];
+    try {
+      await settings.load();
+      privacy = (await settings.snapshot()).privacy;
+    } catch {
+      privacy = { fullUrl: true, bodyEnabled: false, excludedFolders: [] };
+    }
+
+    await record({ ...receipt, model: route.label });
+    setBadge('working');
+    const authority = saveFeatureAuthority(projection, settings, aiServices);
     const transport = new ModelTransport(
       {
         fetch: fetchFn,
@@ -182,13 +324,13 @@ export function startNativeBookmarkIngress(options: NativeBookmarkIngressOptions
       authority,
     );
     active = { id: bookmarkId, transport };
-    debug('native-save-model-start', { bookmarkId });
+    debug('model-start', { bookmarkId, model: route.config.model, adapter: route.config.adapter });
 
     try {
       const response = await transport.run({
         config: route.config,
         key: route.key,
-        privacy: route.privacy,
+        privacy,
         tree,
         policy: DEFAULT_CLASSIFICATION_POLICY,
         request: {
@@ -200,33 +342,54 @@ export function startNativeBookmarkIngress(options: NativeBookmarkIngressOptions
       });
 
       if (response.status !== 'completed') {
-        debug('native-save-model-failed', { bookmarkId, reason: response.reason });
+        debug('model-failed', { bookmarkId, reason: response.reason });
+        await finish('failed', { reason: response.reason, model: route.label });
+        setBadge('attention');
         return { status: 'failed', reason: response.reason, bookmarkId };
       }
       if (!('assignments' in response.output)) {
+        await finish('failed', { reason: 'schema', model: route.label });
+        setBadge('attention');
         return { status: 'failed', reason: 'schema', bookmarkId };
       }
       const assignment = response.output.assignments.find(a => a.itemId === bookmarkId);
-      if (!assignment) return { status: 'failed', reason: 'no-assignment', bookmarkId };
+      if (!assignment) {
+        await finish('failed', { reason: 'schema', model: route.label });
+        setBadge('attention');
+        return { status: 'failed', reason: 'no-assignment', bookmarkId };
+      }
 
       // Re-read after model: tree may have moved; plan against fresh state.
       let live: TreeSnapshot;
       try {
         live = await projection.fresh();
       } catch {
+        await finish('failed', { reason: 'stale-context', model: route.label });
         return { status: 'failed', reason: 'tree-unavailable', bookmarkId };
       }
       if (guard.isOwn(bookmarkId)) return { status: 'skipped', reason: 'plugin-created', bookmarkId };
-      if (!live.nodes.some(n => n.ref.nativeId === bookmarkId && n.ref.kind === 'bookmark'))
+      if (!live.nodes.some(n => n.ref.nativeId === bookmarkId && n.ref.kind === 'bookmark')) {
+        await finish('skipped', { reason: 'missing-bookmark', model: route.label });
+        setBadge('clear');
         return { status: 'skipped', reason: 'missing-bookmark', bookmarkId };
+      }
 
       const plan = planNativeSaveApply(live, bookmarkId, assignment.folderId, response.output.newFolders);
       if (plan.status === 'noop') {
-        debug('native-save-noop', { bookmarkId, reason: plan.reason });
+        debug('noop', { bookmarkId, reason: plan.reason });
+        await finish('kept', {
+          reason: 'already-in-destination',
+          model: route.label,
+          toId: receipt.fromParentId,
+          toPath: receipt.fromPath,
+        });
+        setBadge('done');
         return { status: 'skipped', reason: plan.reason, bookmarkId };
       }
       if (plan.status === 'invalid') {
-        debug('native-save-invalid-plan', { bookmarkId, reason: plan.reason });
+        debug('invalid-plan', { bookmarkId, reason: plan.reason });
+        await finish('failed', { reason: 'schema', model: route.label });
+        setBadge('attention');
         return { status: 'failed', reason: plan.reason, bookmarkId };
       }
 
@@ -242,16 +405,25 @@ export function startNativeBookmarkIngress(options: NativeBookmarkIngressOptions
         await writer.move(bookmarkId, { parentId: destinationId, index: 0 });
       }
 
+      const after = await projection.fresh().catch(() => live);
+      await finish('moved', {
+        model: route.label,
+        toId: destinationId,
+        toPath: folderPath(after, destinationId),
+        createdFolderIds,
+      });
+      setBadge('done');
       const result: Extract<NativeClassifyResult, { status: 'completed' }> = {
         status: 'completed',
         bookmarkId,
         destinationId,
         createdFolderIds,
       };
-      debug('native-save-completed', {
+      debug('completed', {
         bookmarkId,
         destinationId,
         createdFolders: createdFolderIds.length,
+        ms: Date.now() - started,
       });
       try {
         notify?.(result);
@@ -265,24 +437,60 @@ export function startNativeBookmarkIngress(options: NativeBookmarkIngressOptions
     }
   }
 
+  /**
+   * Undo one auto-classify: move the bookmark back to where the browser put it and remove folders
+   * this save created when they are empty. Refuses when the bookmark has been moved since.
+   */
+  async function undo(receiptId: string): Promise<{ status: 'undone' } | { status: 'refused'; reason: string }> {
+    const receipt = await receipts?.get(receiptId);
+    if (!receipt || receipt.status !== 'moved' || !receipt.toId) return { status: 'refused', reason: 'not-undoable' };
+    let tree: TreeSnapshot;
+    try {
+      tree = await projection.fresh();
+    } catch {
+      return { status: 'refused', reason: 'tree-unavailable' };
+    }
+    const node = tree.nodes.find(n => n.ref.nativeId === receipt.bookmarkId);
+    if (!node) return { status: 'refused', reason: 'missing-bookmark' };
+    if (node.parentId !== receipt.toId) return { status: 'refused', reason: 'moved-since' };
+    const origin = tree.nodes.find(n => n.ref.nativeId === receipt.fromParentId && n.childrenWritable);
+    if (!origin) return { status: 'refused', reason: 'origin-missing' };
+    await writer.move(receipt.bookmarkId, {
+      parentId: receipt.fromParentId,
+      index: Math.min(receipt.fromIndex, origin.childrenIds.length),
+    });
+    // Remove created folders deepest first, only if empty now.
+    for (const folderId of [...(receipt.createdFolderIds ?? [])].reverse()) {
+      const fresh = await projection.fresh().catch(() => undefined);
+      const folder = fresh?.nodes.find(n => n.ref.nativeId === folderId);
+      if (folder && folder.ref.kind === 'folder' && folder.childrenIds.length === 0) {
+        await writer.remove(folderId).catch(() => {});
+      }
+    }
+    await receipts?.patch(receipt.id, { status: 'undone' });
+    debug('undo', { bookmarkId: receipt.bookmarkId });
+    return { status: 'undone' };
+  }
+
   bookmarksApi.onCreated.addListener(onCreated);
   bookmarksApi.onRemoved.addListener(onRemoved);
   const onImportBegan = () => {
     importing = true;
-    debug('native-save-import-began', {});
+    debug('import-began', {});
   };
   const onImportEnded = () => {
     importing = false;
-    debug('native-save-import-ended', {});
+    debug('import-ended', {});
   };
   bookmarksApi.onImportBegan.addListener(onImportBegan);
   bookmarksApi.onImportEnded.addListener(onImportEnded);
 
-  debug('native-save-ingress-started', { settlingMs });
+  debug('ingress-started', { settlingMs });
 
   return {
     /** Test/debug: run classify for an id without waiting for settling. */
     classify,
+    undo,
     dispose() {
       disposed = true;
       for (const id of [...pending.keys()]) clearPending(id);
@@ -292,23 +500,38 @@ export function startNativeBookmarkIngress(options: NativeBookmarkIngressOptions
       bookmarksApi.onRemoved.removeListener(onRemoved);
       bookmarksApi.onImportBegan.removeListener(onImportBegan);
       bookmarksApi.onImportEnded.removeListener(onImportEnded);
-      debug('native-save-ingress-stopped', {});
+      debug('ingress-stopped', {});
     },
   };
 }
 
-/** Brief action badge when auto-classify succeeds; no notifications permission required. */
-export async function notifyNativeSaveBadge(result: Extract<NativeClassifyResult, { status: 'completed' }>) {
+let badgeTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** Toolbar badge: … while classifying, ✓ on success, ! when AI did not run or failed. */
+export function nativeSaveBadge(state: BadgeState) {
   const action = typeof chrome !== 'undefined' ? chrome.action : undefined;
   if (!action?.setBadgeText) return;
-  try {
-    await action.setBadgeText({ text: '✓' });
-    if (action.setBadgeBackgroundColor) await action.setBadgeBackgroundColor({ color: '#34A853' });
-    setTimeout(() => {
-      void action.setBadgeText({ text: '' }).catch(() => {});
-    }, 2500);
-  } catch {
-    /* badge is advisory */
+  if (badgeTimer) clearTimeout(badgeTimer);
+  badgeTimer = undefined;
+  const styles: Record<Exclude<BadgeState, 'clear'>, { text: string; color: string }> = {
+    working: { text: '…', color: '#6366F1' },
+    done: { text: '✓', color: '#16A34A' },
+    attention: { text: '!', color: '#D97706' },
+  };
+  if (state === 'clear') {
+    void Promise.resolve(action.setBadgeText({ text: '' })).catch(() => {});
+    return;
   }
-  void result;
+  const style = styles[state];
+  void Promise.resolve(action.setBadgeText({ text: style.text })).catch(() => {});
+  if (action.setBadgeBackgroundColor)
+    void Promise.resolve(action.setBadgeBackgroundColor({ color: style.color })).catch(() => {});
+  if (state !== 'working') {
+    badgeTimer = setTimeout(
+      () => {
+        void Promise.resolve(action.setBadgeText({ text: '' })).catch(() => {});
+      },
+      state === 'attention' ? 8000 : 3000,
+    );
+  }
 }

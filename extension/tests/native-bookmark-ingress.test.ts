@@ -7,6 +7,7 @@ import { isSaveFeatureConfigured, startNativeBookmarkIngress } from '../backgrou
 import { AiServicesStore, type ConnectedServiceRecord } from '../persistence/ai-services';
 import { SettingsStore } from '../persistence/settings';
 import { noopDebugLog } from '../domain/debug-log';
+import { SaveReceiptLog, readSaveReceipts } from '../persistence/save-receipts';
 
 function event<T extends (...args: never[]) => unknown>() {
   const listeners = new Set<T>();
@@ -60,9 +61,11 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function harness(opts: { configureSave?: boolean; settlingMs?: number } = {}) {
+async function harness(
+  opts: { configureSave?: boolean; settlingMs?: number; syncLegacy?: boolean; rememberKey?: boolean } = {},
+) {
   let nextId = 10;
-  let tree: chrome.bookmarks.BookmarkTreeNode[] = [
+  const tree: chrome.bookmarks.BookmarkTreeNode[] = [
     {
       syncing: false,
       id: '0',
@@ -158,7 +161,7 @@ async function harness(opts: { configureSave?: boolean; settlingMs?: number } = 
   await ai.load();
   await settings.load();
   if (opts.configureSave !== false) {
-    await ai.upsertService(sampleService, 'sk-test', true);
+    await ai.upsertService(sampleService, 'sk-test', opts.rememberKey !== false);
     await ai.saveFeatures([
       { id: 'save', name: '智能收藏', desc: '', connId: 'c1', modelId: 'gpt-4.1-mini' },
       { id: 'import', name: '智能导入', desc: '', connId: '', modelId: '' },
@@ -166,8 +169,11 @@ async function harness(opts: { configureSave?: boolean; settlingMs?: number } = 
       { id: 'organize', name: '智能整理', desc: '', connId: '', modelId: '' },
       { id: 'classify', name: '页面分类', desc: '', connId: '', modelId: '' },
     ]);
-    await ai.syncPrimaryToSettings(settings);
+    if (opts.syncLegacy !== false) await ai.syncPrimaryToSettings(settings);
   }
+  // A fresh worker-side store sees only what storage holds (no in-page session keys).
+  const workerAi = new AiServicesStore(storage, run => run());
+  const receipts = new SaveReceiptLog(storage);
 
   const onCreated = event<(id: string, node: chrome.bookmarks.BookmarkTreeNode) => void>();
   const onRemoved = event<(id: string) => void>();
@@ -181,7 +187,8 @@ async function harness(opts: { configureSave?: boolean; settlingMs?: number } = 
   const ingress = startNativeBookmarkIngress({
     projection,
     settings,
-    aiServices: ai,
+    aiServices: workerAi,
+    receipts,
     writer: wrapped,
     guard,
     settlingMs: opts.settlingMs ?? 10,
@@ -211,6 +218,7 @@ async function harness(opts: { configureSave?: boolean; settlingMs?: number } = 
     settings,
     writer,
     projection,
+    storage,
   };
 }
 
@@ -367,5 +375,124 @@ it('skips bookmarks observed during an import window', async () => {
   await new Promise(r => setTimeout(r, 30));
   expect(h.fetchMock).not.toHaveBeenCalled();
   h.onImportEnded.emit();
+  h.ingress.dispose();
+});
+
+function modelReply(itemId: string, folderId: string) {
+  return async () =>
+    new Response(
+      JSON.stringify({
+        choices: [{ message: { content: JSON.stringify({ assignments: [{ itemId, folderId }], newFolders: [] }) } }],
+      }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    );
+}
+
+it('classifies from the AI services assignment alone, without the legacy single-connection settings', async () => {
+  const h = await harness({ settlingMs: 5, syncLegacy: false });
+  h.fetchMock.mockImplementation(modelReply('u5', '2'));
+  const userNode: chrome.bookmarks.BookmarkTreeNode = {
+    syncing: false,
+    id: 'u5',
+    parentId: '1',
+    title: 'Guide',
+    url: 'https://guide.test/',
+  };
+  h.find('1').children!.push(userNode);
+  await h.writer.create({ parentId: '2', title: '_touch5' });
+  h.onCreated.emit('u5', userNode);
+  await vi.waitFor(() => expect(h.find('u5').parentId).toBe('2'), { timeout: 2000 });
+  const [receipt] = await readSaveReceipts(h.storage);
+  expect(receipt).toMatchObject({ bookmarkId: 'u5', status: 'moved', fromParentId: '1', toId: '2', toPath: 'Other' });
+  expect(receipt!.model).toContain('gpt-4.1-mini');
+  h.ingress.dispose();
+});
+
+it('leaves a visible receipt when AI was not called because no model is assigned', async () => {
+  const h = await harness({ settlingMs: 5, configureSave: false });
+  const userNode: chrome.bookmarks.BookmarkTreeNode = {
+    syncing: false,
+    id: 'u6',
+    parentId: '1',
+    title: 'Plain',
+    url: 'https://plain.test/',
+  };
+  h.find('1').children!.push(userNode);
+  await h.writer.create({ parentId: '2', title: '_touch6' });
+  h.onCreated.emit('u6', userNode);
+  await vi.waitFor(async () => expect((await readSaveReceipts(h.storage))[0]?.status).toBe('skipped'), {
+    timeout: 2000,
+  });
+  expect((await readSaveReceipts(h.storage))[0]?.reason).toBe('save-feature-unconfigured');
+  expect(h.fetchMock).not.toHaveBeenCalled();
+  h.ingress.dispose();
+});
+
+it('reports no-key instead of silently failing when the key was not remembered', async () => {
+  const h = await harness({ settlingMs: 5, rememberKey: false });
+  const userNode: chrome.bookmarks.BookmarkTreeNode = {
+    syncing: false,
+    id: 'u7',
+    parentId: '1',
+    title: 'Keyless',
+    url: 'https://keyless.test/',
+  };
+  h.find('1').children!.push(userNode);
+  await h.writer.create({ parentId: '2', title: '_touch7' });
+  h.onCreated.emit('u7', userNode);
+  await vi.waitFor(async () => expect((await readSaveReceipts(h.storage))[0]?.reason).toBe('no-key'), {
+    timeout: 2000,
+  });
+  expect(h.fetchMock).not.toHaveBeenCalled();
+  h.ingress.dispose();
+});
+
+it('undo moves the bookmark back and removes empty folders the save created', async () => {
+  const h = await harness({ settlingMs: 5 });
+  h.fetchMock.mockImplementation(
+    async () =>
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  assignments: [{ itemId: 'u8', folderId: 'nf8' }],
+                  newFolders: [{ id: 'nf8', parentId: '2', title: 'Later' }],
+                }),
+              },
+            },
+          ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+  );
+  const userNode: chrome.bookmarks.BookmarkTreeNode = {
+    syncing: false,
+    id: 'u8',
+    parentId: '1',
+    title: 'Undo me',
+    url: 'https://undo.test/',
+  };
+  h.find('1').children!.push(userNode);
+  await h.writer.create({ parentId: '2', title: '_touch8' });
+  const removed: string[] = [];
+  const remove = h.writer.remove;
+  h.wrapped.remove = async id => {
+    removed.push(id);
+    const parent = h.find('2');
+    parent.children = parent.children!.filter(child => child.id !== id);
+    await remove(id);
+  };
+  h.onCreated.emit('u8', userNode);
+  await vi.waitFor(async () => expect((await readSaveReceipts(h.storage))[0]?.status).toBe('moved'), {
+    timeout: 2000,
+  });
+  const [receipt] = await readSaveReceipts(h.storage);
+  expect(receipt!.toPath).toBe('Other / Later');
+  await expect(h.ingress.undo(receipt!.id)).resolves.toEqual({ status: 'undone' });
+  expect(h.find('u8').parentId).toBe('1');
+  expect(removed).toEqual(receipt!.createdFolderIds);
+  expect((await readSaveReceipts(h.storage))[0]?.status).toBe('undone');
   h.ingress.dispose();
 });

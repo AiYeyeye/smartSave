@@ -16,6 +16,9 @@
     "contextMenus",
     "favicon"
   ],
+  "optional_permissions": [
+    "identity"
+  ],
   "background": {
     "service_worker": "service-worker.js",
     "type": "module"
