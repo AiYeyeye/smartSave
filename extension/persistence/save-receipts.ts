@@ -108,6 +108,8 @@ export function receiptReasonText(reason: string | undefined): string {
       return '模型服务返回错误';
     case 'schema':
       return '模型返回的内容无法解析（打开 Debug 日志可看到原因）';
+    case 'empty':
+      return '模型返回了空内容（已自动重试一次）；可在 Debug 日志查看返回结构，或把接口模式换成 Chat Completions';
     case 'incomplete':
       return '模型输出被截断（输出额度用完），请换更快的模型或稍后重试';
     case 'refused':

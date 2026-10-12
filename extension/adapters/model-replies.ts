@@ -66,6 +66,20 @@ function chatCompletions(raw: unknown): ModelReply {
   };
 }
 
+/** Text of one content part, tolerating the shapes proxies emit ({text}, {text:{value}}, {value}, {json}). */
+function partText(part: Json): string {
+  if (typeof part.text === 'string') return part.text;
+  const nested = str(obj(part.text).value);
+  if (nested !== undefined) return nested;
+  if (typeof part.value === 'string') return part.value;
+  if (typeof part.content === 'string') return part.content;
+  if (part.json !== undefined && part.json !== null)
+    return typeof part.json === 'string' ? part.json : JSON.stringify(part.json);
+  return '';
+}
+
+const NON_ANSWER_PARTS = new Set(['reasoning', 'reasoning_text', 'summary_text', 'refusal']);
+
 function responses(raw: unknown): ModelReply {
   const record = obj(raw);
   const status = str(record.status);
@@ -82,8 +96,10 @@ function responses(raw: unknown): ModelReply {
       for (const part of arr(entry.content)) {
         const p = obj(part);
         if (p.type === 'refusal') refused = str(p.refusal) ?? 'refusal';
-        else if (p.type === undefined || p.type === 'output_text' || p.type === 'text') texts.push(str(p.text) ?? '');
+        else if (!NON_ANSWER_PARTS.has(String(p.type))) texts.push(partText(p));
       }
+      // Some gateways put the text straight on the message item.
+      if (!texts.join('').trim() && typeof entry.text === 'string') texts.push(entry.text);
     }
     text = texts.join('');
   }
@@ -171,8 +187,19 @@ export function replyShape(raw: unknown): string {
   if (Object.keys(choice).length) return `{${keys}} message:{${Object.keys(obj(choice.message)).join(',')}}`;
   if (Array.isArray(record.output))
     return `{${keys}} status=${String(record.status ?? '?')} output=[${arr(record.output)
-      .map(item => String(obj(item).type ?? '?'))
-      .join('+')}]`;
+      .map(item => {
+        const entry = obj(item);
+        const parts = Array.isArray(entry.content)
+          ? arr(entry.content)
+              .map(part => {
+                const p = obj(part);
+                return `${String(p.type ?? '?')}{${Object.keys(p).join(',')}}len=${partText(p).length}`;
+              })
+              .join(';')
+          : typeof entry.content;
+        return `${String(entry.type ?? '?')}{${Object.keys(entry).join(',')}}(${parts})`;
+      })
+      .join(' + ')}]`;
   if (Array.isArray(record.content))
     return `{${keys}} content=[${arr(record.content)
       .map(item => String(obj(item).type ?? '?'))

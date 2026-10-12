@@ -119,6 +119,27 @@ export function useAiServices(settings?: SettingsStore) {
     [store, settings, features, applySnap],
   );
 
+  /** Several feature assignments in one write (setup wizard). */
+  const assignFeatures = useCallback(
+    async (changes: { featureId: string; connId: string; modelId: string }[]) => {
+      const byId = new Map(changes.map(c => [c.featureId, c]));
+      const next = features.map(f => {
+        const change = byId.get(f.id);
+        return change ? { ...f, connId: change.connId, modelId: change.modelId } : f;
+      });
+      setFeaturesState(next);
+      if (!store) return;
+      const snap = await store.saveFeatures(next);
+      applySnap(snap);
+      try {
+        await store.syncPrimaryToSettings(settings);
+      } catch {
+        /* ignore */
+      }
+    },
+    [store, settings, features, applySnap],
+  );
+
   const importConfig = useCallback(
     async (payload: { services: ConnectedService[]; features?: FeatureAssignment[] }) => {
       const feats = payload.features?.length ? payload.features : features;
@@ -184,6 +205,7 @@ export function useAiServices(settings?: SettingsStore) {
     persistService,
     removeService,
     assignFeature,
+    assignFeatures,
     importConfig,
     exportConfig,
     getCredential,

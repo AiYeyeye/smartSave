@@ -57,6 +57,7 @@ function useShared() {
       persistService: ai.persistService,
       removeService: ai.removeService,
       assignFeature: ai.assignFeature,
+      assignFeatures: ai.assignFeatures,
       importConfig: ai.importConfig,
       exportConfig: ai.exportConfig,
       getCredential: ai.getCredential,

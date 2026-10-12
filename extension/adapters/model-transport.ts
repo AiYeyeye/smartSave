@@ -59,6 +59,8 @@ export function modelRequestBody(
   task: AiRequest['task'],
   payload: string,
   policy: ClassificationPolicy = DEFAULT_CLASSIFICATION_POLICY,
+  /** Ask for JSON through the API's own switch; off for the one retry after an empty reply. */
+  jsonMode = true,
 ): string {
   const schema = modelOutputJsonSchema(task);
   const system = `${modelSystemPrompt(task, classificationPolicySchema.parse(policy))} Output schema: ${JSON.stringify(schema)}`;
@@ -81,7 +83,7 @@ export function modelRequestBody(
       input: payload,
       // Reasoning models spend output tokens on thinking first; a small proxy default ends them before the JSON.
       max_output_tokens: RESPONSES_MAX_OUTPUT_TOKENS,
-      text: { format: { type: 'json_object' } },
+      ...(jsonMode ? { text: { format: { type: 'json_object' } } } : {}),
     });
   }
   if (config.adapter === 'google-generative-ai') {
@@ -103,7 +105,9 @@ export function modelRequestBody(
       ? { format: schema }
       : config.adapter === 'lm-studio'
         ? { response_format: { type: 'json_schema', json_schema: { name: 'bookmark_proposal', strict: true, schema } } }
-        : { response_format: { type: 'json_object' } }),
+        : jsonMode
+          ? { response_format: { type: 'json_object' } }
+          : {}),
   });
 }
 
@@ -242,7 +246,17 @@ export class ModelTransport {
     const route = { task: input.request.task, adapter: input.config.adapter, model: input.config.model, host };
     traceModel('call-start', { ...route, hasKey: input.key.length > 0 });
     this.lastHttpStatus = undefined;
-    const result = await this.runInner(input);
+    let result = await this.runInner(input, true);
+    // Some gateways return an empty message when the API-level JSON switch is on; the prompt already asks for
+    // JSON, so try once more without the switch.
+    if (
+      result.status === 'failed' &&
+      result.reason === 'empty' &&
+      (input.config.adapter === 'openai-compatible' || input.config.adapter === 'openai-responses')
+    ) {
+      traceModel('retry-without-json-mode', { ...route });
+      result = await this.runInner(input, false);
+    }
     traceModel('call-end', {
       ...route,
       status: result.status,
@@ -252,14 +266,17 @@ export class ModelTransport {
     });
     return result;
   }
-  private async runInner(input: {
-    config: ModelConfig;
-    key: string;
-    tree: TreeSnapshot;
-    privacy: AiPrivacy;
-    request: AiRequest;
-    policy?: ClassificationPolicy;
-  }): Promise<ModelResult> {
+  private async runInner(
+    input: {
+      config: ModelConfig;
+      key: string;
+      tree: TreeSnapshot;
+      privacy: AiPrivacy;
+      request: AiRequest;
+      policy?: ClassificationPolicy;
+    },
+    jsonMode: boolean,
+  ): Promise<ModelResult> {
     this.cancel();
     const generation = this.generation;
     const controller = new AbortController();
@@ -297,7 +314,7 @@ export class ModelTransport {
         timedOut = true;
         controller.abort();
       }, frozen.config.timeoutMs);
-      const body = modelRequestBody(frozen.config, frozen.request.task, payload, policy);
+      const body = modelRequestBody(frozen.config, frozen.request.task, payload, policy, jsonMode);
       if (new TextEncoder().encode(body).byteLength > this.limits.requestBytes)
         return { status: 'failed', reason: 'payload-too-large' };
       const cancelled = new Promise<never>((_, reject) => {
@@ -380,6 +397,7 @@ export class ModelTransport {
         const parse = error instanceof ModelParseError ? error : new ModelParseError('json');
         traceModel('parse-failed', {
           task: frozen.request.task,
+          jsonMode,
           stage: parse.stage,
           issue: parse.issue,
           chars: text.length,
@@ -388,7 +406,14 @@ export class ModelTransport {
         });
         return {
           status: 'failed',
-          reason: parse.stage === 'incomplete' ? 'incomplete' : parse.stage === 'refused' ? 'refused' : 'schema',
+          reason:
+            parse.stage === 'incomplete'
+              ? 'incomplete'
+              : parse.stage === 'refused'
+                ? 'refused'
+                : parse.stage === 'empty'
+                  ? 'empty'
+                  : 'schema',
         };
       }
     } catch {

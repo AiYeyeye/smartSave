@@ -71,15 +71,30 @@ export function FeaturesPanel({
   features,
   services,
   onAssign,
+  onQuickSetup,
 }: {
   features: FeatureAssignment[];
   services: ConnectedService[];
   onAssign: (featureId: string, connId: string, modelId: string) => void;
+  onQuickSetup?: () => void;
 }) {
+  const missing = features.filter(f => !f.connId || !f.modelId);
+  const usable = services.some(s => s.enabled.length > 0);
   return (
     <div>
       <h2 className="ai-svc-panel-title">功能用模</h2>
       <p className="ai-svc-panel-desc">为各 AI 功能指定连接与模型。行内展开按连接分组，可搜索模型 ID。</p>
+      {missing.length > 0 && usable && onQuickSetup ? (
+        <div className="ai-svc-banner" role="status">
+          <span>
+            还有 <b>{missing.length}</b> 个功能没选模型：{missing.map(f => f.name).join('、')}。没选模型的功能不会调用
+            AI。
+          </span>
+          <button type="button" className="ai-svc-act ai-svc-act-primary ai-svc-act-sm" onClick={onQuickSetup}>
+            按推荐一键分配
+          </button>
+        </div>
+      ) : null}
       <div className="ai-svc-feat-list">
         {features.map(f => (
           <div key={f.id} className="ai-svc-feat-row">

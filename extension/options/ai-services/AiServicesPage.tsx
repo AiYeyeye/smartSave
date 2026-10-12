@@ -6,6 +6,7 @@ import type { SettingsStore } from '../../persistence/settings';
 import { ToastProvider, useToast } from './toast';
 import { ConnectedPanel, AddServicePanel, FeaturesPanel, ImportExportPanel } from './panels';
 import { EditServiceOverlay } from './EditServiceOverlay';
+import { SetupWizard } from './SetupWizard';
 import './ai-services.css';
 
 const NAV: { id: AiServicesTab; label: string; icon: typeof Star }[] = [
@@ -21,6 +22,7 @@ export type AiServicesController = {
   persistService: (service: ConnectedService, key: string, remember: boolean) => Promise<void> | void;
   removeService: (id: string) => Promise<void> | void;
   assignFeature: (featureId: string, connId: string, modelId: string) => Promise<void> | void;
+  assignFeatures?: (changes: { featureId: string; connId: string; modelId: string }[]) => Promise<void> | void;
   importConfig: (payload: { services: ConnectedService[]; features?: FeatureAssignment[] }) => Promise<void> | void;
   exportConfig: () => unknown;
   getCredential: (serviceId: string) => string;
@@ -62,9 +64,23 @@ function AiServicesPageInner({
     }
   }
 
+  // After connecting, walk straight into choosing models and assigning them to features (both skippable).
+  const [wizard, setWizard] = useState<{
+    serviceId: string;
+    key: string;
+    remember: boolean;
+    step: 'models' | 'features';
+  } | null>(null);
+  const wizardService = wizard ? services.find(s => s.id === wizard.serviceId) : undefined;
+
   async function onConnected(svc: ConnectedService, key: string, remember: boolean) {
     await controller.persistService(svc, key, remember);
-    setEditingId(svc.id);
+    setWizard({ serviceId: svc.id, key, remember, step: 'models' });
+  }
+
+  async function assignAll(changes: { featureId: string; connId: string; modelId: string }[]) {
+    if (controller.assignFeatures) await controller.assignFeatures(changes);
+    else for (const change of changes) await controller.assignFeature(change.featureId, change.connId, change.modelId);
   }
 
   return (
@@ -105,6 +121,17 @@ function AiServicesPageInner({
             <FeaturesPanel
               features={features}
               services={services}
+              onQuickSetup={() => {
+                const target =
+                  services.find(s => features.some(f => f.connId === s.id)) ?? services.find(s => s.enabled.length);
+                if (target)
+                  setWizard({
+                    serviceId: target.id,
+                    key: controller.getCredential(target.id),
+                    remember: true,
+                    step: 'features',
+                  });
+              }}
               onAssign={(featureId, connId, modelId) => {
                 void Promise.resolve(controller.assignFeature(featureId, connId, modelId)).then(() =>
                   toast('已更新功能模型'),
@@ -121,6 +148,26 @@ function AiServicesPageInner({
           )}
         </div>
       </div>
+      {wizard && wizardService && (
+        <SetupWizard
+          key={wizard.serviceId + wizard.step}
+          service={wizardService}
+          services={services}
+          features={features}
+          initialStep={wizard.step}
+          onSaveModels={async (enabled, catalog) => {
+            await controller.persistService({ ...wizardService, enabled, catalog }, wizard.key, wizard.remember);
+          }}
+          onAssign={assignAll}
+          onClose={summary => {
+            setWizard(null);
+            if (summary) {
+              toast(summary);
+              onTab('features');
+            } else onTab('connected');
+          }}
+        />
+      )}
       {editing && (
         <EditServiceOverlay
           key={editing.id}
