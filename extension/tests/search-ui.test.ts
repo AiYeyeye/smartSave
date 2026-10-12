@@ -7,6 +7,7 @@ import { ThemePicker, ThemeProvider } from '../ui/ThemeProvider';
 import { App } from '../ui/App';
 import { searchTree } from './fixtures/search-tree';
 import type { TreeState } from '../domain/node-reference';
+import { APPEARANCES } from './appearance';
 let snapshot = searchTree();
 const listeners = new Set<(state: TreeState) => void>();
 vi.mock('../panel/tree-client', () => ({
@@ -42,7 +43,6 @@ it('production App input reaches search without model calls or writes', () => {
   chromeStub();
   const fetcher = vi.spyOn(globalThis, 'fetch');
   render(createElement(App, { page: 'panel' }));
-  fireEvent.click(screen.getByRole('button', { name: '搜索' }));
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'cqdx' } });
   expect(
     within(screen.getByRole('region', { name: '搜索结果' })).getByRole('button', { name: /重庆大学/ }),
@@ -58,7 +58,7 @@ it('four themes preserve results, query draft and keyboard/click safe activation
   );
   const result = screen.getByRole('button', { name: /重庆大学/ });
   expect(open).not.toHaveBeenCalled();
-  for (const name of ['轻盈原生', '温润纸感', '清爽文具（默认）', '深色精密']) {
+  for (const name of APPEARANCES) {
     await user.click(screen.getByRole('radio', { name }));
     expect(screen.getByRole('button', { name: /重庆大学/ })).toBe(result);
   }
@@ -167,18 +167,16 @@ it('explicit UI rerank uses shared settings and actual browser authority; accept
   settings.dispose();
   expect(invalidations.size).toBe(0);
 });
-it('actual options App menu and08 write-intent route to retained organizer without model or write effects', () => {
+it('actual options App side nav and write-intent search route to the retained organizer without model or write effects', () => {
   chromeStub();
   const fetcher = vi.spyOn(globalThis, 'fetch');
   location.hash = '#browse';
   render(createElement(App, { page: 'options' }));
-  fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
-  fireEvent.click(screen.getByRole('menuitem', { name: 'AI 整理' }));
+  const nav = screen.getByRole('navigation', { name: '设置导航' });
+  fireEvent.click(within(nav).getByRole('button', { name: 'AI 整理' }));
   expect(screen.getByRole('region', { name: '整理工作台' })).toBeVisible();
-  fireEvent.click(screen.getByRole('button', { name: '返回设置' }));
+  fireEvent.click(within(nav).getByRole('button', { name: '书签目录' }));
   expect(screen.queryByRole('region', { name: '整理工作台' })).toBeNull();
-  fireEvent.click(within(screen.getByRole('region', { name: '工作台' })).getByRole('button', { name: '书签目录' }));
-  fireEvent.click(screen.getByRole('button', { name: '搜索' }));
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: '整理学习资料' } });
   fireEvent.click(screen.getByRole('button', { name: '前往整理工作台' }));
   expect(screen.getByRole('region', { name: '整理工作台' })).toBeVisible();
@@ -192,8 +190,8 @@ it('popup write-intent search hands the organizer over to the options page inste
     runtime: { ...chrome.runtime, getURL: (path: string) => `chrome-extension://i/${path}` },
     tabs: { create },
   });
+  vi.stubGlobal('close', vi.fn());
   render(createElement(App, { page: 'panel' }));
-  fireEvent.click(screen.getByRole('button', { name: '搜索' }));
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: '整理学习资料' } });
   fireEvent.click(screen.getByRole('button', { name: '前往整理工作台' }));
   expect(create).toHaveBeenCalledWith({ url: 'chrome-extension://i/options/index.html#organize' });

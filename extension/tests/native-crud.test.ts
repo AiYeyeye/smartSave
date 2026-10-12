@@ -6,6 +6,7 @@ import { openUrl } from '../domain/open-url';
 import { prepareMutation, prepareMove } from '../panel/TreeDragController';
 import { BookmarkActions } from '../panel/BookmarkActions';
 import type { TreeSnapshot } from '../domain/node-reference';
+import { APPEARANCES } from './appearance';
 export const tree: TreeSnapshot = {
   installationId: 'i',
   epoch: 'e',
@@ -131,7 +132,7 @@ it('creates a new folder plus bookmark through one message and keeps draft acros
   await user.type(screen.getByRole('textbox', { name: '网址' }), 'https://new.test/');
   await user.click(screen.getByRole('checkbox'));
   await user.type(screen.getByRole('textbox', { name: '新目录名称' }), 'New folder');
-  for (const name of ['轻盈原生', '温润纸感', '清爽文具（默认）', '深色精密']) {
+  for (const name of APPEARANCES) {
     await user.click(screen.getByRole('radio', { name }));
     expect(screen.getByRole('textbox', { name: '标题' })).toHaveValue('New');
   }
@@ -383,7 +384,7 @@ it('form draft and drag confirmation are mutually exclusive panel interactions',
   const view = render(createElement(TreeRows, { snapshot: tree }));
   const source = (await screen.findByRole('button', { name: 'Book' })).closest('.bookmark-label')!;
   await user.click(screen.getByRole('button', { name: 'Book 操作' }));
-  await user.click(screen.getByRole('menuitem', { name: '编辑 / 重命名' }));
+  await user.click(screen.getByRole('menuitem', { name: '重命名' }));
   vi.spyOn(
     screen.getByRole('button', { name: 'Other' }).closest('.bookmark-row')!,
     'getBoundingClientRect',
@@ -400,7 +401,7 @@ it('form draft and drag confirmation are mutually exclusive panel interactions',
   fireEvent.drop(screen.getByRole('button', { name: 'Other' }), { dataTransfer: transfer });
   expect(screen.getByRole('button', { name: '确认移动' })).toBeVisible();
   await user.click(screen.getByRole('button', { name: 'Book 操作' }));
-  await user.click(screen.getByRole('menuitem', { name: '编辑 / 重命名' }));
+  await user.click(screen.getByRole('menuitem', { name: '重命名' }));
   expect(screen.queryByRole('textbox', { name: '标题' })).toBeNull();
   expect(sendMessage).not.toHaveBeenCalled();
   view.unmount();

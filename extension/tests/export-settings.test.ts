@@ -8,6 +8,7 @@ import { App } from '../ui/App';
 import { FileOutputStore, type OutputFileHandle } from '../persistence/file-output';
 import { FileOutputSink } from '../background/file-output';
 import { TreeProjection } from '../background/tree-projection';
+import { APPEARANCES } from './appearance';
 
 const clone = globalThis.structuredClone;
 afterEach(() => {
@@ -223,11 +224,9 @@ it('manual three formats are user initiated downloads; App navigation and four t
     },
   );
   const download = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
-  for (const theme of ['轻盈原生', '温润纸感', '清爽文具（默认）', '深色精密']) {
-    fireEvent.click(screen.getByRole('button', { name: '返回设置' }));
-    fireEvent.click(screen.getByRole('button', { name: /外观/ }));
+  for (const theme of APPEARANCES) {
+    fireEvent.click(screen.getByRole('button', { name: '外观' }));
     fireEvent.click(screen.getByRole('radio', { name: theme }));
-    fireEvent.click(screen.getByRole('button', { name: '返回设置' }));
     fireEvent.click(screen.getByRole('button', { name: /导出与备份/ }));
     expect(screen.getByRole('checkbox', { name: '导出 Folder' })).toBeChecked();
     expect(screen.getByRole('checkbox', { name: '我同意专用输出覆盖规则' })).toBeChecked();

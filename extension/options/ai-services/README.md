@@ -53,6 +53,14 @@
 5. 添加服务 → API Key → 连接；编辑 →「获取列表」/「测试连接」/「保存服务」
 6. 侧栏设置摘要内点功能用模行 → 行内展开选模型（不得溢出侧栏）
 
-## OAuth 现状
+## OAuth 现状（2026-10）
 
-订阅区均为 `needs-browser-flow` 或 `unsupported`：需要 `chrome.identity` / `launchWebAuthFlow`，当前只展示说明，请用 API Key。
+| 厂商 | 状态 | 说明 |
+| --- | --- | --- |
+| OpenRouter | **可登录** | 官方 OAuth PKCE：`chrome.identity.launchWebAuthFlow` → `openrouter.ai/auth` → `POST /api/v1/auth/keys` 换取用户自己的 Key（`adapters/openrouter-oauth.ts`）。`identity` 为可选权限，点击时申请。 |
+| Anthropic（Claude Pro/Max） | 官方禁止 | 2026-02 起 Anthropic 明确禁止第三方工具使用订阅登录，引导到 API Key。 |
+| OpenAI / Copilot / Kimi / xAI / Meta | 暂无官方登录 | 没有面向第三方扩展的官方订阅授权；卡片说明原因并跳到对应 API Key 表单，不伪造连接。 |
+
+## 外观
+
+AI 服务页与侧栏摘要不再自带暗色调色板：`.ai-svc` 的变量映射到 `ui/theme.css` 的全局 token，跟随浅色 / 深色 / 主题色。管理页内导航改为顶部分段标签，外层由设置页统一侧导航承载。

@@ -3,8 +3,9 @@ import { expect, it, vi } from 'vitest';
 import { OrganizeWorkbench } from '../panel/OrganizeWorkbench';
 import { OrganizeController } from '../panel/organize-controller';
 import { organizerTree } from './fixtures/organizer-tree';
-import { ThemeProvider, ThemePicker, themes } from '../ui/ThemeProvider';
-it.each(themes.map(t => t.name))('retains unchecked selection across hidden navigation in %s', async theme => {
+import { ThemeProvider, ThemePicker } from '../ui/ThemeProvider';
+import { APPEARANCES } from './appearance';
+it.each(APPEARANCES)('retains unchecked selection across hidden navigation in %s', async theme => {
   const tree = organizerTree();
   let controller: OrganizeController;
   const create = (emit: ConstructorParameters<typeof OrganizeController>[0]) => {

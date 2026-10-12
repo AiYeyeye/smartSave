@@ -1,40 +1,27 @@
-/* AI Services + sidebar summary — redesign dark tokens (SoT: smartsave-ai-services-redesign.html) */
-.shell.options.ai-services-wide {
-  max-width: min(1080px, 100%);
-}
+/* AI services management + popup summary. Colors come from ui/theme.css tokens (light/dark/accent). */
 
 .ai-svc {
-  --page: #121212;
-  --bg: #1a1a1a;
-  --bg-elevated: #1e1e1e;
-  --card: #242424;
-  --card-2: #2a2a2a;
-  --card-hover: #303030;
-  --border: #333333;
-  --border-soft: #3a3a3a;
-  --text: #f3f4f6;
-  --muted: #9ca3af;
-  --faint: #6b7280;
-  --accent: #3b82f6;
-  --accent-hover: #2563eb;
-  --accent-soft: rgba(59, 130, 246, 0.16);
-  --ai-success: #22c55e;
-  --ai-success-soft: rgba(34, 197, 94, 0.16);
-  --ai-warn: #f59e0b;
-  --ai-warn-soft: rgba(245, 158, 11, 0.16);
-  --ai-danger: #ef4444;
-  --ai-danger-soft: rgba(239, 68, 68, 0.14);
+  /* Mapped onto the global design tokens (ui/theme.css) so light/dark/accent apply here too. */
+  --card: var(--surface);
+  --card-2: var(--surface-2);
+  --card-hover: var(--hover-solid);
+  --border-soft: var(--border);
+  --ai-success: var(--success);
+  --ai-success-soft: var(--success-soft);
+  --ai-warn: var(--warn);
+  --ai-warn-soft: var(--warn-soft);
+  --ai-danger: var(--danger);
+  --ai-danger-soft: var(--danger-soft);
   --ai-nav-w: 200px;
-  --radius: 12px;
-  --radius-lg: 16px;
-  --radius-sm: 8px;
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 8px 28px rgba(0, 0, 0, 0.45);
-  --shadow-lg: 0 20px 56px rgba(0, 0, 0, 0.55);
+  --radius: var(--r);
+  --radius-lg: var(--r-lg);
+  --radius-sm: var(--r-sm);
+  --shadow: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
   --ease: 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
-  --focus: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+  --focus: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent);
   color: var(--text);
-  color-scheme: dark;
 }
 
 .ai-svc button,
@@ -157,7 +144,7 @@
 .ai-svc-avatar.plus {
   background: transparent;
   color: var(--muted);
-  box-shadow: inset 0 0 0 1.5px #555;
+  box-shadow: inset 0 0 0 1.5px var(--border-strong);
 }
 .ai-svc-avatar.c-anthropic { background: #d97757; }
 .ai-svc-avatar.c-github { background: #2d333b; }
@@ -201,7 +188,7 @@
 }
 .ai-svc-btn-primary {
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-fg);
 }
 .ai-svc-btn-primary:hover:not(:disabled) {
   background: var(--accent-hover);
@@ -245,7 +232,7 @@
   padding-bottom: 2px;
 }
 .ai-svc-sb-feat-row + .ai-svc-sb-feat-row {
-  border-top: 1px solid rgba(255, 255, 255, 0.04);
+  border-top: 1px solid var(--divider);
   padding-top: 8px;
 }
 .ai-svc-sb-feat-label {
@@ -317,7 +304,7 @@
   flex-direction: column;
   gap: 4px;
   padding: 14px 10px;
-  background: #161616;
+  background: var(--surface-2);
   border-right: 1px solid var(--border);
   overflow-y: auto;
 }
@@ -348,8 +335,8 @@
 }
 .ai-svc-nav-item[aria-current='page'] {
   background: var(--accent-soft);
-  color: #93c5fd;
-  box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.28);
+  color: var(--accent-text);
+  box-shadow: inset 0 0 0 1px var(--accent-ring);
 }
 .ai-svc-nav-item[aria-current='page'] svg {
   color: var(--accent);
@@ -470,7 +457,7 @@
   border: 1px solid var(--border);
 }
 .ai-svc-row-btn.danger {
-  color: #fca5a5;
+  color: var(--danger);
   background: transparent;
   border-color: transparent;
 }
@@ -488,7 +475,7 @@
 }
 .ai-svc-empty button {
   margin-top: 12px;
-  color: #fff;
+  color: var(--accent-fg);
   font-weight: 550;
   min-height: 40px;
   padding: 0 16px;
@@ -580,7 +567,7 @@
   transition: border-color var(--ease), background var(--ease), transform 80ms;
 }
 .ai-svc-vendor-card:hover:not(:disabled) {
-  border-color: #4a4a4a;
+  border-color: var(--border-strong);
   background: var(--card-2);
   transform: translateY(-1px);
 }
@@ -701,7 +688,7 @@
   border: 1px solid var(--border);
   border-radius: 10px;
   overflow: hidden;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  box-shadow: none;
 }
 .ai-svc-picker.is-compact .ai-svc-picker-inline {
   max-height: 200px;
@@ -766,10 +753,10 @@
 .ai-svc-picker-option:hover:not(:disabled),
 .ai-svc-picker-option[aria-selected='true'] {
   background: var(--accent-soft);
-  color: #93c5fd;
+  color: var(--accent-text);
 }
 .ai-svc-picker-option.is-current {
-  box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.35);
+  box-shadow: inset 0 0 0 1px var(--accent-ring);
 }
 .ai-svc-picker-option .name {
   flex: 1;
@@ -827,7 +814,7 @@
   gap: 8px;
   min-height: 120px;
   padding: 28px 16px;
-  border: 1.5px dashed #444;
+  border: 1.5px dashed var(--border-strong);
   border-radius: var(--radius);
   background: var(--bg);
   color: var(--muted);
@@ -839,7 +826,7 @@
 .ai-svc-dropzone:hover,
 .ai-svc-dropzone.dragover {
   border-color: var(--accent);
-  background: rgba(59, 130, 246, 0.06);
+  background: var(--accent-soft);
   color: var(--text);
 }
 .ai-svc-dropzone svg {
@@ -862,7 +849,7 @@
   position: fixed;
   inset: 0;
   z-index: 250;
-  background: rgba(0, 0, 0, 0.62);
+  background: var(--scrim);
 }
 .ai-svc-slide-panel {
   position: fixed;
@@ -1003,7 +990,7 @@
 }
 .ai-svc-act-primary {
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-fg);
 }
 .ai-svc-act-primary:hover:not(:disabled) {
   background: var(--accent-hover);
@@ -1017,8 +1004,8 @@
 .ai-svc-spinner {
   width: 14px;
   height: 14px;
-  border: 2px solid rgba(255, 255, 255, 0.25);
-  border-top-color: #fff;
+  border: 2px solid color-mix(in oklab, currentColor 25%, transparent);
+  border-top-color: currentColor;
   border-radius: 50%;
   animation: ai-svc-spin 0.7s linear infinite;
   display: inline-block;
@@ -1161,7 +1148,7 @@
   padding: 2px 8px;
   border-radius: 999px;
   background: var(--accent-soft);
-  color: #93c5fd;
+  color: var(--accent-text);
 }
 .ai-svc-mini-search {
   position: relative;
@@ -1272,7 +1259,7 @@
 }
 .ai-svc-icon-x:hover:not(:disabled) {
   background: var(--ai-danger-soft);
-  color: #fca5a5;
+  color: var(--danger);
 }
 .ai-svc-custom-add {
   display: flex;
@@ -1315,7 +1302,7 @@
   padding: 10px 16px;
   background: #2a2a2a;
   color: var(--text);
-  border: 1px solid #404040;
+  border: 1px solid var(--border-strong);
   border-radius: 10px;
   box-shadow: var(--shadow-md);
   font-size: 13px;
@@ -1351,4 +1338,95 @@
   .ai-svc-vendor-card:hover:not(:disabled) {
     transform: none;
   }
+}
+
+/* —— 2026-10 unified shell: management page lives inside the options content column; tabs replace the inner side nav —— */
+.ai-svc-page {
+  min-height: 0;
+  margin: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  overflow: visible;
+  box-shadow: none;
+}
+.ai-svc-shell {
+  display: block;
+  overflow: visible;
+  background: transparent;
+}
+.ai-svc-tabs {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  margin: 0 0 20px;
+  background: var(--sunken);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.ai-svc-tabs .ai-svc-nav-item {
+  width: auto;
+  min-height: 32px;
+  padding: 0 14px;
+  border-radius: 7px;
+  font-size: 13px;
+  color: var(--muted);
+  gap: 6px;
+}
+.ai-svc-tabs .ai-svc-nav-item svg {
+  width: 15px;
+  height: 15px;
+}
+.ai-svc-tabs .ai-svc-nav-item:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text);
+}
+.ai-svc-tabs .ai-svc-nav-item[aria-current='page'] {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-sm);
+}
+.ai-svc-tabs .ai-svc-nav-item[aria-current='page'] svg {
+  color: var(--accent);
+}
+.ai-svc-body {
+  overflow: visible;
+  padding: 0;
+  background: transparent;
+  animation: zh-fade-up 220ms var(--ease-out) both;
+}
+.ai-svc-vendor-card {
+  position: relative;
+}
+.ai-svc-vendor-card.is-muted .ai-svc-avatar {
+  filter: grayscale(0.7);
+  opacity: 0.7;
+}
+.ai-svc-card-badge {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.ai-svc-card-badge.is-ok {
+  color: var(--success);
+  background: var(--success-soft);
+}
+.ai-svc-card-badge.is-off {
+  color: var(--faint);
+  background: var(--sunken);
+}
+.ai-svc-modal-note {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 0 0 16px;
+  line-height: 1.65;
+}
+.ai-svc-modal,
+.ai-svc-slide-panel,
+.ai-svc-edit-overlay {
+  animation: zh-pop 200ms var(--ease-out) both;
 }

@@ -14,6 +14,7 @@ describe('MV3 distribution contract', () => {
     await expect(validateBuild('dist')).resolves.toBeUndefined();
     const manifest = JSON.parse(await readFile('dist/manifest.json', 'utf8'));
     expect(manifest.permissions).toEqual(['bookmarks', 'storage', 'activeTab', 'scripting', 'contextMenus', 'favicon']);
+    expect(manifest.optional_permissions).toEqual(['identity']);
     expect(manifest.side_panel).toBeUndefined();
     expect(manifest.web_accessible_resources).toBeUndefined();
     expect(manifest.action.default_popup).toBe('panel/index.html');
@@ -39,24 +40,22 @@ describe('MV3 distribution contract', () => {
   });
 });
 
-it('ships approved Soft UI palette with a single theme table and shared density', async () => {
+it('ships one token table with light, dark and accent variants', async () => {
   const css = await readFile('ui/theme.css', 'utf8');
   for (const token of [
-    '--bg:#F8FAFC',
-    '--bg:#F5F7FB',
-    '--bg:#F8F6F0',
-    '--bg:#242733',
-    '--accent:#6155A6',
-    '--row:44px',
-    '--radius:24px',
-    '--small:16px',
+    '--page: #f4f5f7;',
+    '--page: #0f1013;',
+    '--accent: #5b5bd6;',
+    ".theme-root[data-mode='dark']",
+    ".theme-root[data-accent='blue']",
+    ".theme-root[data-accent='graphite']",
   ])
     expect(css).toContain(token);
-  for (const legacy of ['--bg:#F7F8FA', '--bg:#F6F3EC', '--bg:#F8F9FC', '--bg:#181A1F'])
-    expect(css).not.toContain(legacy);
-  expect(css.match(/--row:/g)).toHaveLength(1);
+  // Light tokens are declared once on .theme-root; dark mode overrides them in a single block.
+  expect(css.match(/^\.theme-root\[data-mode='dark'\] \{/gm)).toHaveLength(1);
   expect(css).toContain(':focus-visible');
   expect(css).toContain('prefers-reduced-motion');
+  // System mode is resolved in ThemeProvider (matchMedia) so the popup and options page agree.
   expect(css).not.toContain('prefers-color-scheme');
 });
 it('ships the real on-demand extractor as a classic IIFE with no default injection or bound shortcut', async () => {

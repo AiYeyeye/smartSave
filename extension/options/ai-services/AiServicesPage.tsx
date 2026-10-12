@@ -70,7 +70,7 @@ function AiServicesPageInner({
   return (
     <div className="ai-svc ai-svc-page">
       <div className="ai-svc-shell">
-        <nav className="ai-svc-sidenav" aria-label="管理分区">
+        <nav className="ai-svc-tabs" aria-label="管理分区">
           {NAV.map(item => {
             const Icon = item.icon;
             const on = tab === item.id;

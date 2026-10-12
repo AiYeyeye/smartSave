@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
-import { ChevronDown, ChevronRight, Folder } from 'lucide-react';
+import { ChevronRight, Folder } from 'lucide-react';
 import { BookmarkFavicon } from '../ui/BookmarkFavicon';
 import type { TreeSnapshot, TreeState } from '../domain/node-reference';
 import { StateMessage } from '../ui/StateMessage';
@@ -157,14 +157,27 @@ export function TreeRows({
     };
   }, [snapshot.installationId, snapshot.nodes]);
   const byId = useMemo(() => new Map(snapshot.nodes.map(node => [node.ref.nativeId, node])), [snapshot.nodes]);
+  // The browser's invisible root ("0") is structural: show its children (书签栏 / 其他书签) as the top level.
+  const topLevel = (() => {
+    if (snapshot.roots.length !== 1) return snapshot.roots;
+    const only = byId.get(snapshot.roots[0]!);
+    return only && only.parentId === undefined && !only.title && only.childrenIds.length
+      ? only.childrenIds
+      : snapshot.roots;
+  })();
+  // Until the user toggles it, the first top-level folder (usually 书签栏) starts open.
+  const isOpen = (id: string) => {
+    const key = expansionKey(snapshot.installationId, id);
+    return key in expanded ? !!expanded[key] : id === topLevel[0];
+  };
   const visible: { id: string; depth: number }[] = [];
-  const stack = snapshot.roots.map(id => ({ id, depth: 0 })).reverse();
+  const stack = topLevel.map(id => ({ id, depth: 0 })).reverse();
   while (stack.length) {
     const row = stack.pop()!;
     const node = byId.get(row.id);
     if (!node) continue;
     visible.push(row);
-    if (expanded[expansionKey(snapshot.installationId, row.id)]) {
+    if (isOpen(row.id)) {
       for (let i = node.childrenIds.length - 1; i >= 0; i--)
         stack.push({ id: node.childrenIds[i]!, depth: row.depth + 1 });
     }
@@ -175,7 +188,7 @@ export function TreeRows({
       return;
     }
     const key = expansionKey(snapshot.installationId, id);
-    const value = !expanded[key];
+    const value = !isOpen(id);
     setExpanded(previous => ({ ...previous, [key]: value }));
     if (typeof chrome === 'undefined' || !chrome.storage) {
       setMemoryError(true);
@@ -341,7 +354,7 @@ export function TreeRows({
       <ul className="bookmark-tree" aria-label="原生书签">
         {visible.map(({ id, depth }) => {
           const node = byId.get(id)!;
-          const open = !!expanded[expansionKey(snapshot.installationId, id)];
+          const open = isOpen(id);
           const title = node.title || (node.ref.kind === 'folder' ? '书签根目录' : '无标题书签');
           return (
             <li
@@ -389,7 +402,7 @@ export function TreeRows({
                 const target = resolveDropTarget(byId, drag.current.id, id, placement.mode);
                 if (target) drop(target.parentId, target.index);
               }}
-              style={{ paddingInlineStart: `${depth * 14}px` }}
+              style={{ paddingInlineStart: `${depth * 16}px` }}
               onContextMenu={event => {
                 if (menuItems(id).length === 0) return;
                 event.preventDefault();
@@ -439,10 +452,10 @@ export function TreeRows({
                     setPlacement(undefined);
                   }}
                 >
-                  {open ? <ChevronDown aria-hidden="true" /> : <ChevronRight aria-hidden="true" />}
+                  <ChevronRight aria-hidden="true" />
                   <Folder aria-hidden="true" />
                   <span>{title}</span>
-                  {node.readOnly && <small>只读</small>}
+                  {node.readOnly && depth > 0 && <small>只读</small>}
                 </button>
               ) : (
                 <div

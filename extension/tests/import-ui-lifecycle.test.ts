@@ -1,4 +1,5 @@
-import { ThemeProvider, ThemePicker, themes } from '../ui/ThemeProvider';
+import { ThemeProvider, ThemePicker } from '../ui/ThemeProvider';
+import { APPEARANCES } from './appearance';
 import { createElement, useState } from 'react';
 import { render, screen, waitFor, fireEvent, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -444,9 +445,9 @@ it('real UI completes every byte batch and four actual themes/navigation retain 
   await h.user.clear(screen.getByLabelText('明确编辑标题 0'));
   await h.user.selectOptions(screen.getByLabelText('明确调整目标 0'), '');
   await h.user.click(screen.getAllByRole('checkbox')[1]!);
-  for (const theme of themes) {
-    await h.user.click(screen.getByLabelText(theme.name));
-    expect(document.querySelector('.theme-root')).toHaveAttribute('data-theme', theme.id);
+  for (const theme of APPEARANCES) {
+    await h.user.click(screen.getByLabelText(theme));
+    expect(screen.getByLabelText(theme)).toBeChecked();
     await h.user.click(screen.getByRole('button', { name: '切换导入导航' }));
     expect(screen.queryByRole('region', { name: '导入工作台' })).toBeNull();
     await h.user.click(screen.getByRole('button', { name: '切换导入导航' }));

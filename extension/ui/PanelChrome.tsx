@@ -1,176 +1,123 @@
 import { useEffect, useRef, useState } from 'react';
-import {
-  ArrowLeft,
-  Download,
-  FolderKanban,
-  Search,
-  Settings,
-  Upload,
-  X,
-} from 'lucide-react';
-import { CommandMenu } from './CommandMenu';
-import type { SettingsPage } from './SettingsNav';
+import { ArrowLeft, Download, FolderKanban, ListChecks, Search, Settings, Upload, X } from 'lucide-react';
 
-export type Workbench = 'browse' | 'organize' | 'import' | 'settings' | 'ai-services';
+/** Popup views. Long-running workbenches live in the options page. */
+export type PopupView = 'browse' | 'settings';
 
-export function PanelChrome({
-  page,
-  workbench,
-  settingsPage,
-  onWorkbench,
-  onSettingsPage,
-  onBatch,
-  onExport,
-  onSettings,
-  onQuery,
+export function SearchBox({
+  value,
+  onChange,
+  autoFocus,
 }: {
-  page: 'panel' | 'options';
-  workbench: Workbench;
-  settingsPage: SettingsPage;
-  onWorkbench: (workbench: Workbench) => void;
-  onSettingsPage: (page: SettingsPage) => void;
-  onBatch: () => void;
-  onExport: () => void;
-  onSettings: () => void;
-  onQuery: (query: string) => void;
+  value: string;
+  onChange: (value: string) => void;
+  autoFocus?: boolean;
 }) {
-  const [query, setQuery] = useState('');
   const input = useRef<HTMLInputElement>(null);
-  const browse = workbench === 'browse';
-  const settingsDetail = workbench === 'settings' && settingsPage !== 'overview';
-  const titles: Record<SettingsPage, string> = {
-    overview: '设置',
-    appearance: '外观',
-    model: 'AI 模型',
-    privacy: '隐私',
-    'export-backup': '导出与备份',
-  };
-  // The popup returns to browsing; the options page returns to its settings hub.
-  const home: Workbench = page === 'panel' ? 'browse' : 'settings';
-  function back() {
-    if (settingsDetail) onSettingsPage('overview');
-    else onWorkbench(home);
-  }
-  const showBack = settingsDetail || workbench !== home;
-  const backLabel = settingsDetail || home === 'settings' ? '返回设置' : '返回书签';
-
-  function setSearch(value: string) {
-    setQuery(value);
-    if (browse) onQuery(value);
-  }
-
   useEffect(() => {
-    if (!browse) onQuery('');
-    else onQuery(query);
-  }, [browse]); // eslint-disable-line react-hooks/exhaustive-deps -- only clear/restore when leaving browse
-
-  const headerTitle =
-    workbench === 'settings'
-      ? titles[settingsPage]
-      : workbench === 'organize'
-        ? 'AI 整理'
-        : workbench === 'import'
-          ? '导入书签'
-          : workbench === 'ai-services'
-            ? 'AI 服务管理'
-            : '智栏';
-
+    if (autoFocus) input.current?.focus();
+  }, [autoFocus]);
   return (
-    <>
-      <header className={`brand${browse && page === 'panel' ? ' brand-zh' : ''}`}>
-        {showBack ? (
-          <button type="button" className="header-back" aria-label={backLabel} onClick={back}>
-            <ArrowLeft aria-hidden="true" />
-          </button>
-        ) : browse && page === 'panel' ? (
-          <span className="zh-logo" aria-hidden="true" />
-        ) : (
-          <span className="zh-logo" aria-hidden="true" />
-        )}
-        <h1>{headerTitle}</h1>
-        {browse && (
-          <>
-            {page === 'options' && (
-              <CommandMenu
-                label="更多操作"
-                items={[
-                  { id: 'organize', label: 'AI 整理', onSelect: () => onWorkbench('organize') },
-                  { id: 'import', label: '导入', onSelect: () => onWorkbench('import') },
-                  { id: 'export', label: '导出', onSelect: onExport },
-                  {
-                    id: 'batch',
-                    label: '批量管理',
-                    onSelect: () => {
-                      onWorkbench('browse');
-                      onBatch();
-                    },
-                  },
-                  { id: 'settings', label: '设置', onSelect: onSettings },
-                ]}
-              >
-                ⋯
-              </CommandMenu>
-            )}
-            {page === 'panel' && (
-              <button type="button" className="chrome-icon zh-gear" aria-label="设置" title="设置" onClick={onSettings}>
-                <Settings aria-hidden="true" />
-              </button>
-            )}
-          </>
-        )}
-      </header>
-      {browse && (
-        <div className={`search zh-search${query ? ' has-query' : ''}`}>
-          <Search aria-hidden="true" />
-          <input
-            ref={input}
-            type="search"
-            aria-label="搜索书签"
-            placeholder="搜索书签或描述你要找的网站"
-            value={query}
-            onChange={event => setSearch(event.target.value)}
-            onKeyDown={event => {
-              if (event.key === 'Escape') {
-                event.preventDefault();
-                if (query) setSearch('');
-              }
-            }}
-          />
-          {query ? (
-            <button type="button" className="search-dismiss" aria-label="清空搜索" onClick={() => setSearch('')}>
-              <X aria-hidden="true" />
-            </button>
-          ) : null}
-        </div>
-      )}
-    </>
+    <div className={`search zh-search${value ? ' has-query' : ''}`}>
+      <Search aria-hidden="true" />
+      <input
+        ref={input}
+        type="search"
+        aria-label="搜索书签"
+        placeholder="搜索书签，或描述你要找的网站"
+        value={value}
+        onChange={event => onChange(event.target.value)}
+        onKeyDown={event => {
+          if (event.key === 'Escape' && value) {
+            event.preventDefault();
+            event.stopPropagation();
+            onChange('');
+          }
+        }}
+      />
+      {value ? (
+        <button type="button" className="search-dismiss" aria-label="清空搜索" onClick={() => onChange('')}>
+          <X aria-hidden="true" />
+        </button>
+      ) : null}
+    </div>
   );
 }
 
+export function PanelChrome({
+  view,
+  query,
+  onQuery,
+  onSettings,
+  onBack,
+}: {
+  view: PopupView;
+  query: string;
+  onQuery: (query: string) => void;
+  onSettings: () => void;
+  onBack: () => void;
+}) {
+  const browse = view === 'browse';
+  return (
+    <>
+      <header className="brand">
+        {browse ? (
+          <span className="zh-logo" aria-hidden="true" />
+        ) : (
+          <button type="button" className="header-back" aria-label="返回书签" onClick={onBack}>
+            <ArrowLeft aria-hidden="true" />
+          </button>
+        )}
+        <h1>{browse ? '智栏' : '快速设置'}</h1>
+        {browse ? (
+          <button type="button" className="chrome-icon zh-gear" aria-label="设置" title="设置" onClick={onSettings}>
+            <Settings aria-hidden="true" />
+          </button>
+        ) : null}
+      </header>
+      {browse && <SearchBox value={query} onChange={onQuery} autoFocus />}
+    </>
+  );
+}
 
 export function PanelFooter({
   onOrganize,
   onImport,
   onExport,
+  onBatch,
 }: {
   onOrganize: () => void;
   onImport: () => void;
   onExport: () => void;
+  onBatch: () => void;
 }) {
   return (
     <footer className="zh-footer" aria-label="书签工具">
-      <button type="button" title="整理" onClick={onOrganize}>
+      <button type="button" title="在设置页中用 AI 整理选定目录" onClick={onOrganize}>
         <FolderKanban aria-hidden="true" />
         整理
       </button>
-      <button type="button" title="导入" onClick={onImport}>
+      <button type="button" title="在设置页中导入书签文件" onClick={onImport}>
         <Upload aria-hidden="true" />
         导入
       </button>
-      <button type="button" title="导出" onClick={onExport}>
+      <button type="button" title="在设置页中导出与备份" onClick={onExport}>
         <Download aria-hidden="true" />
         导出
       </button>
+      <button type="button" title="批量选择书签" onClick={onBatch}>
+        <ListChecks aria-hidden="true" />
+        批量
+      </button>
     </footer>
   );
+}
+
+/** Keeps a query local to the popup and clears it when leaving the browse view. */
+export function usePopupQuery(view: PopupView) {
+  const [query, setQuery] = useState('');
+  useEffect(() => {
+    if (view !== 'browse') setQuery('');
+  }, [view]);
+  return [query, setQuery] as const;
 }

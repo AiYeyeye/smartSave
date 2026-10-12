@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { BookmarkPlus } from 'lucide-react';
 import { z } from 'zod';
 import { SAVE_PORT } from '../background/save-entrypoints';
 import { SaveCard } from './SaveCard';
@@ -97,9 +98,14 @@ export function CurrentPageSave({ settings }: { settings?: SettingsStore }) {
     return (
       <div className="current-page">
         <button type="button" className="current-page-capture" disabled={!connected} onClick={requestCapture}>
+          <BookmarkPlus aria-hidden="true" />
           收藏当前页面
         </button>
-        {message && <p role="status">{message}</p>}
+        {message ? (
+          <p role="status">{message}</p>
+        ) : (
+          <span className="current-page-hint">手动挑目录；直接按 Ctrl+D 则由 AI 自动归类</span>
+        )}
       </div>
     );
   }

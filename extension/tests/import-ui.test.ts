@@ -7,20 +7,20 @@ import { App } from '../ui/App';
 import { ImportCheckpointStore } from '../persistence/import-checkpoints';
 import { openOperationsDatabase } from '../persistence/operations-database';
 import { parseImport } from '../import/parsers';
+import { APPEARANCES } from './appearance';
 
 afterEach(() => {
   vi.unstubAllGlobals();
   location.hash = '';
 });
-/** The import workbench lives in the options page; its settings hub is one '返回设置' away. */
+/** The import workbench lives in the options page; other settings pages are one side-nav click away. */
 function openImportPage() {
   location.hash = '#import';
   render(createElement(App, { page: 'options' }));
   expect(screen.getByRole('region', { name: '导入工作台' })).toBeVisible();
 }
 async function toAppearance(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByRole('button', { name: '返回设置' }));
-  await user.click(screen.getByRole('button', { name: /外观/ }));
+  await user.click(screen.getByRole('button', { name: '外观' }));
 }
 it('production App keeps five-format Worker parsing and source diagnostics across themes and navigation without model calls', async () => {
   const fetch = vi.fn();
@@ -61,7 +61,7 @@ it('production App keeps five-format Worker parsing and source diagnostics acros
   expect(posted).toHaveBeenCalledOnce();
   expect(terminate).toHaveBeenCalledOnce();
   await toAppearance(user);
-  for (const name of ['轻盈原生', '温润纸感', '清爽文具（默认）', '深色精密']) {
+  for (const name of APPEARANCES) {
     await user.click(screen.getByRole('radio', { name }));
     expect(format).toHaveValue('txt');
     expect(screen.getByText(/unsupported-protocol/)).toBeInTheDocument();
@@ -131,7 +131,7 @@ it('production same-task load retains deselect-all and explicit title edits acro
   await user.click(screen.getByRole('button', { name: '加载任务' }));
   await waitFor(() => expect(row).not.toBeChecked());
   await toAppearance(user);
-  for (const name of ['轻盈原生', '温润纸感', '清爽文具（默认）', '深色精密']) {
+  for (const name of APPEARANCES) {
     await user.click(screen.getByRole('radio', { name }));
     expect(row).not.toBeChecked();
     expect(screen.getByLabelText('明确编辑标题 0')).toHaveValue('Edited');

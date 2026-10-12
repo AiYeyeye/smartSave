@@ -92,107 +92,90 @@ function chromeStub(readyTree = false) {
   });
 }
 
-async function overflow(user: ReturnType<typeof userEvent.setup>, name: string) {
-  await user.click(screen.getByRole('button', { name: '更多操作' }));
-  await user.click(screen.getByRole('menuitem', { name }));
-}
 afterEach(() => {
   location.hash = '';
 });
 
-it('popup chrome is brand, on-demand search and labeled overflow; long workbenches open in the options page', async () => {
+it('popup: brand, always-on search, pinned tool dock; long workbenches open in the options page', async () => {
   chromeStub();
   const create = vi.fn(async () => ({ id: 1 }));
   vi.stubGlobal('chrome', { ...chrome, tabs: { create } });
+  vi.stubGlobal('close', vi.fn());
   const user = userEvent.setup();
   render(createElement(App, { page: 'panel' }));
-  expect(screen.queryByRole('searchbox')).toBeNull();
+  expect(screen.getByRole('heading', { name: '智栏', level: 1 })).toBeVisible();
+  expect(screen.getByRole('searchbox')).toBeVisible();
   // The header carries no persistent CTA; the explicit capture entry lives in the main area.
   expect(within(screen.getByRole('banner')).queryByRole('button', { name: '收藏当前页面' })).toBeNull();
   expect(screen.getByRole('button', { name: '收藏当前页面' })).toBeEnabled();
-  expect(screen.queryByRole('heading', { name: '书签目录' })).toBeNull();
-  expect(screen.queryByRole('button', { name: '整理' })).toBeNull();
-  await user.click(screen.getByRole('button', { name: '搜索' }));
-  expect(screen.getByRole('searchbox')).toBeVisible();
-  await overflow(user, '设置');
-  expect(screen.getByRole('region', { name: '设置' })).toBeVisible();
-  expect(screen.queryByRole('region', { name: '工作台' })).toBeNull();
-  await user.click(screen.getByRole('button', { name: '返回书签' }));
+  const dock = screen.getByRole('contentinfo', { name: '书签工具' });
   for (const [item, route] of [
-    ['AI 整理', 'organize'],
+    ['整理', 'organize'],
     ['导入', 'import'],
     ['导出', 'export'],
   ] as const) {
-    await overflow(user, item);
+    await user.click(within(dock).getByRole('button', { name: item }));
     expect(create).toHaveBeenLastCalledWith({ url: `chrome-extension://i/options/index.html#${route}` });
-    expect(screen.getByRole('button', { name: '更多操作' })).toBeVisible();
-    expect(screen.getByRole('heading', { name: '智栏', level: 1 })).toBeVisible();
   }
   expect(create).toHaveBeenCalledTimes(3);
   expect(screen.queryByRole('region', { name: '整理工作台' })).toBeNull();
   expect(screen.queryByRole('region', { name: '导入工作台' })).toBeNull();
   expect(screen.queryByRole('region', { name: '导出设置' })).toBeNull();
+  await user.click(screen.getByRole('button', { name: '设置' }));
+  expect(screen.getByRole('heading', { name: '快速设置', level: 1 })).toBeVisible();
+  expect(screen.getByRole('region', { name: '外观' })).toBeVisible();
+  await user.click(
+    within(screen.getByRole('region', { name: '完整设置' })).getByRole('button', { name: /隐私与规则/ }),
+  );
+  expect(create).toHaveBeenLastCalledWith({ url: 'chrome-extension://i/options/index.html#privacy' });
+  await user.click(screen.getByRole('button', { name: '返回书签' }));
+  expect(screen.getByRole('searchbox')).toBeVisible();
 });
 
-it('options page hosts the browse, organize and import workbenches through its hub and routing hash', async () => {
+it('options page: one side navigation hosts every workbench and settings page, routed by hash', async () => {
   chromeStub();
   const user = userEvent.setup();
   location.hash = '#organize';
   const view = render(createElement(App, { page: 'options' }));
+  const nav = screen.getByRole('navigation', { name: '设置导航' });
   expect(screen.getByRole('region', { name: '整理工作台' })).toBeVisible();
   expect(screen.getByRole('heading', { name: 'AI 整理', level: 1 })).toBeVisible();
+  expect(within(nav).getByRole('button', { name: 'AI 整理' })).toHaveAttribute('aria-current', 'page');
   expect(screen.queryByRole('button', { name: '收藏当前页面' })).toBeNull();
-  await user.click(screen.getByRole('button', { name: '返回设置' }));
-  expect(screen.getByRole('region', { name: '设置' })).toBeVisible();
-  expect(screen.queryByRole('region', { name: '整理工作台' })).toBeNull();
-  await user.click(within(screen.getByRole('region', { name: '工作台' })).getByRole('button', { name: '导入书签' }));
+  await user.click(within(nav).getByRole('button', { name: '导入书签' }));
   expect(screen.getByRole('region', { name: '导入工作台' })).toBeVisible();
-  await user.click(screen.getByRole('button', { name: '返回设置' }));
-  await user.click(within(screen.getByRole('region', { name: '工作台' })).getByRole('button', { name: '书签目录' }));
+  expect(screen.queryByRole('region', { name: '整理工作台' })).toBeNull();
+  expect(location.hash).toBe('#import');
+  await user.click(within(nav).getByRole('button', { name: '书签目录' }));
   expect(screen.getByRole('region', { name: '书签目录' })).toBeVisible();
-  await user.click(screen.getByRole('button', { name: '搜索' }));
   expect(screen.getByRole('searchbox')).toBeVisible();
-  await overflow(user, 'AI 整理');
-  expect(screen.getByRole('region', { name: '整理工作台' })).toBeVisible();
-  await user.click(screen.getByRole('button', { name: '返回设置' }));
-  await user.click(screen.getByRole('button', { name: /外观/ }));
-  expect(screen.getByRole('radio', { name: '清爽文具（默认）' })).toBeChecked();
-  await user.click(screen.getByRole('button', { name: '返回设置' }));
-  expect(screen.getByRole('region', { name: '工作台' })).toBeVisible();
+  await user.click(within(nav).getByRole('button', { name: '外观' }));
+  expect(screen.getByRole('radio', { name: '跟随系统' })).toBeChecked();
   view.unmount();
   location.hash = '#export';
   render(createElement(App, { page: 'options' }));
   expect(await screen.findByRole('region', { name: '导出设置' })).toBeVisible();
   expect(screen.getByRole('region', { name: '备份与恢复' })).toBeVisible();
   expect(screen.getByRole('heading', { name: '导出与备份', level: 1 })).toBeVisible();
-  await user.click(screen.getByRole('button', { name: '返回设置' }));
-  expect(screen.getByRole('heading', { name: '设置', level: 1 })).toBeVisible();
 });
 
-it('settings overview drills into one category and keeps previous controls reachable', async () => {
+it('settings pages: privacy, records & debug (off by default) and the legacy model form stay reachable', async () => {
   const user = userEvent.setup();
   render(createElement(App, { page: 'options' }));
-  expect(screen.queryByRole('radio', { name: '清爽文具（默认）' })).toBeNull();
-  expect(screen.getByRole('heading', { name: '设置', level: 1 })).toBeVisible();
-  expect(document.querySelector('.brand-kicker')).toBeNull();
-  expect(screen.queryByText('个性化与智能')).toBeNull();
-  expect(screen.queryByText('数据与安全')).toBeNull();
-  await user.click(screen.getByRole('button', { name: /外观/ }));
-  expect(screen.getByRole('radio', { name: '清爽文具（默认）' })).toBeChecked();
-  await user.click(screen.getByRole('radio', { name: '轻盈原生' }));
-  await user.click(screen.getByRole('button', { name: '返回设置' }));
-  expect(screen.getByRole('button', { name: '外观' })).toHaveAttribute('title', '四种风格 · 当前为轻盈原生');
-  await user.click(screen.getByRole('button', { name: /AI 模型/ }));
-  expect(screen.getByLabelText('接口协议')).toBeVisible();
-  await user.click(screen.getByRole('button', { name: '返回设置' }));
-  await user.click(screen.getByRole('button', { name: /隐私/ }));
+  const nav = screen.getByRole('navigation', { name: '设置导航' });
+  expect(screen.getByRole('heading', { name: '书签目录', level: 1 })).toBeVisible();
+  await user.click(within(nav).getByRole('button', { name: '隐私与规则' }));
   expect(screen.getByRole('checkbox', { name: /发送完整网址/ })).toBeVisible();
   expect(screen.getByRole('region', { name: '网站目录规则' })).toBeVisible();
-  await user.click(screen.getByRole('button', { name: '返回设置' }));
-  await user.click(screen.getByRole('button', { name: /导出与备份/ }));
+  await user.click(within(nav).getByRole('button', { name: '收藏记录与调试' }));
+  expect(screen.getByRole('switch', { name: '开启 Debug 日志' })).not.toBeChecked();
+  expect(screen.getByRole('region', { name: '收藏记录' })).toBeVisible();
+  await user.click(screen.getByText('旧版单连接模型配置（兼容）'));
+  await user.click(screen.getByText('高级：协议、地址与超时'));
+  expect(screen.getByLabelText('接口协议')).toBeVisible();
+  await user.click(within(nav).getByRole('button', { name: '导出与备份' }));
   expect(screen.getByRole('region', { name: '导出设置' })).toBeVisible();
   expect(screen.getByRole('region', { name: '备份与恢复' })).toBeVisible();
-  expect(screen.getAllByRole('button', { name: '返回设置' })).toHaveLength(1);
 });
 
 it('row overflow and directory context menu start CRUD without select/open/move-before chrome', async () => {
@@ -210,7 +193,7 @@ it('row overflow and directory context menu start CRUD without select/open/move-
   await user.keyboard('{Escape}');
   expect(screen.queryByRole('menu')).toBeNull();
   await user.click(screen.getByRole('button', { name: 'Book 操作' }));
-  await user.click(screen.getByRole('menuitem', { name: '编辑 / 重命名' }));
+  await user.click(screen.getByRole('menuitem', { name: '重命名' }));
   expect(screen.getByRole('textbox', { name: '标题' })).toHaveValue('Book');
   expect(send).not.toHaveBeenCalled();
 });
@@ -259,39 +242,40 @@ it('batch mutate actions stay disabled for read-only or multi-select', async () 
   expect(within(bar).getByRole('button', { name: '删除' })).toBeDisabled();
 });
 
-it('overflow batch management shows the batch bar on a ready tree', async () => {
+it('dock batch button shows the batch bar on a ready tree', async () => {
   chromeStub(true);
   const user = userEvent.setup();
   render(createElement(App, { page: 'panel' }));
-  await overflow(user, '批量管理');
+  await user.click(within(screen.getByRole('contentinfo', { name: '书签工具' })).getByRole('button', { name: '批量' }));
   expect(await screen.findByRole('region', { name: '批量管理' })).toBeVisible();
   expect(await screen.findByRole('checkbox', { name: '选择 Book' })).toBeVisible();
 });
 
-it('search Escape clears then collapses', async () => {
-  chromeStub();
+it('search Escape clears the query and the tree comes back', async () => {
+  chromeStub(true);
   const user = userEvent.setup();
   render(createElement(App, { page: 'panel' }));
-  await user.click(screen.getByRole('button', { name: '搜索' }));
   await user.type(screen.getByRole('searchbox'), 'abc');
+  expect(screen.queryByRole('region', { name: '书签目录' })).toBeNull();
   await user.keyboard('{Escape}');
   expect(screen.getByRole('searchbox')).toHaveValue('');
-  await user.keyboard('{Escape}');
-  expect(screen.queryByRole('searchbox')).toBeNull();
+  expect(screen.getByRole('region', { name: '书签目录' })).toBeVisible();
 });
 
-it('stylesheet applies approved Soft UI shared density and no horizontal overflow', () => {
+it('stylesheet: shared tokens for light/dark/accent, pinned popup dock, styled scrollbars, reduced motion', () => {
   const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../ui/theme.css'), 'utf8');
-  expect(css).toContain('--row:44px');
-  expect(css).toContain('overflow-x:hidden');
-  expect(css).toContain('.bookmark-tree{list-style:none;padding:0;margin:0}');
-  expect(css).toContain('.bookmark-row{min-height:var(--row);');
-  expect(css).toContain('.bookmark-row:hover .command-menu,.bookmark-row:focus-within .command-menu{opacity:1}');
-  expect(css).toContain('.brand-kicker');
+  expect(css).toContain(".theme-root[data-mode='dark']");
+  expect(css).toContain(".theme-root[data-accent='teal']");
+  // The popup root fills the fixed 580px viewport so the dock stays at the bottom.
+  expect(css).toMatch(/body\.popup #root,\s*body\.popup \.theme-root \{\s*height: 100%;/);
+  expect(css).toContain('scrollbar-width: thin');
+  expect(css).toContain('::-webkit-scrollbar-thumb');
+  // Chrome injects body { font-size: 75% } into extension pages.
+  expect(css).toMatch(/body \{\s*font-size: 14px;/);
+  expect(css).toContain('.bookmark-row:hover .command-menu,');
   expect(css).toContain('prefers-reduced-motion');
   expect(css).toContain('.in-panel-select-list');
   expect(css).toContain('.bookmark-favicon');
-  expect(css).not.toContain('prefers-color-scheme');
 });
 
 it('bookmark rows use the browser favicon URL and fall back locally on error', async () => {

@@ -243,10 +243,10 @@ export function ExportSettings({ visible }: { visible: boolean }) {
       <p>
         JSON、HTML、Markdown 使用同一只读快照；保留原始 URL 和空目录，不包含模型、密钥、规则或日志。不是完整恢复备份。
       </p>
-      <fieldset disabled={busy}>
+      <fieldset disabled={busy} className="scope-list">
         <legend>导出范围（独立于 AI）</legend>
         {folders.map(node => (
-          <div key={node.ref.nativeId}>
+          <div key={node.ref.nativeId} className="scope-row">
             <span>
               {node.title || '未命名目录'}（{node.ref.nativeId}）
             </span>
@@ -288,7 +288,7 @@ export function ExportSettings({ visible }: { visible: boolean }) {
       <p>
         首次授权后会覆盖此专用输出文件及外部修改，不反向同步，不逐次确认，不自动换路径。后台是唯一自动写入者；浏览器关闭时不运行。文件关闭成功且持久回执匹配后才记录成功；中断可能已更新文件但没有成功回执。
       </p>
-      <label>
+      <label className="check">
         <input type="checkbox" checked={consent} disabled={busy} onChange={e => setConsent(e.target.checked)} />
         我同意专用输出覆盖规则
       </label>

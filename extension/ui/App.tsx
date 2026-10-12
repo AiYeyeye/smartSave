@@ -2,13 +2,21 @@ import { ImportWorkbench } from '../panel/ImportWorkbench';
 import { OrganizeWorkbench } from '../panel/OrganizeWorkbench';
 import { SearchResults } from '../panel/SearchResults';
 import { CurrentPageSave } from '../panel/CurrentPageSave';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { SaveReceiptCard } from '../panel/SaveReceiptCard';
+import { useEffect, useMemo, useState } from 'react';
+import { ListChecks } from 'lucide-react';
 import { SettingsStore } from '../persistence/settings';
-import { ThemeProvider } from './ThemeProvider';
+import { ThemeProvider, ThemePicker } from './ThemeProvider';
 import './theme.css';
 import { BookmarkTree } from '../panel/BookmarkTree';
-import { PanelChrome, PanelFooter, type Workbench } from './PanelChrome';
-import { SettingsNav, type SettingsJump, type SettingsPage, type WorkbenchLink } from './SettingsNav';
+import { PanelChrome, PanelFooter, SearchBox, type PopupView } from './PanelChrome';
+import { OptionsNav, parseOptionsHash, ROUTE_META, type OptionsRoute } from './OptionsNav';
+import { PopupSettings } from './PopupSettings';
+import { ModelSettings } from '../options/ModelSettings';
+import { SiteRulesSettings } from '../options/SiteRulesSettings';
+import { RecoveryWorkbench } from '../options/RecoveryWorkbench';
+import { ExportSettings } from '../options/ExportSettings';
+import { DebugLogPanel, SaveHistory } from '../options/DebugLogPanel';
 import {
   AiServicesPage,
   parseAiServicesHash,
@@ -18,56 +26,28 @@ import {
 } from '../options/ai-services';
 
 export type Page = 'panel' | 'options';
-/** Long-running workbenches live in the options page; the popup opens them there through a routing hash. */
-export type OptionsRoute = 'browse' | 'organize' | 'import' | 'export' | 'settings' | 'ai-services';
+export type { OptionsRoute } from './OptionsNav';
 const OPTIONS_PAGE = 'options/index.html';
 
-/** The options page starts from its `#hash`; no hash is the settings hub. The popup always starts browsing. */
-export function initialRoute(
-  page: Page,
-  hash: string,
-): { workbench: Workbench; settingsPage: SettingsPage; aiTab: AiServicesTab } {
-  if (page === 'panel') return { workbench: 'browse', settingsPage: 'overview', aiTab: 'connected' };
-  const aiTab = parseAiServicesHash(hash);
-  if (aiTab) return { workbench: 'ai-services', settingsPage: 'overview', aiTab };
-  switch (hash.replace(/^#/, '')) {
-    case 'browse':
-    case 'organize':
-    case 'import':
-      return { workbench: hash.replace(/^#/, '') as Workbench, settingsPage: 'overview', aiTab: 'connected' };
-    case 'export':
-      return { workbench: 'settings', settingsPage: 'export-backup', aiTab: 'connected' };
-    default:
-      return { workbench: 'settings', settingsPage: 'overview', aiTab: 'connected' };
-  }
+/** The options page starts from its `#hash`; the popup always starts browsing. */
+export function initialRoute(page: Page, hash: string): { route: OptionsRoute; aiTab: AiServicesTab } {
+  if (page === 'panel') return { route: 'browse', aiTab: 'connected' };
+  return { route: parseOptionsHash(hash), aiTab: parseAiServicesHash(hash) ?? 'connected' };
 }
 
 /** Opens the options page at a route in a new tab; false means the browser boundary is unavailable (jsdom). */
-function openOptionsRoute(route: string): boolean {
+export function openOptionsRoute(route: string): boolean {
   if (typeof chrome === 'undefined' || typeof chrome.tabs?.create !== 'function' || !chrome.runtime?.getURL)
     return false;
   void Promise.resolve(chrome.tabs.create({ url: chrome.runtime.getURL(`${OPTIONS_PAGE}#${route}`) })).catch(() => {});
   return true;
 }
 
-const WORKBENCH_LINKS: WorkbenchLink[] = [
-  { id: 'browse', title: '书签目录', hint: '浏览、搜索与批量管理书签' },
-  { id: 'organize', title: 'AI 整理', hint: '范围内整理与精确去重' },
-  { id: 'import', title: '导入书签', hint: '五种格式导入与分类' },
-];
-
-export function App({ page }: { page: Page }) {
+function useShared() {
   const [settingsStore] = useState(() =>
     typeof chrome !== 'undefined' && chrome.storage?.local ? new SettingsStore(chrome.storage.local) : undefined,
   );
   useEffect(() => () => settingsStore?.dispose(), [settingsStore]);
-  const [route] = useState(() => initialRoute(page, typeof location === 'undefined' ? '' : location.hash));
-  const [workbench, setWorkbench] = useState<Workbench>(route.workbench);
-  const [settingsPage, setSettingsPage] = useState<SettingsPage>(route.settingsPage);
-  const [aiTab, setAiTab] = useState<AiServicesTab>(route.aiTab);
-  const [batchNonce, setBatchNonce] = useState(0);
-  const [settingsJump, setSettingsJump] = useState<SettingsJump>();
-  const [query, setQuery] = useState('');
   const ai = useAiServices(settingsStore);
   const aiController = useMemo(
     () => ({
@@ -82,107 +62,191 @@ export function App({ page }: { page: Page }) {
     }),
     [ai],
   );
-  const onSettingsPage = useCallback((next: SettingsPage) => setSettingsPage(next), []);
+  return { settingsStore, ai, aiController };
+}
 
-  useEffect(() => {
-    function onHash() {
-      if (page !== 'options') return;
-      const tab = parseAiServicesHash(location.hash);
-      if (tab) {
-        setAiTab(tab);
-        setWorkbench('ai-services');
+export function App({ page }: { page: Page }) {
+  return <ThemeProvider>{page === 'panel' ? <PopupApp /> : <OptionsApp />}</ThemeProvider>;
+}
+
+function PopupApp() {
+  const { settingsStore, ai } = useShared();
+  const [view, setView] = useState<PopupView>('browse');
+  const [query, setQuery] = useState('');
+  const [batchNonce, setBatchNonce] = useState(0);
+
+  function open(route: string) {
+    if (openOptionsRoute(route)) {
+      try {
+        window.close();
+      } catch {
+        /* jsdom */
       }
     }
-    window.addEventListener('hashchange', onHash);
-    return () => window.removeEventListener('hashchange', onHash);
-  }, [page]);
-
-  function openSettings(pageName: SettingsPage = 'overview', extra?: Pick<SettingsJump, 'recovery'>) {
-    setSettingsPage(pageName);
-    setSettingsJump({ page: pageName, nonce: Date.now(), ...extra });
-    setWorkbench('settings');
-  }
-
-  /** Open AI services management: panel → new options tab; options → in-place workbench. */
-  function openAiServices(tab: AiServicesTab = 'connected') {
-    const hash = TAB_HASH[tab];
-    if (page === 'panel' && openOptionsRoute(hash)) return;
-    setAiTab(tab);
-    setWorkbench('ai-services');
-    if (typeof location !== 'undefined' && location.hash.replace(/^#/, '') !== hash) location.hash = hash;
-  }
-
-  /** The popup hands organize/import to the options page; the options page (or a jsdom popup) switches in place. */
-  function selectWorkbench(next: Workbench) {
-    if (page === 'panel' && (next === 'organize' || next === 'import') && openOptionsRoute(next)) return;
-    if (page === 'panel' && next === 'ai-services' && openOptionsRoute(TAB_HASH.connected)) return;
-    setWorkbench(next);
-  }
-
-  function exportBackup() {
-    if (page === 'panel' && openOptionsRoute('export')) return;
-    openSettings('export-backup', { recovery: page === 'options' });
   }
 
   return (
-    <ThemeProvider>
-      <div className={`shell ${page}${workbench === 'ai-services' ? ' ai-services-wide' : ''}`}>
-        <a className="skip-link" href="#main">
-          跳到主要内容
-        </a>
-        <PanelChrome
-          page={page}
-          workbench={workbench}
-          settingsPage={settingsPage}
-          onWorkbench={selectWorkbench}
-          onSettingsPage={onSettingsPage}
-          onBatch={() => setBatchNonce(value => value + 1)}
-          onExport={exportBackup}
-          onSettings={() => openSettings('overview')}
-          onQuery={setQuery}
-        />
-        <main id="main" tabIndex={-1}>
-          {page === 'panel' && (
-            <div hidden={workbench !== 'browse'}>
-              <CurrentPageSave settings={settingsStore} />
-            </div>
-          )}
-          <div hidden={workbench !== 'browse'}>
-            <SearchResults query={query} settings={settingsStore} onOrganize={() => selectWorkbench('organize')} />
-          </div>
-          <section className="directory" hidden={workbench !== 'browse'} aria-label="书签目录">
+    <div className="shell panel">
+      <a className="skip-link" href="#main">
+        跳到主要内容
+      </a>
+      <PanelChrome
+        view={view}
+        query={query}
+        onQuery={setQuery}
+        onSettings={() => {
+          setQuery('');
+          setView('settings');
+        }}
+        onBack={() => setView('browse')}
+      />
+      <main id="main" tabIndex={-1}>
+        <div hidden={view !== 'browse'}>
+          <SaveReceiptCard onOpen={open} />
+          <CurrentPageSave settings={settingsStore} />
+          <SearchResults query={query} settings={settingsStore} onOrganize={() => open('organize')} />
+          <section className="directory" aria-label="书签目录" hidden={query.trim().length > 0}>
             <BookmarkTree batchNonce={batchNonce} />
           </section>
-          <OrganizeWorkbench visible={workbench === 'organize'} settings={settingsStore} />
-          <ImportWorkbench visible={workbench === 'import'} settings={settingsStore} />
-          <div hidden={workbench !== 'ai-services'}>
-            {workbench === 'ai-services' && (
-              <AiServicesPage tab={aiTab} onTab={setAiTab} controller={aiController} settings={settingsStore} />
-            )}
-          </div>
-          <SettingsNav
-            visible={workbench === 'settings'}
-            store={settingsStore}
-            jump={settingsJump}
-            page={settingsPage}
-            onPage={onSettingsPage}
-            workbenches={page === 'options' ? WORKBENCH_LINKS : undefined}
-            onWorkbench={setWorkbench}
-            aiServices={{ services: ai.services, features: ai.features }}
-            onOpenAiServices={openAiServices}
+        </div>
+        {view === 'settings' && (
+          <PopupSettings
+            services={ai.services}
+            features={ai.features}
+            onOpenRoute={open}
+            onOpenAiServices={tab => open(TAB_HASH[tab])}
             onAssignFeature={(featureId, connId, modelId) => {
               void Promise.resolve(ai.assignFeature(featureId, connId, modelId));
             }}
           />
-        </main>
-        {page === 'panel' && workbench === 'browse' && (
-          <PanelFooter
-            onOrganize={() => selectWorkbench('organize')}
-            onImport={() => selectWorkbench('import')}
-            onExport={exportBackup}
-          />
         )}
+      </main>
+      {view === 'browse' && (
+        <PanelFooter
+          onOrganize={() => open('organize')}
+          onImport={() => open('import')}
+          onExport={() => open('export')}
+          onBatch={() => setBatchNonce(value => value + 1)}
+        />
+      )}
+    </div>
+  );
+}
+
+function OptionsApp() {
+  const { settingsStore, ai, aiController } = useShared();
+  const [initial] = useState(() => initialRoute('options', typeof location === 'undefined' ? '' : location.hash));
+  const [route, setRouteState] = useState<OptionsRoute>(initial.route);
+  const [aiTab, setAiTab] = useState<AiServicesTab>(initial.aiTab);
+  const [query, setQuery] = useState('');
+  const [batchNonce, setBatchNonce] = useState(0);
+  const [visited, setVisited] = useState<Set<OptionsRoute>>(() => new Set([initial.route]));
+
+  useEffect(() => {
+    function onHash() {
+      const next = parseOptionsHash(location.hash);
+      setRouteState(next);
+      setVisited(previous => (previous.has(next) ? previous : new Set(previous).add(next)));
+      const tab = parseAiServicesHash(location.hash);
+      if (tab) setAiTab(tab);
+    }
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
+
+  function go(next: OptionsRoute, tab?: AiServicesTab) {
+    setRouteState(next);
+    setVisited(previous => (previous.has(next) ? previous : new Set(previous).add(next)));
+    if (tab) setAiTab(tab);
+    const hash = next === 'ai-services' ? TAB_HASH[tab ?? aiTab] : next;
+    if (typeof location !== 'undefined' && location.hash.replace(/^#/, '') !== hash) {
+      history.replaceState(null, '', `#${hash}`);
+    }
+    window.scrollTo?.({ top: 0 });
+  }
+
+  const saveFeature = ai.features.find(feature => feature.id === 'save');
+  const attention = saveFeature?.connId && saveFeature.modelId ? undefined : { 'ai-services': '未配置' };
+  const meta = ROUTE_META[route];
+  // Heavy pages mount on first visit and then stay mounted so drafts and in-flight work survive navigation.
+  const mounted = (id: OptionsRoute) => visited.has(id);
+
+  return (
+    <div className="shell options">
+      <a className="skip-link" href="#main">
+        跳到主要内容
+      </a>
+      <OptionsNav route={route} onRoute={next => go(next)} attention={attention} />
+      <div className="content">
+        <header className={`page-head${meta.wide ? ' is-wide' : ''}`}>
+          <div>
+            <h1>{meta.title}</h1>
+            <p>{meta.desc}</p>
+          </div>
+          {route === 'browse' ? (
+            <button type="button" onClick={() => setBatchNonce(value => value + 1)}>
+              <ListChecks aria-hidden="true" />
+              批量管理
+            </button>
+          ) : null}
+        </header>
+        <main id="main" tabIndex={-1} className={meta.wide ? 'is-wide' : undefined}>
+          <div className="view" hidden={route !== 'browse'}>
+            <SearchBox value={query} onChange={setQuery} />
+            <SearchResults query={query} settings={settingsStore} onOrganize={() => go('organize')} />
+            <section className="directory" aria-label="书签目录" hidden={query.trim().length > 0}>
+              <BookmarkTree batchNonce={batchNonce} />
+            </section>
+          </div>
+          <div className="view" hidden={route !== 'organize'}>
+            <OrganizeWorkbench visible={route === 'organize'} settings={settingsStore} />
+          </div>
+          <div className="view" hidden={route !== 'import'}>
+            <ImportWorkbench visible={route === 'import'} settings={settingsStore} />
+          </div>
+          {mounted('export') && (
+            <div className="view" hidden={route !== 'export'}>
+              <ExportSettings visible={route === 'export'} />
+              <RecoveryWorkbench />
+            </div>
+          )}
+          <div className="view" hidden={route !== 'ai-services'}>
+            {route === 'ai-services' && (
+              <AiServicesPage
+                tab={aiTab}
+                onTab={tab => go('ai-services', tab)}
+                controller={aiController}
+                settings={settingsStore}
+              />
+            )}
+          </div>
+          <div className="view" hidden={route !== 'appearance'}>
+            <section className="surface" aria-label="外观设置">
+              <ThemePicker />
+            </section>
+          </div>
+          {mounted('privacy') && (
+            <div className="view" hidden={route !== 'privacy'}>
+              <ModelSettings showHeading={false} store={settingsStore} fields="privacy" />
+              <SiteRulesSettings />
+            </div>
+          )}
+          {mounted('debug') && (
+            <div className="view" hidden={route !== 'debug'}>
+              <SaveHistory onOpen={hash => go(parseOptionsHash(hash), parseAiServicesHash(hash) ?? undefined)} />
+              <DebugLogPanel />
+              <details className="surface settings-help">
+                <summary>旧版单连接模型配置（兼容）</summary>
+                <p>
+                  新版请在「AI 服务」里连接并按功能分配模型；这里保留旧的单连接配置，供尚未迁移的搜索 / 整理 /
+                  导入路径使用。
+                </p>
+                <ModelSettings showHeading={false} store={settingsStore} fields="model" />
+              </details>
+            </div>
+          )}
+        </main>
       </div>
-    </ThemeProvider>
+    </div>
   );
 }

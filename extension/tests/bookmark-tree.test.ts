@@ -5,6 +5,7 @@ import { expect, it, vi } from 'vitest';
 import { TreeRows } from '../panel/BookmarkTree';
 import { ThemePicker, ThemeProvider } from '../ui/ThemeProvider';
 import type { TreeSnapshot } from '../domain/node-reference';
+import { APPEARANCES } from './appearance';
 const snapshot: TreeSnapshot = {
   installationId: 'i',
   epoch: 'e',
@@ -48,8 +49,9 @@ it('renders native titles and URLs only as text, retains expansion across themes
   const first = render(
     createElement(ThemeProvider, null, createElement(ThemePicker), createElement(TreeRows, { snapshot })),
   );
-  await user.click(screen.getByRole('button', { name: 'Root只读' }));
-  for (const name of ['轻盈原生', '温润纸感', '清爽文具（默认）', '深色精密']) {
+  // The first top-level folder starts open until the user collapses it.
+  expect(screen.getByRole('button', { name: 'Root' })).toHaveAttribute('aria-expanded', 'true');
+  for (const name of APPEARANCES) {
     await user.click(screen.getByRole('radio', { name }));
     expect(screen.getByText('<script>unsafe</script>')).toBeVisible();
     expect(screen.queryByText('javascript:alert(1)')).toBeNull();
