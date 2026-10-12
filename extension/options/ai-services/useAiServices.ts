@@ -21,7 +21,9 @@ export function useAiServices(settings?: SettingsStore) {
   const [error, setError] = useState<string | null>(null);
 
   const applySnap = useCallback((snap: { services: ConnectedService[]; features: FeatureAssignment[] }) => {
-    setServicesState(snap.services.map(s => ({ ...s, catalog: s.catalog.map(m => ({ ...m })), enabled: [...s.enabled] })));
+    setServicesState(
+      snap.services.map(s => ({ ...s, catalog: s.catalog.map(m => ({ ...m })), enabled: [...s.enabled] })),
+    );
     setFeaturesState(snap.features.map(f => ({ ...f })));
   }, []);
 
@@ -135,7 +137,22 @@ export function useAiServices(settings?: SettingsStore) {
     return {
       version: 1 as const,
       services: services.map(
-        ({ id, name, serviceType, kind, detail, baseUrl, mode, enabled, catalog, vendorId, timeoutMs, letter, avatarClass, status }) => ({
+        ({
+          id,
+          name,
+          serviceType,
+          kind,
+          detail,
+          baseUrl,
+          mode,
+          enabled,
+          catalog,
+          vendorId,
+          timeoutMs,
+          letter,
+          avatarClass,
+          status,
+        }) => ({
           id,
           name,
           serviceType,

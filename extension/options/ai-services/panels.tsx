@@ -1,11 +1,12 @@
 import { useRef, useState } from 'react';
-import { Download, Search, Upload } from 'lucide-react';
+import { Download, Eye, EyeOff, KeyRound, Search, Upload, X } from 'lucide-react';
 import type { ConnectedService, FeatureAssignment, Vendor } from './mock-data';
 import { KEY_VENDORS, SUB_VENDORS, catalogFromVendor } from './mock-data';
 import { oauthFailureText, signInWithOpenRouter } from '../../adapters/openrouter-oauth';
 import { adapterToApiMode, API_MODE_OPTIONS, type ApiMode } from '../../domain/ai-providers';
 import { discoverModels, modelsToCatalog, requestHostPermission } from '../../adapters/ai-connection';
 import { Avatar } from './Avatar';
+import { DialogPortal } from './portal';
 import { ModelPicker } from './ModelPicker';
 import { useToast } from './toast';
 
@@ -258,6 +259,7 @@ export function AddServicePanel({
   const [protocol, setProtocol] = useState<ApiMode>('openai');
   const [apiKey, setApiKey] = useState('');
   const [remember, setRemember] = useState(true);
+  const [showKey, setShowKey] = useState(false);
 
   const q = query.trim().toLowerCase();
   const subList = SUB_VENDORS.filter(
@@ -465,141 +467,155 @@ export function AddServicePanel({
         )}
       </section>
 
-      {(subVendor || keyVendor) && <div className="ai-svc-backdrop" onClick={closeOverlays} aria-hidden="true" />}
+      <DialogPortal>
+        {(subVendor || keyVendor) && <div className="ai-svc-backdrop" onClick={closeOverlays} aria-hidden="true" />}
 
-      {subVendor && (
-        <div className="ai-svc-modal" role="dialog" aria-modal="true" aria-labelledby="ai-sub-modal-title">
-          <p id="ai-sub-modal-title">
-            {subVendor.oauth === 'ready'
-              ? `用 ${subVendor.name.replace(/ OAuth$/, '')} 登录`
-              : `订阅登录 · ${subVendor.name}`}
-          </p>
-          <p className="ai-svc-modal-note">{subVendor.oauthNote ?? '该厂商没有面向扩展的官方登录。'}</p>
-          <div className="ai-svc-modal-actions">
-            <button type="button" className="ai-svc-act ai-svc-act-ghost" onClick={closeOverlays} disabled={busy}>
-              取消
-            </button>
-            <button
-              type="button"
-              className="ai-svc-act ai-svc-act-primary"
-              onClick={() => void continueSub()}
-              disabled={busy}
+        {subVendor && (
+          <div className="ai-svc-modal" role="dialog" aria-modal="true" aria-labelledby="ai-sub-modal-title">
+            <p id="ai-sub-modal-title">
+              {subVendor.oauth === 'ready'
+                ? `用 ${subVendor.name.replace(/ OAuth$/, '')} 登录`
+                : `订阅登录 · ${subVendor.name}`}
+            </p>
+            <p className="ai-svc-modal-note">{subVendor.oauthNote ?? '该厂商没有面向扩展的官方登录。'}</p>
+            <div className="ai-svc-modal-actions">
+              <button type="button" className="ai-svc-act ai-svc-act-ghost" onClick={closeOverlays} disabled={busy}>
+                取消
+              </button>
+              <button
+                type="button"
+                className="ai-svc-act ai-svc-act-primary"
+                onClick={() => void continueSub()}
+                disabled={busy}
+              >
+                {subVendor.oauth === 'ready' ? (busy ? '等待授权…' : '前往授权') : '改用 API Key'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {keyVendor && (
+          <div className="ai-svc-dialog" role="dialog" aria-modal="true" aria-labelledby="ai-key-panel-title">
+            <header className="ai-svc-dialog-head">
+              <Avatar
+                letter={keyVendor.letter}
+                avatarClass={keyVendor.avatarClass}
+                size="lg"
+                plus={keyVendor.isCustom}
+              />
+              <div>
+                <h2 id="ai-key-panel-title">{keyVendor.isCustom ? '添加自定义端点' : `连接 ${keyVendor.name}`}</h2>
+                <p>{keyVendor.isCustom ? 'OpenAI / Anthropic / Gemini 兼容的接口地址' : keyVendor.subtitle}</p>
+              </div>
+              <button type="button" className="ai-svc-dialog-close" aria-label="关闭" onClick={closeOverlays}>
+                <X aria-hidden="true" />
+              </button>
+            </header>
+            <form
+              className="ai-svc-dialog-body"
+              onSubmit={event => {
+                event.preventDefault();
+                void connectKey();
+              }}
             >
-              {subVendor.oauth === 'ready' ? (busy ? '等待授权…' : '前往授权') : '改用 API Key'}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {keyVendor && (
-        <aside className="ai-svc-slide-panel" role="dialog" aria-modal="true" aria-labelledby="ai-key-panel-title">
-          <div className="ai-svc-panel-header">
-            <h2 id="ai-key-panel-title">{keyVendor.name}</h2>
-            <button type="button" className="ai-svc-icon-btn" aria-label="关闭" onClick={closeOverlays}>
-              ×
-            </button>
-          </div>
-          <div className="ai-svc-panel-body">
-            {keyVendor.isCustom ? (
-              <>
-                <div className="ai-svc-field">
-                  <label htmlFor="ai-f-display-name">显示名称</label>
-                  <input
-                    id="ai-f-display-name"
-                    type="text"
-                    placeholder="例如：我的代理"
-                    value={displayName}
-                    onChange={e => setDisplayName(e.target.value)}
-                    autoComplete="off"
-                  />
+              {keyVendor.isCustom ? (
+                <div className="ai-svc-dialog-grid">
+                  <div className="ai-svc-field">
+                    <label htmlFor="ai-f-display-name">显示名称</label>
+                    <input
+                      id="ai-f-display-name"
+                      type="text"
+                      placeholder="例如：我的代理"
+                      value={displayName}
+                      onChange={e => setDisplayName(e.target.value)}
+                      autoComplete="off"
+                    />
+                  </div>
+                  <div className="ai-svc-field">
+                    <label htmlFor="ai-f-protocol">兼容协议</label>
+                    <select id="ai-f-protocol" value={protocol} onChange={e => setProtocol(e.target.value as ApiMode)}>
+                      {API_MODE_OPTIONS.map(opt => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
-                <div className="ai-svc-field">
-                  <label htmlFor="ai-f-base-url">Base URL</label>
-                  <input
-                    id="ai-f-base-url"
-                    type="url"
-                    placeholder="https://api.example.com/v1"
-                    value={baseUrl}
-                    onChange={e => setBaseUrl(e.target.value)}
-                    autoComplete="off"
-                  />
-                </div>
-                <div className="ai-svc-field">
-                  <label htmlFor="ai-f-protocol">兼容协议</label>
-                  <select id="ai-f-protocol" value={protocol} onChange={e => setProtocol(e.target.value as ApiMode)}>
-                    {API_MODE_OPTIONS.map(opt => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="ai-svc-field">
-                  <label htmlFor="ai-f-api-key">API Key</label>
+              ) : null}
+              <div className="ai-svc-field">
+                <label htmlFor="ai-f-api-key">API Key</label>
+                <div className="ai-svc-secret">
+                  <KeyRound aria-hidden="true" />
                   <input
                     id="ai-f-api-key"
-                    type="password"
-                    placeholder="输入 API Key"
+                    type={showKey ? 'text' : 'password'}
+                    placeholder={keyVendor.isCustom ? '本地模型可留空' : 'sk-…'}
                     value={apiKey}
                     onChange={e => setApiKey(e.target.value)}
                     autoComplete="off"
+                    spellCheck={false}
+                    autoFocus
                   />
+                  <button
+                    type="button"
+                    className="ai-svc-secret-toggle"
+                    aria-label={showKey ? '隐藏密钥' : '显示密钥'}
+                    onClick={() => setShowKey(value => !value)}
+                  >
+                    {showKey ? <EyeOff aria-hidden="true" /> : <Eye aria-hidden="true" />}
+                  </button>
                 </div>
-              </>
-            ) : (
-              <>
-                <div className="ai-svc-field">
-                  <label htmlFor="ai-f-api-key">API Key</label>
+              </div>
+              <div className="ai-svc-field">
+                <label htmlFor="ai-f-base-url">
+                  接口地址 {keyVendor.isCustom ? null : <span className="ai-svc-label-note">可改为代理地址</span>}
+                </label>
+                <input
+                  id="ai-f-base-url"
+                  type="url"
+                  placeholder="https://api.example.com/v1"
+                  value={baseUrl}
+                  onChange={e => setBaseUrl(e.target.value)}
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </div>
+              <label className="ai-svc-toggle-row">
+                <span>
+                  <strong>记住密钥</strong>
+                  <small>后台自动归类收藏需要它；保存在本机扩展存储，不上传。</small>
+                </span>
+                <span className="switch">
                   <input
-                    id="ai-f-api-key"
-                    type="password"
-                    placeholder="输入 API Key"
-                    value={apiKey}
-                    onChange={e => setApiKey(e.target.value)}
-                    autoComplete="off"
+                    type="checkbox"
+                    role="switch"
+                    checked={remember}
+                    onChange={e => setRemember(e.target.checked)}
                   />
-                </div>
-                <div className="ai-svc-field">
-                  <label htmlFor="ai-f-base-url">
-                    Base URL <span style={{ fontWeight: 400, opacity: 0.7 }}>（可自定义）</span>
-                  </label>
-                  <input
-                    id="ai-f-base-url"
-                    type="url"
-                    value={baseUrl}
-                    onChange={e => setBaseUrl(e.target.value)}
-                    autoComplete="off"
-                  />
-                </div>
-              </>
-            )}
-            <label className="ai-svc-check">
-              <input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)} />
-              记住密钥（本地扩展存储，非系统保险库）
-            </label>
+                  <span />
+                </span>
+              </label>
+              <footer className="ai-svc-dialog-foot">
+                <span className="ai-svc-dialog-hint">连接后会自动获取模型列表</span>
+                <button type="button" className="ai-svc-act ai-svc-act-ghost" disabled={busy} onClick={closeOverlays}>
+                  取消
+                </button>
+                <button type="submit" className="ai-svc-act ai-svc-act-primary" disabled={busy}>
+                  {busy ? (
+                    <>
+                      <span className="ai-svc-spinner" />
+                      连接中…
+                    </>
+                  ) : (
+                    '连接'
+                  )}
+                </button>
+              </footer>
+            </form>
           </div>
-          <div className="ai-svc-panel-footer">
-            <button type="button" className="ai-svc-act ai-svc-act-ghost" disabled={busy} onClick={closeOverlays}>
-              取消
-            </button>
-            <button
-              type="button"
-              className="ai-svc-act ai-svc-act-primary"
-              disabled={busy}
-              onClick={() => void connectKey()}
-            >
-              {busy ? (
-                <>
-                  <span className="ai-svc-spinner" />
-                  连接中…
-                </>
-              ) : (
-                '连接'
-              )}
-            </button>
-          </div>
-        </aside>
-      )}
+        )}
+      </DialogPortal>
     </div>
   );
 }

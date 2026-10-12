@@ -111,7 +111,7 @@ it('accepts the approved minimum 114 and keeps a lower manifest floor plus every
   const lowered = await checkRelease(root);
   expect(lowered.compatibilityBlockers).toHaveLength(1);
   expect(lowered.compatibilityBlockers[0]).toContain('110');
-  expect(lowered.compatibilityBlockers[0]).toContain('114');
+  expect(lowered.compatibilityBlockers[0]).toContain('116');
   const blockers = releaseGate(lowered);
   expect(blockers).toContain(lowered.compatibilityBlockers[0]);
   for (const id of ['chrome-restart-reliability', 'edge-no-page-restart', 'p2-models', 'p3-recovery', 'p4-privacy'])

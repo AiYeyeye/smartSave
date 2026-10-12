@@ -82,9 +82,7 @@ export function AiSidebarSummary({
           </button>
         </div>
       </div>
-      <p className="ai-svc-hint">
-        五项功能均可在侧栏直接换模型（展开列表不溢出侧栏）。连接与模型清单在管理页完成。
-      </p>
+      <p className="ai-svc-hint">五项功能均可在侧栏直接换模型（展开列表不溢出侧栏）。连接与模型清单在管理页完成。</p>
     </div>
   );
 }

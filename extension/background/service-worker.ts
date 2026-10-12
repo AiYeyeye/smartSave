@@ -14,6 +14,9 @@ import { OwnWriteGuard } from './own-write-guard';
 import { nativeSaveBadge, startNativeBookmarkIngress } from './native-bookmark-ingress';
 import { SaveReceiptLog } from '../persistence/save-receipts';
 
+// The toolbar button opens the full-height side panel (Chrome 116+).
+void Promise.resolve(chrome.sidePanel?.setPanelBehavior?.({ openPanelOnActionClick: true })).catch(() => {});
+
 const { validateSaveContext, livePageForSender } = startSaveEntrypoints(() => coordinator?.purgeSavePreviews());
 const projection = startTreeService();
 startFileOutput(projection);

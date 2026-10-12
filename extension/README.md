@@ -17,7 +17,7 @@ pnpm --dir extension build
 pnpm --dir extension release:source
 ```
 
-`extension/dist` 是唯一加载目录。构建输出工具栏 Popup（`panel/index.html`，`action.default_popup`）、选项页（`options/index.html`，完整工作台）及静态 ES module service worker；声明 `bookmarks`、`storage`、`activeTab`、`scripting`、`contextMenus`、`favicon` 权限；可选主机声明 `https://*/*` 和 `http://*/*`，没有必需 host_permissions，没有 `web_accessible_resources`，不注入任何网页。实际模型主机授权按用户配置申请。可在**用户授权的隔离 Chrome/Edge profile**中加载解压扩展：点击工具栏打开 Popup；Popup 的「AI 整理 / 导入 / 导出」在选项页新标签打开（`options/index.html#organize|#import|#export`）。批准的最低版本为 Chrome 114（`checks/release.mjs` 的 `approvedMinimumChromeVersion`）；命名快捷键与页面右键菜单在 Chrome 127+ 会直接打开 Popup（`chrome.action.openPopup`），更低版本改为在该标签的工具栏图标上显示角标，用户点击后 Popup 收到已捕获的页面。未启动日常浏览器。
+`extension/dist` 是唯一加载目录。构建输出浏览器侧边栏（`panel/index.html`，`side_panel.default_path`，点工具栏按钮整高弹出，Chrome/Edge 116+）、选项页（`options/index.html`，完整工作台）及静态 ES module service worker；声明 `bookmarks`、`storage`、`activeTab`、`scripting`、`contextMenus`、`favicon`、`sidePanel` 权限，可选 `identity`（OpenRouter 登录时申请）；可选主机声明 `https://*/*` 和 `http://*/*`，没有必需 host_permissions，没有 `web_accessible_resources`，不注入任何网页。实际模型主机授权按用户配置申请。可在**用户授权的隔离 Chrome/Edge profile**中加载解压扩展：点击工具栏打开 Popup；Popup 的「AI 整理 / 导入 / 导出」在选项页新标签打开（`options/index.html#organize|#import|#export`）。批准的最低版本为 Chrome 114（`checks/release.mjs` 的 `approvedMinimumChromeVersion`）；命名快捷键与页面右键菜单在 Chrome 127+ 会直接打开 Popup（`chrome.action.openPopup`），更低版本改为在该标签的工具栏图标上显示角标，用户点击后 Popup 收到已捕获的页面。未启动日常浏览器。
 
 信任模型：Popup 与选项页是仅有的两个可信文档，`domain/trusted-sender.ts` 按扩展 id、精确文档路径、无 query、非网页承载判定，不再有 nonce 握手或 Service Worker 内存注册表。外观在两个页面均可调；每个打开的页面仅保留自身会话主题，关闭重开回到第三种，不跨页面同步。页面草稿仅内存；手动收藏与 CRUD 通过唯一写入内核确认执行。所有功能未接入状态明确标注，没有安装演示书签。
 

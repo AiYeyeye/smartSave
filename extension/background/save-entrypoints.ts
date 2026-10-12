@@ -31,15 +31,27 @@ async function setBadge(tabId: number, on: boolean): Promise<void> {
     /* The badge is advisory; the capture itself stays valid without it. */
   }
 }
-/** Chrome 127+ can open the popup from a command; Chrome 114–126 (or a refused open) leaves a per-tab badge instead. */
+/**
+ * Brings the side panel up for the captured tab. sidePanel.open must run inside the shortcut/menu gesture, so it is
+ * called synchronously with the tab id; older builds fall back to openPopup, then to a per-tab badge.
+ */
 export async function openSaveUi(tabId: number): Promise<void> {
+  const sidePanel = typeof chrome !== 'undefined' ? chrome.sidePanel : undefined;
+  if (sidePanel && typeof sidePanel.open === 'function') {
+    try {
+      await sidePanel.open({ tabId });
+      return;
+    } catch {
+      /* No gesture or window: fall through. */
+    }
+  }
   const action = typeof chrome !== 'undefined' ? chrome.action : undefined;
   if (action && typeof action.openPopup === 'function') {
     try {
       await action.openPopup();
       return;
     } catch {
-      /* No focused window or another popup already open: fall through to the badge. */
+      /* No popup declared or no focused window: fall through to the badge. */
     }
   }
   await setBadge(tabId, true);

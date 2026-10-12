@@ -13,13 +13,15 @@ const manifestSchema = z.object({
     z.literal('scripting'),
     z.literal('contextMenus'),
     z.literal('favicon'),
+    z.literal('sidePanel'),
   ]),
   // identity is optional and requested only when the user starts an OAuth sign-in (e.g. OpenRouter).
   optional_permissions: z.tuple([z.literal('identity')]),
   background: z.object({ service_worker: z.string(), type: z.literal('module') }),
-  side_panel: z.never().optional(),
+  // The bookmark UI is the browser side panel (full height); the toolbar button opens it.
+  side_panel: z.object({ default_path: z.literal('panel/index.html') }),
   options_ui: z.object({ page: z.string() }),
-  action: z.object({ default_popup: z.literal('panel/index.html'), default_title: z.string() }),
+  action: z.object({ default_popup: z.never().optional(), default_title: z.string() }),
   host_permissions: z.never().optional(),
   optional_host_permissions: z.tuple([z.literal('https://*/*'), z.literal('http://*/*')]),
   content_security_policy: z.object({
@@ -78,7 +80,11 @@ export async function validateBuild(directory) {
   if (parserWorkers.length !== 1 || parserClients.length !== 1)
     throw new Error('Missing import Worker/client build contract');
   for (const name of [...parserWorkers, ...parserClients]) await check(resolve(root, 'assets', name));
-  for (const entry of [manifest.background.service_worker, manifest.options_ui.page, manifest.action.default_popup]) {
+  for (const entry of [
+    manifest.background.service_worker,
+    manifest.options_ui.page,
+    manifest.side_panel.default_path,
+  ]) {
     await check(resolve(root, entry));
   }
 }

@@ -149,6 +149,17 @@ it('default open prefers action.openPopup and falls back to a per-tab badge when
   vi.stubGlobal('chrome', { action: { setBadgeText: vi.fn(async () => Promise.reject(Error('gone'))) } });
   await expect(openSaveUi(4)).resolves.toBeUndefined();
 });
+it('default open prefers the side panel for the captured tab, then popup, then badge', async () => {
+  const open = vi.fn(async () => {});
+  const setBadgeText = vi.fn(async () => {});
+  vi.stubGlobal('chrome', { sidePanel: { open }, action: { setBadgeText } });
+  await openSaveUi(7);
+  expect(open).toHaveBeenCalledWith({ tabId: 7 });
+  expect(setBadgeText).not.toHaveBeenCalled();
+  open.mockRejectedValueOnce(Error('may only be called in response to a user gesture'));
+  await openSaveUi(7);
+  expect(setBadgeText).toHaveBeenCalledWith({ tabId: 7, text: SAVE_BADGE });
+});
 it('capture message captures the active tab of the popup window and reports unusable tabs', async () => {
   const h = harness();
   const popup = await h.ui();

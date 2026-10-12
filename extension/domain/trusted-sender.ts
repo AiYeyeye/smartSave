@@ -1,7 +1,7 @@
 /**
  * Sender authority for extension-owned documents.
  *
- * The toolbar popup (`panel/index.html`) and the options page (`options/index.html`) are the only trusted UI
+ * The side panel (`panel/index.html`) and the options page (`options/index.html`) are the only trusted UI
  * documents. Trust is decided from exact facts Chrome attaches to the sender (extension id, exact document URL,
  * origin and the hosting tab) — never from a nonce, a registry or any state the page could forge.
  */

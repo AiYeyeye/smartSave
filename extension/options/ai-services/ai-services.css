@@ -89,7 +89,7 @@
 }
 .ai-svc-chip:hover {
   border-color: var(--border);
-  background: #1c1c1c;
+  background: var(--sunken);
 }
 .ai-svc-chip .meta {
   flex: 1;
@@ -199,7 +199,7 @@
   border: 1px solid var(--border);
 }
 .ai-svc-btn-ghost:hover:not(:disabled) {
-  background: #222;
+  background: var(--hover-solid);
 }
 .ai-svc-btn svg {
   width: 16px;
@@ -1300,9 +1300,11 @@
 }
 .ai-svc-toast {
   padding: 10px 16px;
-  background: #2a2a2a;
-  color: var(--text);
-  border: 1px solid var(--border-strong);
+  /* Inverse surface: readable on both light and dark pages. */
+  background: var(--text);
+  color: var(--surface);
+  border: 0;
+  animation: zh-toast-in 220ms var(--ease-out) backwards;
   border-radius: 10px;
   box-shadow: var(--shadow-md);
   font-size: 13px;
@@ -1393,7 +1395,7 @@
   overflow: visible;
   padding: 0;
   background: transparent;
-  animation: zh-fade-up 220ms var(--ease-out) both;
+  animation: zh-fade-up 220ms var(--ease-out) backwards;
 }
 .ai-svc-vendor-card {
   position: relative;
@@ -1428,5 +1430,238 @@
 .ai-svc-modal,
 .ai-svc-slide-panel,
 .ai-svc-edit-overlay {
-  animation: zh-pop 200ms var(--ease-out) both;
+  animation: zh-pop 200ms var(--ease-out) backwards;
+}
+
+/* —— 2026-10 dialogs: centered, roomy, token-colored (key connect, subscription, edit service) —— */
+.ai-svc-backdrop {
+  backdrop-filter: blur(2px);
+  animation: zh-fade 180ms var(--ease) backwards;
+}
+.ai-svc-dialog,
+.ai-svc-modal {
+  position: fixed;
+  z-index: 260;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(520px, calc(100vw - 32px));
+  max-height: calc(100dvh - 48px);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  animation: zh-pop 220ms var(--ease-out) backwards;
+}
+.ai-svc-modal {
+  padding: 24px;
+  width: min(440px, calc(100vw - 32px));
+}
+.ai-svc-modal > p:first-child {
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 650;
+  color: var(--text);
+}
+.ai-svc-dialog.is-large {
+  position: fixed;
+  width: min(1040px, calc(100vw - 48px));
+  height: min(780px, calc(100dvh - 48px));
+  background: var(--page);
+}
+.ai-svc-dialog-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 20px 20px 16px 24px;
+  border-bottom: 1px solid var(--divider);
+  background: var(--surface);
+}
+.ai-svc-dialog-head > div {
+  flex: 1;
+  min-width: 0;
+}
+.ai-svc-dialog-head h2 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 650;
+}
+.ai-svc-dialog-head p {
+  margin: 3px 0 0;
+  font-size: 12.5px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ai-svc-dialog-close {
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  box-shadow: none;
+  color: var(--faint);
+}
+.ai-svc-dialog-close:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text);
+}
+.ai-svc-dialog-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  align-content: start;
+  gap: 16px;
+  padding: 20px 24px 0;
+  margin: 0;
+}
+.ai-svc-dialog-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.ai-svc-dialog .ai-svc-field {
+  display: grid;
+  gap: 6px;
+}
+.ai-svc-dialog .ai-svc-field label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--muted);
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.ai-svc-label-note {
+  font-weight: 400;
+  color: var(--faint);
+}
+.ai-svc-dialog .ai-svc-field input,
+.ai-svc-dialog .ai-svc-field select {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 12px;
+  font-size: 13.5px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+}
+.ai-svc-dialog .ai-svc-field input:focus-visible,
+.ai-svc-dialog .ai-svc-field select:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft-2);
+}
+.ai-svc-secret {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.ai-svc-secret > svg {
+  position: absolute;
+  left: 12px;
+  width: 16px;
+  height: 16px;
+  color: var(--faint);
+  pointer-events: none;
+}
+.ai-svc-dialog .ai-svc-secret input {
+  padding-left: 36px;
+  padding-right: 40px;
+  font-family: var(--mono);
+  letter-spacing: 0.02em;
+}
+.ai-svc-secret-toggle {
+  position: absolute;
+  right: 4px;
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--faint);
+}
+.ai-svc-secret-toggle:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text);
+}
+.ai-svc-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface-2);
+  cursor: pointer;
+}
+.ai-svc-toggle-row > span:first-child {
+  flex: 1;
+  display: grid;
+  gap: 2px;
+}
+.ai-svc-toggle-row strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+.ai-svc-toggle-row small {
+  font-size: 12px;
+  color: var(--muted);
+}
+.ai-svc-dialog-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px -24px 0;
+  padding: 14px 24px;
+  border-top: 1px solid var(--divider);
+  background: var(--surface-2);
+}
+.ai-svc-dialog.is-large > .ai-svc-dialog-foot {
+  margin: 0;
+}
+.ai-svc-dialog-hint {
+  flex: 1;
+  font-size: 12px;
+  color: var(--faint);
+}
+.ai-svc-dialog-foot .ai-svc-act {
+  min-height: 36px;
+  padding: 0 16px;
+}
+.ai-svc-dialog.is-large .ai-svc-edit-body {
+  padding: 20px 24px;
+  gap: 16px;
+}
+.ai-svc-dialog.is-large .ai-svc-edit-fields {
+  background: var(--surface);
+  box-shadow: none;
+  padding: 18px 20px;
+  border-radius: var(--r-lg);
+}
+.ai-svc-dialog.is-large .ai-svc-models-split {
+  min-height: 360px;
+}
+.ai-svc-dialog.is-large .ai-svc-models-pane {
+  border-radius: var(--r-lg);
+  box-shadow: none;
+  background: var(--surface);
+}
+.ai-svc-dialog.is-large .ai-svc-edit-row.two {
+  grid-template-columns: 1fr 1fr;
+}
+@media (max-width: 720px) {
+  .ai-svc-dialog-grid,
+  .ai-svc-dialog.is-large .ai-svc-edit-row.two {
+    grid-template-columns: 1fr;
+  }
 }

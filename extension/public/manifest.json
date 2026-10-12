@@ -2,8 +2,8 @@
   "manifest_version": 3,
   "name": "智栏 · 书签助手",
   "version": "0.1.0",
-  "description": "原生书签助手：工具栏 Popup 入口与选项页工作台。",
-  "minimum_chrome_version": "114",
+  "description": "原生书签助手：浏览器侧边栏与选项页工作台。",
+  "minimum_chrome_version": "116",
   "optional_host_permissions": [
     "https://*/*",
     "http://*/*"
@@ -14,7 +14,8 @@
     "activeTab",
     "scripting",
     "contextMenus",
-    "favicon"
+    "favicon",
+    "sidePanel"
   ],
   "optional_permissions": [
     "identity"
@@ -28,8 +29,10 @@
     "open_in_tab": true
   },
   "action": {
-    "default_popup": "panel/index.html",
-    "default_title": "打开智栏"
+    "default_title": "打开智栏侧边栏"
+  },
+  "side_panel": {
+    "default_path": "panel/index.html"
   },
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'; connect-src https: http:"

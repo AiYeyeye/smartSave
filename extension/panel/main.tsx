@@ -3,8 +3,8 @@ import { createRoot } from 'react-dom/client';
 import { App } from '../ui/App';
 const root = document.getElementById('root');
 if (!root) throw new Error('Missing application root');
-// The toolbar popup is a native extension document: no handshake, only the fixed Popup viewport.
-document.body.classList.add('popup');
+// The browser side panel hosts this document at full height; width follows the user's panel width.
+document.body.classList.add('sidepanel');
 createRoot(root).render(
   <StrictMode>
     <App page="panel" />

@@ -10,7 +10,12 @@ import {
 import { modelSystemPrompt } from '../domain/model-prompts';
 import { dependencyDigest, settingsIdentity } from '../domain/context-dependencies';
 import type { TreeSnapshot } from '../domain/node-reference';
-import { modelOutputJsonSchema, parseModelOutput, type ModelOutputContext } from '../schemas/model-output';
+import {
+  modelOutputJsonSchema,
+  outputSchema,
+  parseModelOutput,
+  type ModelOutputContext,
+} from '../schemas/model-output';
 import { z } from 'zod';
 import { traceModel } from '../domain/debug-log';
 export { parseModelEndpoint, parseModelListEndpoint } from '../domain/model-route';
@@ -151,8 +156,109 @@ function extractAssistantText(adapter: ModelConfig['adapter'], raw: unknown): st
     if (!text) throw Error('schema');
     return text;
   }
-  return z.object({ choices: z.array(z.object({ message: z.object({ content: z.string() }) })).min(1) }).parse(raw)
-    .choices[0]!.message.content;
+  // OpenAI-compatible proxies differ: content may be a string, an array of text parts, or null (reasoning-only).
+  const content = z
+    .object({
+      choices: z
+        .array(
+          z.object({
+            message: z.object({
+              content: z
+                .union([z.string(), z.array(z.object({ type: z.string().optional(), text: z.string().optional() }))])
+                .nullable()
+                .optional(),
+            }),
+          }),
+        )
+        .min(1),
+    })
+    .parse(raw).choices[0]!.message.content;
+  const text = Array.isArray(content) ? content.map(part => part.text ?? '').join('') : (content ?? '');
+  if (!text.trim()) throw new ModelParseError('empty');
+  return text;
+}
+
+/** Where parsing a model reply failed; recorded in the opt-in debug trail only. */
+export class ModelParseError extends Error {
+  constructor(
+    readonly stage: 'envelope' | 'empty' | 'json' | 'validate',
+    readonly issue?: string,
+  ) {
+    super(stage);
+  }
+}
+
+/**
+ * Pulls the JSON object out of an assistant reply. Models and proxies often wrap it in ```json fences,
+ * prepend a sentence, or include <think> blocks even when asked for bare JSON.
+ */
+export function extractJsonObject(text: string): unknown {
+  const cleaned = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    /* try the tolerant forms below */
+  }
+  const fence = cleaned.match(/```(?:json|JSON)?\s*([\s\S]*?)```/);
+  if (fence) {
+    try {
+      return JSON.parse(fence[1]!.trim());
+    } catch {
+      /* fall through */
+    }
+  }
+  const start = cleaned.indexOf('{');
+  const end = cleaned.lastIndexOf('}');
+  if (start >= 0 && end > start) {
+    try {
+      return JSON.parse(cleaned.slice(start, end + 1));
+    } catch {
+      /* fall through */
+    }
+  }
+  throw new ModelParseError('json');
+}
+
+const ID_KEYS = new Set(['id', 'parentId', 'itemId', 'folderId', 'sourceId', 'targetId']);
+const ID_ARRAYS = new Set(['rankedIds', 'urlPath', 'titlePath']);
+/** Commentary keys models add despite instructions; harmless, so dropped before the strict schema check. */
+const COMMENTARY_KEYS = new Set(['reason', 'reasoning', 'rationale', 'confidence', 'explanation', 'note', 'notes']);
+
+/**
+ * Normalizes cosmetic deviations before strict validation: numeric ids become strings (ids are numeric
+ * in Chrome, so models often drop the quotes), commentary keys are dropped, and empty optional arrays are
+ * filled in. Anything else unexpected (e.g. a url key) still fails the strict schema.
+ */
+export function normalizeModelJson(value: unknown, task: string): unknown {
+  const visit = (node: unknown): unknown => {
+    if (Array.isArray(node)) return node.map(visit);
+    if (!node || typeof node !== 'object') return node;
+    const out: Record<string, unknown> = {};
+    for (const [key, child] of Object.entries(node)) {
+      if (COMMENTARY_KEYS.has(key)) continue;
+      if (ID_KEYS.has(key) && typeof child === 'number') out[key] = String(child);
+      else if (ID_ARRAYS.has(key) && Array.isArray(child))
+        out[key] = child.map(item => (typeof item === 'number' ? String(item) : item));
+      else out[key] = visit(child);
+    }
+    return out;
+  };
+  const normalized = visit(value);
+  if (normalized && typeof normalized === 'object' && !Array.isArray(normalized)) {
+    const record = normalized as Record<string, unknown>;
+    if ((task === 'save' || task === 'import-classify' || task === 'organize') && record.newFolders === undefined)
+      record.newFolders = [];
+    if (task === 'organize' && record.merges === undefined) record.merges = [];
+    if (task === 'organize' && record.moves === undefined) record.moves = [];
+  }
+  return normalized;
+}
+
+function zodIssue(task: string, value: unknown): string {
+  const result = outputSchema(task).safeParse(value);
+  if (result.success) return 'ids-or-structure-rejected';
+  const first = result.error.issues[0];
+  return first ? `${first.path.join('.') || '(root)'}: ${first.code}` : 'schema';
 }
 
 export class ModelTransport {
@@ -322,12 +428,29 @@ export class ModelTransport {
       if (generation !== this.generation) return { status: 'cancelled', reason: 'cancelled' };
       if (!(await fresh())) return { status: 'failed', reason: 'stale-context' };
       if (generation !== this.generation) return { status: 'cancelled', reason: 'cancelled' };
+      let text = '';
       try {
-        return {
-          status: 'completed',
-          output: parseModelOutput(JSON.parse(extractAssistantText(frozen.config.adapter, raw)), context),
-        };
-      } catch {
+        try {
+          text = extractAssistantText(frozen.config.adapter, raw);
+        } catch (error) {
+          throw error instanceof ModelParseError ? error : new ModelParseError('envelope');
+        }
+        const value = normalizeModelJson(extractJsonObject(text), frozen.request.task);
+        try {
+          return { status: 'completed', output: parseModelOutput(value, context) };
+        } catch {
+          throw new ModelParseError('validate', zodIssue(frozen.request.task, value));
+        }
+      } catch (error) {
+        const parse = error instanceof ModelParseError ? error : new ModelParseError('json');
+        traceModel('parse-failed', {
+          task: frozen.request.task,
+          stage: parse.stage,
+          issue: parse.issue,
+          chars: text.length,
+          // Opt-in local trail only: the start of the reply is the fastest way to see what the model sent back.
+          head: text ? text.slice(0, 160) : rawShape(raw),
+        });
         return { status: 'failed', reason: 'schema' };
       }
     } catch {
@@ -341,4 +464,14 @@ export class ModelTransport {
       if (generation === this.generation) this.active = undefined;
     }
   }
+}
+
+/** Top-level shape of an unparseable envelope (keys only, no values). */
+function rawShape(raw: unknown): string {
+  if (!raw || typeof raw !== 'object') return typeof raw;
+  const record = raw as Record<string, unknown>;
+  const keys = Object.keys(record).slice(0, 8).join(',');
+  const choice = Array.isArray(record.choices) ? (record.choices[0] as Record<string, unknown> | undefined) : undefined;
+  const message = choice?.message as Record<string, unknown> | undefined;
+  return message ? `{${keys}} message:{${Object.keys(message).join(',')}}` : `{${keys}}`;
 }

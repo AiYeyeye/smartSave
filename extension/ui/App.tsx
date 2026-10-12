@@ -75,14 +75,9 @@ function PopupApp() {
   const [query, setQuery] = useState('');
   const [batchNonce, setBatchNonce] = useState(0);
 
+  // The side panel stays open beside the page; workbenches open in a settings tab next to it.
   function open(route: string) {
-    if (openOptionsRoute(route)) {
-      try {
-        window.close();
-      } catch {
-        /* jsdom */
-      }
-    }
+    openOptionsRoute(route);
   }
 
   return (

@@ -25,8 +25,8 @@ async function inventory(root, excluded = []) {
   await walk(root);
   return result;
 }
-// Approved 2026-09-22: no sidePanel.open dependency remains, so the tested floor equals the manifest declaration.
-export const approvedMinimumChromeVersion = 114;
+// 2026-10: the UI is the native side panel; sidePanel.setPanelBehavior / sidePanel.open need Chrome 116.
+export const approvedMinimumChromeVersion = 116;
 export const manualRequirements = [
   {
     id: 'historical-p1',

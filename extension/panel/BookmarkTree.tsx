@@ -402,7 +402,7 @@ export function TreeRows({
                 const target = resolveDropTarget(byId, drag.current.id, id, placement.mode);
                 if (target) drop(target.parentId, target.index);
               }}
-              style={{ paddingInlineStart: `${depth * 16}px` }}
+              style={{ paddingInlineStart: `${depth * 16}px`, ['--depth' as string]: depth }}
               onContextMenu={event => {
                 if (menuItems(id).length === 0) return;
                 event.preventDefault();
@@ -472,6 +472,7 @@ export function TreeRows({
                     <button
                       type="button"
                       className="bookmark-open"
+                      title={node.url ? `${title}\n${node.url}` : title}
                       draggable={false}
                       onClick={() => {
                         if (suppressOpen.current) {
@@ -488,6 +489,11 @@ export function TreeRows({
                   )}
                 </div>
               )}
+              {node.ref.kind === 'folder' && node.childrenIds.length > 0 ? (
+                <span className="row-count" aria-hidden="true">
+                  {node.childrenIds.length}
+                </span>
+              ) : null}
               {menuItems(id).length > 0 && <CommandMenu label={`${title} 操作`} items={menuItems(id)} />}
               {node.ref.kind === 'folder' && open && !node.childrenIds.length && <p className="hint">空文件夹</p>}
             </li>

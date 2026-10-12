@@ -141,7 +141,7 @@ body {
   font-size: 14px;
   line-height: 1.55;
 }
-body.popup {
+body.sidepanel {
   font-size: 13px;
 }
 [hidden] {
@@ -525,7 +525,7 @@ details > summary {
   border-radius: var(--r);
   padding: 4px;
   box-shadow: var(--shadow-lg);
-  animation: zh-pop var(--base) var(--ease-out) both;
+  animation: zh-pop var(--base) var(--ease-out) backwards;
 }
 .in-panel-select-list [role='option'] {
   min-height: 32px;
@@ -578,7 +578,7 @@ details > summary {
   padding: 4px;
   box-shadow: var(--shadow-lg);
   transform-origin: top right;
-  animation: zh-pop var(--base) var(--ease-out) both;
+  animation: zh-pop var(--base) var(--ease-out) backwards;
 }
 .command-menu-list [role='menuitem'] {
   width: 100%;
@@ -606,7 +606,7 @@ details > summary {
   display: grid;
   place-items: center;
   padding: 16px;
-  animation: zh-fade var(--base) var(--ease) both;
+  animation: zh-fade var(--base) var(--ease) backwards;
 }
 .impact-dialog,
 dialog {
@@ -620,7 +620,7 @@ dialog {
   overflow: auto;
   overflow-wrap: anywhere;
   box-shadow: var(--shadow-lg);
-  animation: zh-pop var(--base) var(--ease-out) both;
+  animation: zh-pop var(--base) var(--ease-out) backwards;
 }
 dialog::backdrop {
   background: var(--scrim);
@@ -771,7 +771,7 @@ dialog::backdrop {
   border-radius: var(--r-sm);
   padding-right: 2px;
   transition: background-color var(--fast) var(--ease);
-  animation: zh-row-in 200ms var(--ease-out) both;
+  animation: zh-row-in 200ms var(--ease-out) backwards;
 }
 .bookmark-row:hover,
 .bookmark-row:focus-within {
@@ -925,7 +925,7 @@ dialog::backdrop {
   border-radius: var(--r);
   margin-bottom: 10px;
   font-size: 13px;
-  animation: zh-fade-up var(--base) var(--ease-out) both;
+  animation: zh-fade-up var(--base) var(--ease-out) backwards;
 }
 .batch-check {
   display: grid;
@@ -961,7 +961,7 @@ dialog::backdrop {
   border-color: transparent;
   box-shadow: none;
   background: transparent;
-  animation: zh-row-in 180ms var(--ease-out) both;
+  animation: zh-row-in 180ms var(--ease-out) backwards;
 }
 .search-hit-list button:hover:not(:disabled) {
   background: var(--hover);
@@ -1007,7 +1007,7 @@ dialog::backdrop {
   border-radius: var(--r);
   background: var(--surface);
   font-size: 12.5px;
-  animation: zh-slide-in 260ms var(--ease-out) both;
+  animation: zh-slide-in 260ms var(--ease-out) backwards;
 }
 .receipt-icon {
   width: 22px;
@@ -1446,13 +1446,18 @@ dialog::backdrop {
 }
 
 /* ───────────── Popup shell ───────────── */
-body.popup {
-  width: 380px;
-  height: 580px;
+/* Side panel: the browser gives us the full window height and a user-resizable width. */
+html:has(body.sidepanel) {
+  height: 100%;
+}
+body.sidepanel {
+  width: 100%;
+  min-width: 300px;
+  height: 100%;
   overflow: hidden;
 }
-body.popup #root,
-body.popup .theme-root {
+body.sidepanel #root,
+body.sidepanel .theme-root {
   height: 100%;
   min-height: 0;
 }
@@ -1462,7 +1467,7 @@ body.popup .theme-root {
   flex-direction: column;
   overflow: hidden;
   background: var(--page);
-  animation: zh-fade 160ms var(--ease) both;
+  animation: zh-fade 160ms var(--ease) backwards;
 }
 .shell.panel > main {
   flex: 1;
@@ -1473,7 +1478,7 @@ body.popup .theme-root {
   scrollbar-gutter: stable;
 }
 .shell.panel > main > * {
-  animation: zh-fade-up 220ms var(--ease-out) both;
+  animation: zh-fade-up 220ms var(--ease-out) backwards;
 }
 .shell.panel .brand {
   padding: 12px 12px 10px 14px;
@@ -1677,7 +1682,7 @@ body.popup .theme-root {
   width: 3px;
   border-radius: 0 3px 3px 0;
   background: var(--accent);
-  animation: zh-grow 220ms var(--ease-out) both;
+  animation: zh-grow 220ms var(--ease-out) backwards;
 }
 .side-item .side-badge {
   margin-left: auto;
@@ -1742,7 +1747,7 @@ body.popup .theme-root {
   color: var(--muted);
 }
 .view:not([hidden]) {
-  animation: zh-fade-up 240ms var(--ease-out) both;
+  animation: zh-fade-up 240ms var(--ease-out) backwards;
 }
 .options .directory {
   background: var(--surface);
@@ -1964,4 +1969,45 @@ body.popup .theme-root {
 }
 .appearance fieldset {
   margin: 0;
+}
+@keyframes zh-toast-in {
+  from {
+    opacity: 0;
+    translate: 0 8px;
+  }
+}
+
+/* ───────────── Side panel tree polish: indent guides, child counts ───────────── */
+.shell.panel .bookmark-row,
+.options .bookmark-row {
+  background-image: repeating-linear-gradient(
+    to right,
+    transparent 0 12px,
+    var(--divider) 12px 13px,
+    transparent 13px 16px
+  );
+  background-size: calc(var(--depth, 0) * 16px) 100%;
+  background-repeat: no-repeat;
+}
+.theme-root[data-mode='dark'] .bookmark-row {
+  --divider: #24262c;
+}
+.row-count {
+  flex-shrink: 0;
+  min-width: 20px;
+  padding: 0 6px;
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+  color: var(--faint);
+  background: var(--sunken);
+  border-radius: 999px;
+  font-variant-numeric: tabular-nums;
+}
+.bookmark-row:hover .row-count,
+.bookmark-row:focus-within .row-count {
+  display: none;
+}
+.shell.panel > main {
+  padding: 0 8px 10px;
 }

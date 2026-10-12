@@ -13,11 +13,19 @@ describe('MV3 distribution contract', () => {
     execFileSync(process.execPath, ['node_modules/vite/bin/vite.js', 'build'], { cwd: process.cwd() });
     await expect(validateBuild('dist')).resolves.toBeUndefined();
     const manifest = JSON.parse(await readFile('dist/manifest.json', 'utf8'));
-    expect(manifest.permissions).toEqual(['bookmarks', 'storage', 'activeTab', 'scripting', 'contextMenus', 'favicon']);
+    expect(manifest.permissions).toEqual([
+      'bookmarks',
+      'storage',
+      'activeTab',
+      'scripting',
+      'contextMenus',
+      'favicon',
+      'sidePanel',
+    ]);
     expect(manifest.optional_permissions).toEqual(['identity']);
-    expect(manifest.side_panel).toBeUndefined();
+    expect(manifest.side_panel).toEqual({ default_path: 'panel/index.html' });
     expect(manifest.web_accessible_resources).toBeUndefined();
-    expect(manifest.action.default_popup).toBe('panel/index.html');
+    expect(manifest.action.default_popup).toBeUndefined();
     expect(manifest.host_permissions).toBeUndefined();
     expect(manifest.optional_host_permissions).toEqual(['https://*/*', 'http://*/*']);
     expect(manifest.content_security_policy.extension_pages).toContain('connect-src https: http:');

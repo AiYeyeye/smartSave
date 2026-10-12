@@ -266,8 +266,8 @@ it('stylesheet: shared tokens for light/dark/accent, pinned popup dock, styled s
   const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../ui/theme.css'), 'utf8');
   expect(css).toContain(".theme-root[data-mode='dark']");
   expect(css).toContain(".theme-root[data-accent='teal']");
-  // The popup root fills the fixed 580px viewport so the dock stays at the bottom.
-  expect(css).toMatch(/body\.popup #root,\s*body\.popup \.theme-root \{\s*height: 100%;/);
+  // The side panel root fills the full window height so the dock stays at the bottom.
+  expect(css).toMatch(/body\.sidepanel #root,\s*body\.sidepanel \.theme-root \{\s*height: 100%;/);
   expect(css).toContain('scrollbar-width: thin');
   expect(css).toContain('::-webkit-scrollbar-thumb');
   // Chrome injects body { font-size: 75% } into extension pages.
