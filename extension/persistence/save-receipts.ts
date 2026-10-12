@@ -107,7 +107,11 @@ export function receiptReasonText(reason: string | undefined): string {
     case 'http-error':
       return '模型服务返回错误';
     case 'schema':
-      return '模型返回的内容无法解析';
+      return '模型返回的内容无法解析（打开 Debug 日志可看到原因）';
+    case 'incomplete':
+      return '模型输出被截断（输出额度用完），请换更快的模型或稍后重试';
+    case 'refused':
+      return '模型拒绝回答或被安全策略拦截';
     case 'stale-context':
       return '分类过程中书签或设置发生变化，已放弃';
     case 'connection-or-configuration':

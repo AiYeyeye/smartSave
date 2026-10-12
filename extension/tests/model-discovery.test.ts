@@ -132,6 +132,7 @@ describe('Anthropic native chat mapping', () => {
         headers: {
           'Content-Type': 'application/json',
           'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true',
           'x-api-key': 'ak-test',
         },
       }),
@@ -139,7 +140,7 @@ describe('Anthropic native chat mapping', () => {
     const body = JSON.parse(String(chatCall[1].body));
     expect(body).toMatchObject({
       model: 'claude-sonnet-4-5',
-      max_tokens: 4096,
+      max_tokens: 8192,
       stream: false,
       messages: [{ role: 'user', content: expect.any(String) }],
     });
@@ -152,13 +153,9 @@ describe('Anthropic native chat mapping', () => {
   });
 });
 
-
 describe('OpenAI Responses chat mapping', () => {
   it('POSTs /responses with instructions+input and reads output_text', async () => {
-    const fetcher = vi.fn(
-      async () =>
-        new Response(JSON.stringify({ output_text: '{"rankedIds":[]}', output: [] })),
-    );
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ output_text: '{"rankedIds":[]}', output: [] })));
     const box: { last?: Parameters<ModelTransport['run']>[0] } = {};
     const authority = {
       read: async () => ({ version: 1 as const, revision: 'r', sessionRevision: 0, ...box.last! }),
@@ -241,7 +238,7 @@ describe('Google Generative AI chat and list mapping', () => {
       source: 'remote',
     });
     expect(fetcher).toHaveBeenCalledWith(
-      'https://generativelanguage.googleapis.com/v1beta/models',
+      'https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000',
       expect.objectContaining({
         method: 'GET',
         headers: expect.objectContaining({ 'x-goog-api-key': 'gk-test' }),

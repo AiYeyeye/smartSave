@@ -16,8 +16,8 @@ import {
   parseModelOutput,
   type ModelOutputContext,
 } from '../schemas/model-output';
-import { z } from 'zod';
 import { traceModel } from '../domain/debug-log';
+import { extractAssistantText, ModelParseError, readModelReply, replyShape } from './model-replies';
 export { parseModelEndpoint, parseModelListEndpoint } from '../domain/model-route';
 export type ModelResult =
   | { status: 'completed'; output: ReturnType<typeof parseModelOutput> }
@@ -27,7 +27,7 @@ interface ModelBoundary {
   contains: (request: { origins: string[] }) => Promise<boolean>;
 }
 const ANTHROPIC_VERSION = '2023-06-01';
-const ANTHROPIC_MAX_TOKENS = 4096;
+const ANTHROPIC_MAX_TOKENS = 8192;
 const RESPONSES_MAX_OUTPUT_TOKENS = 16000;
 
 function requestHeaders(adapter: ModelConfig['adapter'], key: string): Record<string, string> {
@@ -35,6 +35,8 @@ function requestHeaders(adapter: ModelConfig['adapter'], key: string): Record<st
     return {
       'Content-Type': 'application/json',
       'anthropic-version': ANTHROPIC_VERSION,
+      // Requests from extension pages / workers carry an Origin; Anthropic requires this opt-in for them.
+      'anthropic-dangerous-direct-browser-access': 'true',
       ...(key ? { 'x-api-key': key } : {}),
     };
   }
@@ -105,99 +107,7 @@ export function modelRequestBody(
   });
 }
 
-export function extractAssistantText(adapter: ModelConfig['adapter'], raw: unknown): string {
-  if (adapter === 'ollama') {
-    return z.object({ message: z.object({ content: z.string() }) }).parse(raw).message.content;
-  }
-  if (adapter === 'anthropic') {
-    const blocks = z
-      .object({ content: z.array(z.object({ type: z.string(), text: z.string().optional() })).min(1) })
-      .parse(raw).content;
-    const text = blocks
-      .filter(block => block.type === 'text' && block.text)
-      .map(block => block.text!)
-      .join('');
-    if (!text) throw Error('schema');
-    return text;
-  }
-  if (adapter === 'openai-responses') {
-    // Responses API: output_text is an SDK convenience that raw HTTP replies (and most proxies) omit, so walk
-    // output[] and collect every text part of message items; reasoning items carry no answer text.
-    const record = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
-    if (typeof record.output_text === 'string' && record.output_text.trim()) return record.output_text;
-    const items = Array.isArray(record.output) ? (record.output as unknown[]) : [];
-    const texts: string[] = [];
-    for (const item of items) {
-      if (!item || typeof item !== 'object') continue;
-      const content = (item as { content?: unknown }).content;
-      if (typeof content === 'string') texts.push(content);
-      else if (Array.isArray(content))
-        for (const part of content) {
-          if (!part || typeof part !== 'object') continue;
-          const { type, text } = part as { type?: unknown; text?: unknown };
-          if (typeof text === 'string' && (type === undefined || type === 'output_text' || type === 'text'))
-            texts.push(text);
-        }
-    }
-    const text = texts.join('');
-    if (text.trim()) return text;
-    const kinds = items.map(item => String((item as { type?: unknown })?.type ?? '?')).join('+') || 'none';
-    if (record.status === 'incomplete') {
-      const details = record.incomplete_details as { reason?: unknown } | undefined;
-      throw new ModelParseError('incomplete', `${String(details?.reason ?? 'unknown')}; output=${kinds}`);
-    }
-    throw new ModelParseError('empty', `status=${String(record.status ?? '?')}; output=${kinds}`);
-  }
-  if (adapter === 'google-generative-ai') {
-    const parts = z
-      .object({
-        candidates: z
-          .array(
-            z.object({
-              content: z.object({ parts: z.array(z.object({ text: z.string().optional() })) }).optional(),
-            }),
-          )
-          .min(1),
-      })
-      .parse(raw).candidates[0]!.content?.parts;
-    const text = (parts ?? []).map(part => part.text ?? '').join('');
-    if (!text) throw Error('schema');
-    return text;
-  }
-  // OpenAI-compatible proxies differ: content may be a string, an array of text parts, or null (reasoning-only).
-  const content = z
-    .object({
-      choices: z
-        .array(
-          z.object({
-            message: z.object({
-              content: z
-                .union([z.string(), z.array(z.object({ type: z.string().optional(), text: z.string().optional() }))])
-                .nullable()
-                .optional(),
-            }),
-          }),
-        )
-        .min(1),
-    })
-    .parse(raw).choices[0]!.message.content;
-  const text = Array.isArray(content) ? content.map(part => part.text ?? '').join('') : (content ?? '');
-  if (!text.trim()) {
-    const finish = (raw as { choices?: { finish_reason?: unknown }[] }).choices?.[0]?.finish_reason;
-    throw new ModelParseError(finish === 'length' ? 'incomplete' : 'empty', `finish_reason=${String(finish ?? '?')}`);
-  }
-  return text;
-}
-
-/** Where parsing a model reply failed; recorded in the opt-in debug trail only. */
-export class ModelParseError extends Error {
-  constructor(
-    readonly stage: 'envelope' | 'empty' | 'incomplete' | 'json' | 'validate',
-    readonly issue?: string,
-  ) {
-    super(stage);
-  }
-}
+export { extractAssistantText, ModelParseError } from './model-replies';
 
 /**
  * Pulls the JSON object out of an assistant reply. Models and proxies often wrap it in ```json fences,
@@ -411,11 +321,13 @@ export class ModelTransport {
       if (generation !== this.generation) return { status: 'cancelled', reason: 'cancelled' };
       if (response.redirected || (response.url && response.url !== route.url))
         return { status: 'failed', reason: 'redirect' };
-      if (!response.ok)
+      if (!response.ok) {
+        traceModel('http-error', { status: response.status, message: await errorMessage(response) });
         return {
           status: 'failed',
           reason: [401, 403, 429].includes(response.status) ? `http-${response.status}` : 'http-error',
         };
+      }
       let raw: unknown;
       try {
         raw = await Promise.race([
@@ -441,12 +353,24 @@ export class ModelTransport {
       if (generation !== this.generation) return { status: 'cancelled', reason: 'cancelled' };
       let text = '';
       try {
+        let reply;
         try {
-          text = extractAssistantText(frozen.config.adapter, raw);
+          reply = readModelReply(frozen.config.adapter, raw);
         } catch (error) {
           throw error instanceof ModelParseError ? error : new ModelParseError('envelope');
         }
-        const value = normalizeModelJson(extractJsonObject(text), frozen.request.task);
+        text = reply.text;
+        if (!text.trim()) extractAssistantText(frozen.config.adapter, raw); // throws refused / incomplete / empty
+        let json: unknown;
+        try {
+          json = extractJsonObject(text);
+        } catch {
+          // A reply cut off by the output budget usually ends mid-JSON.
+          throw reply.truncated
+            ? new ModelParseError('incomplete', `finish=${reply.finish ?? '?'}`)
+            : new ModelParseError('json', reply.finish ? `finish=${reply.finish}` : undefined);
+        }
+        const value = normalizeModelJson(json, frozen.request.task);
         try {
           return { status: 'completed', output: parseModelOutput(value, context) };
         } catch {
@@ -460,9 +384,12 @@ export class ModelTransport {
           issue: parse.issue,
           chars: text.length,
           // Opt-in local trail only: the start of the reply is the fastest way to see what the model sent back.
-          head: text ? text.slice(0, 160) : rawShape(raw),
+          head: text ? text.slice(0, 160) : replyShape(raw),
         });
-        return { status: 'failed', reason: 'schema' };
+        return {
+          status: 'failed',
+          reason: parse.stage === 'incomplete' ? 'incomplete' : parse.stage === 'refused' ? 'refused' : 'schema',
+        };
       }
     } catch {
       return timedOut
@@ -477,17 +404,25 @@ export class ModelTransport {
   }
 }
 
-/** Top-level shape of an unparseable envelope (keys only, no values). */
-function rawShape(raw: unknown): string {
-  if (!raw || typeof raw !== 'object') return typeof raw;
-  const record = raw as Record<string, unknown>;
-  const keys = Object.keys(record).slice(0, 8).join(',');
-  const choice = Array.isArray(record.choices) ? (record.choices[0] as Record<string, unknown> | undefined) : undefined;
-  const message = choice?.message as Record<string, unknown> | undefined;
-  if (message) return `{${keys}} message:{${Object.keys(message).join(',')}}`;
-  if (Array.isArray(record.output)) {
-    const kinds = (record.output as unknown[]).map(item => String((item as { type?: unknown })?.type ?? '?')).join('+');
-    return `{${keys}} status=${String(record.status ?? '?')} output=[${kinds}]`;
+/** Provider error message (e.g. "response_format is not supported") for the debug trail; bounded, never the request. */
+export async function errorMessage(response: Response): Promise<string> {
+  try {
+    const body = (await response.text()).slice(0, 2000);
+    try {
+      const parsed = JSON.parse(body) as { error?: { message?: unknown } | string; message?: unknown };
+      const message =
+        typeof parsed.error === 'string'
+          ? parsed.error
+          : typeof parsed.error?.message === 'string'
+            ? parsed.error.message
+            : typeof parsed.message === 'string'
+              ? parsed.message
+              : body;
+      return message.slice(0, 300);
+    } catch {
+      return body.slice(0, 300);
+    }
+  } catch {
+    return '';
   }
-  return `{${keys}}`;
 }

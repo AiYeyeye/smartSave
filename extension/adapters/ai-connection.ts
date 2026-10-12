@@ -55,8 +55,7 @@ export async function discoverModels(
 }
 
 export type TestConnectionResult =
-  | { status: 'completed'; via: 'list' | 'synthetic' }
-  | { status: 'failed'; reason: string };
+  { status: 'completed'; via: 'list' | 'synthetic' } | { status: 'failed'; reason: string };
 
 /**
  * Prefer a synthetic ModelTransport search when a tree + transport are available;

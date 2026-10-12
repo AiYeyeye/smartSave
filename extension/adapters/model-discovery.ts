@@ -18,7 +18,13 @@ const anthropicListSchema = z.object({
 });
 
 const googleListSchema = z.object({
-  models: z.array(z.object({ name: z.string().min(1), displayName: z.string().optional() })),
+  models: z.array(
+    z.object({
+      name: z.string().min(1),
+      displayName: z.string().optional(),
+      supportedGenerationMethods: z.array(z.string()).optional(),
+    }),
+  ),
 });
 
 function authHeaders(adapter: ModelConfig['adapter'], key: string): Record<string, string> {
@@ -26,6 +32,7 @@ function authHeaders(adapter: ModelConfig['adapter'], key: string): Record<strin
     return {
       ...(key ? { 'x-api-key': key } : {}),
       'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true',
     };
   }
   if (adapter === 'google-generative-ai') {
@@ -39,7 +46,11 @@ function parseIds(adapter: ModelConfig['adapter'], raw: unknown): string[] {
   if (adapter === 'ollama') return ollamaListSchema.parse(raw).models.map(m => m.name);
   if (adapter === 'anthropic') return anthropicListSchema.parse(raw).data.map(m => m.id);
   if (adapter === 'google-generative-ai') {
-    return googleListSchema.parse(raw).models.map(m => m.name.replace(/^models\//, ''));
+    // The list also contains embedding / TTS models; only generateContent models can classify bookmarks.
+    return googleListSchema
+      .parse(raw)
+      .models.filter(m => !m.supportedGenerationMethods || m.supportedGenerationMethods.includes('generateContent'))
+      .map(m => m.name.replace(/^models\//, ''));
   }
   return openAiListSchema.parse(raw).data.map(m => m.id);
 }
@@ -95,7 +106,14 @@ async function listModelsInner(input: {
     controller.abort();
   }, input.timeoutMs);
   try {
-    const response = await input.fetch(route.url, {
+    // Anthropic pages 20 models by default and Google 50; ask for one large page so nothing is cut off.
+    const listUrl =
+      input.adapter === 'anthropic'
+        ? `${route.url}?limit=1000`
+        : input.adapter === 'google-generative-ai'
+          ? `${route.url}?pageSize=1000`
+          : route.url;
+    const response = await input.fetch(listUrl, {
       method: 'GET',
       headers: {
         Accept: 'application/json',
@@ -108,7 +126,7 @@ async function listModelsInner(input: {
       referrerPolicy: 'no-referrer',
     });
     if (timedOut) return { status: 'failed', reason: 'timeout' };
-    if (response.redirected || (response.url && response.url !== route.url))
+    if (response.redirected || (response.url && response.url !== listUrl))
       return { status: 'failed', reason: 'redirect' };
     if (!response.ok) {
       const reason = [401, 403, 429].includes(response.status) ? `http-${response.status}` : 'http-error';
