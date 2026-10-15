@@ -49,6 +49,8 @@ Save output optionally includes up to5 keywords of32 characters per assignment. 
 
 Use a disposable profile and synthetic bookmarks. Scripts require `--run` and accept `--browser` for the local Chromium executable. Examples, run from the repository root:
 
+Run the three main flows together with `python extension/tests/e2e/acceptance.py --run --browser /absolute/path/to/chromium`. It rebuilds and validates production assets first, then runs native save/keyword search, background organization and duplicate deletion/undo sequentially in separate fresh profiles. The temporary aggregate results include per-case logs/evidence and production asset hashes; failures return a nonzero exit code. Without `--run`, it only prints the plan. Python Playwright and an existing Chromium executable are required; nothing is downloaded. Run source tests before this command because build integration tests can replace `dist` with test-mode assets.
+
 ```sh
 python extension/tests/e2e/search-entrypoints.py --run --browser /path/to/chromium
 python extension/tests/e2e/suspected-duplicates.py --run --browser /path/to/chromium
