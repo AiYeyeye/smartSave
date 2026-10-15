@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type Ref } from 'react';
+import { useI18n } from '../ui/i18n';
 import type { TreeSnapshot } from '../domain/node-reference';
 import { preflight } from '../domain/preflight';
 import type { Command, ConfirmMutation, MutationResult } from '../schemas/messages';
@@ -21,6 +22,7 @@ type Draft = {
   newFolder: boolean;
 };
 export function MutationFeedback({ result }: { result: MutationResult }) {
+  const { t, message } = useI18n();
   const labels = {
     completed: '已完成',
     rejected: '未执行操作，请检查连接或重新操作',
@@ -30,11 +32,15 @@ export function MutationFeedback({ result }: { result: MutationResult }) {
   };
   return (
     <p role={result.status === 'completed' ? 'status' : 'alert'}>
-      {labels[result.status]} · 已完成 {result.completedSteps} 步 / 剩余 {result.remainingSteps} 步
-      {result.needsReconcile && ' · 需要协调检查'}
-      {result.reason === 'invalid-sender' && ' · 侧边栏授权尚未恢复，请等待连接恢复后重新操作'}
-      {result.reason === 'preview-unavailable' && ' · 操作准备失败，请重新选择目标'}
-      <small>请求编号：{result.requestId}</small>
+      {t('{status} · 已完成 {completed} 步 / 剩余 {remaining} 步', {
+        status: message(labels[result.status]),
+        completed: result.completedSteps,
+        remaining: result.remainingSteps,
+      })}
+      {result.needsReconcile && t(' · 需要协调检查')}
+      {result.reason === 'invalid-sender' && t(' · 侧边栏授权尚未恢复，请等待连接恢复后重新操作')}
+      {result.reason === 'preview-unavailable' && t(' · 操作准备失败，请重新选择目标')}
+      <small>{t('请求编号：{id}', { id: result.requestId })}</small>
     </p>
   );
 }

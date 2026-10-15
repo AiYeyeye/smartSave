@@ -1,3 +1,5 @@
+import { useI18n } from '../ui/i18n';
+import { saveStatusText } from './save-status-text';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { AiServicesStore } from '../persistence/ai-services';
 import { featureModelSettings } from '../adapters/feature-model-settings';
@@ -49,6 +51,7 @@ export function SaveCard({
   extractBody?: () => Promise<string>;
   readOnlyTrial?: boolean;
 }) {
+  const { t, language, message: localize } = useI18n();
   const featureSettings = useMemo(
     () => settings && featureModelSettings(settings, aiServices, readOnlyTrial ? 'save' : 'classify'),
     [settings, aiServices, readOnlyTrial],
@@ -258,24 +261,24 @@ export function SaveCard({
   if (readOnlyTrial) {
     const folder = draft.snapshot.nodes.find(node => node.ref.nativeId === draft.parentId);
     return (
-      <section className="surface" aria-label="当前网页试分类">
-        <h2>当前网页试分类</h2>
+      <section className="surface" aria-label={t('当前网页试分类')}>
+        <h2>{t('当前网页试分类')}</h2>
         <p>{page.title}</p>
         <p style={{ overflowWrap: 'anywhere' }}>{page.url}</p>
-        <p>使用「智能收藏」的模型。仅发送标题、按隐私设置处理的网址和目录结构，不读取正文。</p>
-        <p>结果只作预览，不会创建目录、收藏或移动书签。</p>
-        {!connectionReady && <p role="status">正在恢复目录连接，请稍候。</p>}
+        <p>{t('使用「智能收藏」的模型。仅发送标题、按隐私设置处理的网址和目录结构，不读取正文。')}</p>
+        <p>{t('结果只作预览，不会创建目录、收藏或移动书签。')}</p>
+        {!connectionReady && <p role="status">{t('正在恢复目录连接，请稍候。')}</p>}
         {draft.origin === 'ai' && !draft.aiInvalidated && (
           <p role="status">
-            建议目录：{folder?.title || '根目录'}
-            {draft.proposedPath?.length ? ` / ${draft.proposedPath.join(' / ')}（新目录建议）` : ''}
+            {t('建议目录：{folder}', { folder: folder?.title || t('根目录') })}
+            {draft.proposedPath?.length ? t(' / {path}（新目录建议）', { path: draft.proposedPath.join(' / ') }) : ''}
           </p>
         )}
-        {draft.aiInvalidated && <p role="alert">建议已失效，请重新试分类。</p>}
-        <p role="status">{message}</p>
+        {draft.aiInvalidated && <p role="alert">{t('建议已失效，请重新试分类。')}</p>}
+        <p role="status">{saveStatusText(language, message)}</p>
         <div className="actions">
           <button type="button" disabled={!connectionReady || suggesting} onClick={() => void suggest()}>
-            {suggesting ? '正在试分类…' : '发送并试分类'}
+            {suggesting ? t('正在试分类…') : t('发送并试分类')}
           </button>
           {suggesting && (
             <button
@@ -286,46 +289,50 @@ export function SaveCard({
                 setMessage('已取消试分类。');
               }}
             >
-              取消试分类
+              {t('取消试分类')}
             </button>
           )}
           <button type="button" onClick={onClose}>
-            关闭试分类
+            {t('关闭试分类')}
           </button>
         </div>
       </section>
     );
   }
   return (
-    <section className="surface" aria-label="收藏确认卡">
-      {!connectionReady && <p role="status">连接恢复中，草稿已保留；暂不能请求建议或确认保存。</p>}
-      <h2>收藏当前页面</h2>
+    <section className="surface" aria-label={t('收藏确认卡')}>
+      {!connectionReady && <p role="status">{t('连接恢复中，草稿已保留；暂不能请求建议或确认保存。')}</p>}
+      <h2>{t('收藏当前页面')}</h2>
       <p>{page.url}</p>
-      <p>{draft.source}</p>
-      {draft.aiInvalidated && <p role="alert">模型配置已变化，请重新请求建议或明确选择目录。</p>}
+      <p>{localize(draft.source)}</p>
+      {draft.aiInvalidated && <p role="alert">{t('模型配置已变化，请重新请求建议或明确选择目录。')}</p>}
       {!!duplicates.length && (
         <div>
-          <p>此网址已有书签；请选择打开或编辑，不会重复新增。</p>
+          <p>{t('此网址已有书签；请选择打开或编辑，不会重复新增。')}</p>
           {duplicates.map(node => (
             <div key={node.ref.nativeId}>
               <span>
-                {node.title} · 目录 {node.parentId} · 编号 {node.ref.nativeId}
+                {t('{title} · 目录 {folder} · 编号 {id}', {
+                  title: node.title,
+                  folder: node.parentId ?? '',
+                  id: node.ref.nativeId,
+                })}
               </span>
               <button disabled={busy} onClick={() => openUrl(node.url!)}>
-                打开已有 {node.ref.nativeId}
+                {t('打开已有 {id}', { id: node.ref.nativeId })}
               </button>
               <button
                 disabled={busy || !!result}
                 onClick={() => setDraft(selectSaveDuplicate(draft, node.ref.nativeId))}
               >
-                编辑已有 {node.ref.nativeId}
+                {t('编辑已有 {id}', { id: node.ref.nativeId })}
               </button>
             </div>
           ))}
         </div>
       )}
       <label className="field">
-        收藏标题
+        {t('收藏标题')}
         <input
           value={draft.title}
           disabled={busy || !!result}
@@ -333,18 +340,18 @@ export function SaveCard({
         />
       </label>
       <label className="field">
-        收藏目标目录
+        {t('收藏目标目录')}
         <Select
           value={draft.parentId}
           disabled={busy || !!result}
           onChange={event => patch({ parentId: event.target.value, directoryEdited: true, proposedPath: undefined })}
         >
-          <option value="">请明确选择目录</option>
+          <option value="">{t('请明确选择目录')}</option>
           {draft.snapshot.nodes
             .filter(n => n.childrenWritable)
             .map(n => (
               <option key={n.ref.nativeId} value={n.ref.nativeId}>
-                {n.title || '根目录'}（{n.ref.nativeId}）
+                {n.title || t('根目录')}（{n.ref.nativeId}）
               </option>
             ))}
         </Select>
@@ -360,12 +367,12 @@ export function SaveCard({
                 patch({ newFolder: event.target.checked, directoryEdited: true, proposedPath: undefined })
               }
             />
-            明确创建新目录
+            {t('明确创建新目录')}
           </label>
           {draft.newFolder && (
             <>
               <label className="field">
-                新目录名称
+                {t('新目录名称')}
                 <input
                   disabled={busy || !!result || (draft.proposedPath?.length ?? 0) > 1}
                   value={draft.folderTitle}
@@ -375,8 +382,10 @@ export function SaveCard({
                 />
               </label>
               <p>
-                将创建 {draft.proposedPath?.length || 1} 个目录：{draft.proposedPath?.join(' / ') || draft.folderTitle}
-                。确认保存即接受此路径；可取消新建后手动选择。
+                {t('将创建 {count} 个目录：{path}。确认保存即接受此路径；可取消新建后手动选择。', {
+                  count: draft.proposedPath?.length || 1,
+                  path: draft.proposedPath?.join(' / ') || draft.folderTitle,
+                })}
               </p>
             </>
           )}
@@ -392,10 +401,10 @@ export function SaveCard({
                 setBodyEnabled(event.target.checked);
               }}
             />
-            本次允许正文辅助（最多1500字；还需模型隐私设置开启）
+            {t('本次允许正文辅助（最多1500字；还需模型隐私设置开启）')}
           </label>
           <button disabled={!connectionReady || busy || !!result} onClick={() => void suggest()}>
-            请求AI建议
+            {t('请求AI建议')}
           </button>
           <button
             onClick={() => {
@@ -405,7 +414,7 @@ export function SaveCard({
               setMessage('已取消AI请求；不会自动重试。');
             }}
           >
-            取消AI请求
+            {t('取消AI请求')}
           </button>
         </>
       )}
@@ -416,7 +425,7 @@ export function SaveCard({
           checked={draft.rememberRule}
           onChange={event => patch({ rememberRule: event.target.checked })}
         />
-        以后此网站默认存到这里
+        {t('以后此网站默认存到这里')}
       </label>
       <label className="check">
         <input
@@ -425,23 +434,23 @@ export function SaveCard({
           checked={draft.includeSubdomains}
           onChange={event => patch({ includeSubdomains: event.target.checked })}
         />
-        包含子域名
+        {t('包含子域名')}
       </label>
-      <p role="status">{message}</p>
+      <p role="status">{saveStatusText(language, message)}</p>
       {result && <MutationFeedback result={result} />}
       {pendingRule && (
         <button disabled={busy} onClick={() => void saveRule(pendingRule)}>
-          仅重试保存规则
+          {t('仅重试保存规则')}
         </button>
       )}
       <button disabled={busy} onClick={onClose}>
-        {result ? '关闭结果' : '取消收藏'}
+        {result ? t('关闭结果') : t('取消收藏')}
       </button>
       <button
         disabled={!connectionReady || busy || !!result || !draft.parentId || (!!duplicates.length && !draft.existingId)}
         onClick={() => void confirm()}
       >
-        确认收藏保存
+        {t('确认收藏保存')}
       </button>
     </section>
   );

@@ -1,3 +1,4 @@
+import { useI18n } from '../ui/i18n';
 import { useEffect, useRef, useState } from 'react';
 import { z } from 'zod';
 import { SAVE_PORT } from '../background/save-entrypoints';
@@ -19,6 +20,7 @@ export function CurrentPageSave({
   aiServices?: AiServicesStore;
   trialNonce?: number;
 }) {
+  const { message: localize } = useI18n();
   const [page, setPage] = useState<Page>();
   const current = useRef<Page | undefined>(undefined);
   const [tree, setTree] = useState<TreeState>({ status: 'loading' });
@@ -104,7 +106,7 @@ export function CurrentPageSave({
     });
   }
   // Keep explicitly captured shortcut/context-menu sessions, without an idle manual-save CTA.
-  if (!page) return trial && message ? <p role="status">{message}</p> : null;
+  if (!page) return trial && message ? <p role="status">{localize(message)}</p> : null;
   const snapshot = tree.status === 'ready' ? tree.snapshot : lastSnapshot;
   return (
     <>
@@ -132,7 +134,7 @@ export function CurrentPageSave({
           }}
         />
       )}
-      {message && <p role="status">{message}</p>}
+      {message && <p role="status">{localize(message)}</p>}
     </>
   );
 }

@@ -19,6 +19,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--run', action='store_true')
 parser.add_argument('--browser', default='C:/Users/PC/AppData/Local/ms-playwright/chromium-1208/chrome-win64/chrome.exe')
 parser.add_argument('--motion', choices=['reduce', 'no-preference'], default='reduce')
+parser.add_argument('--language', choices=['zh-CN', 'en'], default='zh-CN')
 args = parser.parse_args()
 if not args.run:
     print('SKIP: pass --run for the isolated fixture')
@@ -59,6 +60,10 @@ class Provider(BaseHTTPRequestHandler):
 server = ThreadingHTTPServer(('127.0.0.1', 0), Provider)
 threading.Thread(target=server.serve_forever, daemon=True).start()
 origin = f'http://127.0.0.1:{server.server_port}'
+def ui(chinese, english):
+    return english if args.language == 'en' else chinese
+
+folder_title = '收藏标题' if args.language == 'en' else 'Trial destination'
 manifest = json.loads((extension / 'manifest.json').read_text(encoding='utf-8'))
 manifest['host_permissions'] = ['http://127.0.0.1/*']
 (extension / 'manifest.json').write_text(json.dumps(manifest), encoding='utf-8')
@@ -80,10 +85,10 @@ with sync_playwright() as playwright:
     try:
         worker = context.service_workers[0] if context.service_workers else context.wait_for_event('serviceworker')
         extension_id = worker.url.split('/')[2]
-        fixture['folder'] = worker.evaluate("""async () => {
+        fixture['folder'] = worker.evaluate("""async title => {
           const root=(await chrome.bookmarks.getTree())[0].children[0];
-          return (await chrome.bookmarks.create({parentId:root.id,title:'Trial destination'})).id;
-        }""")
+          return (await chrome.bookmarks.create({parentId:root.id,title})).id;
+        }""", folder_title)
         before = worker.evaluate('() => chrome.bookmarks.getTree()')
         options = context.new_page()
         options.goto(f'chrome-extension://{extension_id}/options/index.html#ai-services')
@@ -105,6 +110,9 @@ with sync_playwright() as playwright:
         options.get_by_label('发送完整网址（含查询参数和片段）', exact=True).uncheck()
         options.get_by_role('button', name='保存隐私设置', exact=True).click()
         options.get_by_text('隐私设置已保存；未配置模型不影响浏览。', exact=True).wait_for()
+        if args.language == 'en':
+            options.goto(f'chrome-extension://{extension_id}/options/index.html#appearance')
+            options.get_by_label('语言', exact=True).select_option('en')
         page = context.new_page()
         page.goto(origin + '/page?private=must-not-send')
         page.bring_to_front()
@@ -118,27 +126,27 @@ with sync_playwright() as playwright:
             if not any(fresh_frame(frame) for frame in page.frames):
                 page.wait_for_event('framenavigated', predicate=fresh_frame)
             frame = next(frame for frame in page.frames if fresh_frame(frame))
-            frame.get_by_role('button', name='设置', exact=True).wait_for()
+            frame.get_by_role('button', name=ui('设置', 'Settings'), exact=True).wait_for()
             return frame
 
         widths = []
         for width in (320, 340, 480):
             frame = open_overlay(width)
-            frame.get_by_role('button', name='设置', exact=True).click()
-            frame.get_by_role('heading', name='快速设置', exact=True).wait_for()
-            frame.get_by_role('button', name='试分类当前网页', exact=True).click()
-            frame.get_by_role('heading', name='当前网页试分类', exact=True).wait_for()
+            frame.get_by_role('button', name=ui('设置', 'Settings'), exact=True).click()
+            frame.get_by_role('heading', name=ui('快速设置', 'Quick settings'), exact=True).wait_for()
+            frame.get_by_role('button', name=ui('试分类当前网页', 'Try classifying this page'), exact=True).click()
+            frame.get_by_role('heading', name=ui('当前网页试分类', 'Try classifying this page'), exact=True).wait_for()
             assert len(events) == 0
             geometry = frame.evaluate('({width:innerWidth,scroll:document.documentElement.scrollWidth})')
             assert geometry['scroll'] <= geometry['width'] + 1, geometry
             page.screenshot(path=str(root / f'trial-{width}.png'), full_page=True)
             widths.append(geometry)
             if width != 480:
-                frame.get_by_role('button', name='收起侧栏', exact=True).click()
+                frame.get_by_role('button', name=ui('收起侧栏', 'Close sidebar'), exact=True).click()
                 page.locator('zhilan-sidebar').wait_for(state='detached')
 
-        frame.get_by_role('button', name='发送并试分类', exact=True).click()
-        frame.get_by_text('建议目录：Trial destination', exact=True).wait_for()
+        frame.get_by_role('button', name=ui('发送并试分类', 'Send and try classification'), exact=True).click()
+        frame.get_by_text(ui('建议目录：', 'Suggested folder: ') + folder_title, exact=True).wait_for()
         assert len(events) == 1
         event = events[0]
         assert event['model'] == 'synthetic-existing-model'
@@ -146,11 +154,15 @@ with sync_playwright() as playwright:
         assert 'snippet' not in event['payload']
         assert 'must-not-send' not in json.dumps(event)
         assert worker.evaluate('() => chrome.bookmarks.getTree()') == before
-        assert frame.get_by_role('button', name='确认收藏保存', exact=True).count() == 0
+        assert frame.get_by_role('button', name=ui('确认收藏保存', 'Confirm bookmark save'), exact=True).count() == 0
         page.screenshot(path=str(root / 'trial-result.png'), full_page=True)
+        if args.language == 'en':
+            options.get_by_label('Language', exact=True).select_option('zh-CN')
+            frame.get_by_text('建议目录：' + folder_title, exact=True).wait_for()
+            assert len(events) == 1
         page.goto(origin + '/next')
         assert len(events) == 1
-        result = {'status': 'PASS', 'browser': context.browser.version, 'evidence': str(root), 'widths': widths, 'motion': args.motion,
+        result = {'status': 'PASS', 'browser': context.browser.version, 'evidence': str(root), 'widths': widths, 'motion': args.motion, 'language': args.language,
                   'requests': len(events), 'nativeTreeUnchanged': True,
                   'productionWorkerSHA256': hashlib.sha256(production_worker).hexdigest(),
                   'scope': 'Fresh profile; production UI/HTML/CSS unchanged. Worker toolbar listener captured by a prelude; copied manifest grants loopback only. Local synthetic provider; no actual toolbar gesture or live-provider performance claim.'}

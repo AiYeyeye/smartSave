@@ -6,6 +6,7 @@ import { SettingsStore } from '../persistence/settings';
 import { SiteRulesStore } from '../persistence/site-rules';
 import { AiServicesStore } from '../persistence/ai-services';
 import type { TreeSnapshot } from '../domain/node-reference';
+import { LANGUAGE_KEY, LanguagePicker, LocaleProvider } from '../ui/i18n';
 const tree: TreeSnapshot = {
   installationId: 'i',
   epoch: 'e',
@@ -43,7 +44,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
-async function harness(deferred = false, bodyEnabled = false, trial = false) {
+async function harness(deferred = false, bodyEnabled = false, trial = false, localized = false) {
   const listeners = new Set<() => void>();
   const event = {
     addListener: (listener: () => void) => listeners.add(listener),
@@ -132,7 +133,16 @@ async function harness(deferred = false, bodyEnabled = false, trial = false) {
     extractBody,
     onClose: vi.fn(),
   };
-  const view = render(createElement(SaveCard, props));
+  const card = (snapshot: TreeSnapshot) =>
+    localized
+      ? createElement(
+          LocaleProvider,
+          null,
+          createElement(LanguagePicker),
+          createElement(SaveCard, { ...props, snapshot }),
+        )
+      : createElement(SaveCard, { ...props, snapshot });
+  const view = render(card(tree));
   return {
     revoke: () => listeners.forEach(listener => listener()),
     respond: (value: Response) => finish(value),
@@ -145,9 +155,69 @@ async function harness(deferred = false, bodyEnabled = false, trial = false) {
     send,
     extractBody,
     services,
-    rerender: (snapshot: TreeSnapshot) => view.rerender(createElement(SaveCard, { ...props, snapshot })),
+    rerender: (snapshot: TreeSnapshot) => view.rerender(card(snapshot)),
   };
 }
+it('language changes retain the save draft, explicit consent and in-flight request without writing', async () => {
+  localStorage.setItem(LANGUAGE_KEY, 'en');
+  const h = await harness(false, false, false, true);
+  await waitFor(() => expect(h.fetcher).toHaveBeenCalledOnce());
+  const input = screen.getByLabelText('Bookmark title');
+  fireEvent.change(input, { target: { value: '收藏标题 <&>' } });
+  fireEvent.change(screen.getByLabelText('Bookmark folder'), { target: { value: 'f' } });
+  fireEvent.click(screen.getByLabelText('Save future bookmarks from this website here'));
+  fireEvent.click(screen.getByLabelText('Include subdomains'));
+  fireEvent.change(screen.getByLabelText('Language'), { target: { value: 'zh-CN' } });
+  expect(screen.getByLabelText('收藏标题')).toBe(input);
+  expect(input).toHaveValue('收藏标题 <&>');
+  expect(screen.getByLabelText('收藏目标目录')).toHaveValue('f');
+  expect(screen.getByLabelText('包含子域名')).toBeChecked();
+  expect(screen.getByLabelText('以后此网站默认存到这里')).toBeChecked();
+  expect(h.fetcher.mock.calls[0]![1]!.signal?.aborted).toBe(false);
+  await acceptSuggestion(h);
+  expect(input).toHaveValue('收藏标题 <&>');
+  expect(h.fetcher).toHaveBeenCalledOnce();
+  expect(h.send).not.toHaveBeenCalled();
+  h.view.unmount();
+  h.settings.dispose();
+});
+it('English trial switches language during generation and keeps the preview read-only', async () => {
+  localStorage.setItem(LANGUAGE_KEY, 'en');
+  const h = await harness(false, true, true, true);
+  expect(h.fetcher).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Send and try classification' }));
+  await waitFor(() => expect(h.fetcher).toHaveBeenCalledOnce());
+  fireEvent.change(screen.getByLabelText('Language'), { target: { value: 'zh-CN' } });
+  expect(screen.getByRole('button', { name: '正在试分类…' })).toBeDisabled();
+  expect(h.fetcher.mock.calls[0]![1]!.signal?.aborted).toBe(false);
+  fireEvent.change(screen.getByLabelText('语言'), { target: { value: 'en' } });
+  const wire = JSON.parse(String(h.fetcher.mock.calls[0]![1]!.body));
+  const itemId = JSON.parse(wire.messages[1].content).items[0].id;
+  h.respond(
+    new Response(
+      JSON.stringify({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                assignments: [{ itemId, folderId: 'f' }],
+                newFolders: [],
+              }),
+            },
+          },
+        ],
+      }),
+    ),
+  );
+  await screen.findByText('Suggested folder: Folder');
+  expect(screen.queryByRole('button', { name: 'Confirm bookmark save' })).not.toBeInTheDocument();
+  expect(h.fetcher).toHaveBeenCalledOnce();
+  expect(h.send).not.toHaveBeenCalled();
+  expect(h.extractBody).not.toHaveBeenCalled();
+  h.view.unmount();
+  h.settings.dispose();
+  h.services?.dispose();
+});
 async function acceptSuggestion(h: Awaited<ReturnType<typeof harness>>) {
   await waitFor(() => expect(h.fetcher).toHaveBeenCalledOnce());
   const wire = JSON.parse(String(h.fetcher.mock.calls[0]![1]!.body));

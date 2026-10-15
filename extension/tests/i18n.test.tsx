@@ -5,6 +5,7 @@ import { LANGUAGE_KEY, LanguagePicker, LocaleProvider, translate, translateKnown
 import { english } from '../ui/i18n/catalog';
 import { searchStatusText } from '../panel/search-status-text';
 import { serviceStatusText } from '../options/ai-services/status-text';
+import { saveStatusText } from '../panel/save-status-text';
 
 it('every translation preserves its parameters and interpolates values as literal text', () => {
   const placeholders = (value: string) => [...value.matchAll(/\{(\w+)\}/g)].map(match => match[1]).sort();
@@ -89,4 +90,13 @@ it('service notifications translate status while preserving embedded model ident
     'permission. You can still enter a model ID',
   );
   expect(serviceStatusText('en', '配置完成：收藏会用 保存服务 自动归类')).toContain('保存服务');
+});
+it('save status translates only UI text and preserves failure details literally', () => {
+  expect(saveStatusText('en', 'AI未完成：收藏标题<&>；可手动收藏。')).toBe(
+    'AI did not complete: 收藏标题<&>. You can save manually.',
+  );
+  expect(saveStatusText('zh-CN', 'AI未完成：timeout；可检查配置后重试。')).toBe(
+    'AI未完成：timeout；可检查配置后重试。',
+  );
+  expect(saveStatusText('en', 'unknown diagnostic')).toBe('unknown diagnostic');
 });
