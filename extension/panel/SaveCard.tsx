@@ -35,6 +35,7 @@ export function SaveCard({
   send,
   extractBody,
   reconcile = reconcileSave,
+  readOnlyTrial = false,
 }: {
   page: { title: string; url: string; token?: string };
   snapshot: TreeSnapshot;
@@ -46,14 +47,17 @@ export function SaveCard({
   send?: SendMutation;
   reconcile?: ReconcileSave;
   extractBody?: () => Promise<string>;
+  readOnlyTrial?: boolean;
 }) {
   const featureSettings = useMemo(
-    () => settings && featureModelSettings(settings, aiServices, 'classify'),
-    [settings, aiServices],
+    () => settings && featureModelSettings(settings, aiServices, readOnlyTrial ? 'save' : 'classify'),
+    [settings, aiServices, readOnlyTrial],
   );
   const [draft, setDraft] = useState<SaveDraft>(() => beginSave(snapshot, page, []));
   const [message, setMessage] = useState('正在读取规则；不会自动保存。');
-  const automaticEligible = useRef(true);
+  const automaticEligible = useRef(!readOnlyTrial);
+  const [suggesting, setSuggesting] = useState(false);
+  const suggestingLock = useRef(false);
   const [autoSuggest, setAutoSuggest] = useState(false);
   const [bodyEnabled, setBodyEnabled] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -85,19 +89,21 @@ export function SaveCard({
       );
     const stop = authority?.subscribe(changed) ?? featureSettings?.subscribe(changed);
     window.addEventListener('pagehide', revoke);
-    void rulesStore
-      .load()
-      .then(rules => {
-        if (!live.current) return;
-        setDraft(current => hydrateSaveRules(current, rules));
-        setMessage(
-          matchSiteRule(page.url, rules) ? '已检查网站规则；仍需确认。' : '可请求AI建议，或直接手动选择目录。',
-        );
-        if (automaticEligible.current && !matchSiteRule(page.url, rules)) setAutoSuggest(true);
-      })
-      .catch(() => {
-        if (live.current) setMessage('规则读取失败；可手动收藏，不会覆盖规则。');
-      });
+    if (readOnlyTrial) setMessage('准备好后点击试分类；不会创建或移动书签。');
+    else
+      void rulesStore
+        .load()
+        .then(rules => {
+          if (!live.current) return;
+          setDraft(current => hydrateSaveRules(current, rules));
+          setMessage(
+            matchSiteRule(page.url, rules) ? '已检查网站规则；仍需确认。' : '可请求AI建议，或直接手动选择目录。',
+          );
+          if (automaticEligible.current && !matchSiteRule(page.url, rules)) setAutoSuggest(true);
+        })
+        .catch(() => {
+          if (live.current) setMessage('规则读取失败；可手动收藏，不会覆盖规则。');
+        });
     return () => {
       live.current = false;
       revoke();
@@ -105,7 +111,7 @@ export function SaveCard({
       transport.current?.dispose();
       window.removeEventListener('pagehide', revoke);
     };
-  }, [featureSettings, rulesStore, page]);
+  }, [featureSettings, rulesStore, page, readOnlyTrial]);
   // The draft follows the live tree; only a changed or missing destination folder touches an accepted suggestion.
   useEffect(() => {
     setDraft(current => rebaseSaveDraft(current, snapshot));
@@ -131,17 +137,21 @@ export function SaveCard({
   }
   async function suggest() {
     automaticEligible.current = false;
+    if (suggestingLock.current) return;
     if (!connectionReady || !featureSettings || !transport.current || result || lock.current) {
-      setMessage('模型未配置；请手动选择目录。');
+      setMessage(readOnlyTrial ? '智能收藏模型尚不可用，请先在 AI 服务中完成配置。' : '模型未配置；请手动选择目录。');
       return;
     }
     const token = ++generation.current;
-    setMessage('正在请求建议；可继续编辑，迟到建议不会覆盖手改目录。');
+    suggestingLock.current = true;
+    setSuggesting(true);
+    if (readOnlyTrial) setDraft(current => invalidateSaveSuggestion(current));
+    setMessage(readOnlyTrial ? '正在试分类，仅生成目录建议。' : '正在请求建议；可继续编辑，迟到建议不会覆盖手改目录。');
     let snippet: string | undefined;
     try {
       const config = await featureSettings.snapshot();
       if (!config.config) throw Error('configuration');
-      if (bodyEnabled && config.privacy.bodyEnabled && extractBody) {
+      if (!readOnlyTrial && bodyEnabled && config.privacy.bodyEnabled && extractBody) {
         try {
           snippet = await extractBody();
         } catch {
@@ -168,7 +178,7 @@ export function SaveCard({
       snippet = undefined;
       if (!live.current || token !== generation.current) return;
       if (response.status !== 'completed') {
-        setMessage(`AI未完成：${response.reason}；可手动收藏。`);
+        setMessage(`AI未完成：${response.reason}${readOnlyTrial ? '；可检查配置后重试。' : '；可手动收藏。'}`);
         return;
       }
       if (!('assignments' in response.output)) throw Error();
@@ -185,9 +195,17 @@ export function SaveCard({
               includeSubdomains: current.includeSubdomains,
             },
       );
-      setMessage('AI建议仅供确认；不会自动保存。');
+      setMessage(readOnlyTrial ? '试分类完成；未创建或移动任何书签。' : 'AI建议仅供确认；不会自动保存。');
     } catch {
-      if (live.current && token === generation.current) setMessage('模型或建议不可用；请手动选择目录。');
+      if (live.current && token === generation.current)
+        setMessage(
+          readOnlyTrial
+            ? '模型或建议不可用，请检查智能收藏的服务、密钥和模型配置。'
+            : '模型或建议不可用；请手动选择目录。',
+        );
+    } finally {
+      suggestingLock.current = false;
+      if (live.current) setSuggesting(false);
     }
   }
   async function saveRule(rule: SiteRule) {
@@ -205,7 +223,7 @@ export function SaveCard({
     }
   }
   async function confirm() {
-    if (!connectionReady || lock.current || result) return;
+    if (readOnlyTrial || !connectionReady || lock.current || result) return;
     let request;
     try {
       request = prepareSave(draft, snapshot);
@@ -237,6 +255,47 @@ export function SaveCard({
     if (live.current) setBusy(false);
   }
   const duplicates = saveDuplicates(draft);
+  if (readOnlyTrial) {
+    const folder = draft.snapshot.nodes.find(node => node.ref.nativeId === draft.parentId);
+    return (
+      <section className="surface" aria-label="当前网页试分类">
+        <h2>当前网页试分类</h2>
+        <p>{page.title}</p>
+        <p style={{ overflowWrap: 'anywhere' }}>{page.url}</p>
+        <p>使用「智能收藏」的模型。仅发送标题、按隐私设置处理的网址和目录结构，不读取正文。</p>
+        <p>结果只作预览，不会创建目录、收藏或移动书签。</p>
+        {!connectionReady && <p role="status">正在恢复目录连接，请稍候。</p>}
+        {draft.origin === 'ai' && !draft.aiInvalidated && (
+          <p role="status">
+            建议目录：{folder?.title || '根目录'}
+            {draft.proposedPath?.length ? ` / ${draft.proposedPath.join(' / ')}（新目录建议）` : ''}
+          </p>
+        )}
+        {draft.aiInvalidated && <p role="alert">建议已失效，请重新试分类。</p>}
+        <p role="status">{message}</p>
+        <div className="actions">
+          <button type="button" disabled={!connectionReady || suggesting} onClick={() => void suggest()}>
+            {suggesting ? '正在试分类…' : '发送并试分类'}
+          </button>
+          {suggesting && (
+            <button
+              type="button"
+              onClick={() => {
+                generation.current++;
+                transport.current?.cancel();
+                setMessage('已取消试分类。');
+              }}
+            >
+              取消试分类
+            </button>
+          )}
+          <button type="button" onClick={onClose}>
+            关闭试分类
+          </button>
+        </div>
+      </section>
+    );
+  }
   return (
     <section className="surface" aria-label="收藏确认卡">
       {!connectionReady && <p role="status">连接恢复中，草稿已保留；暂不能请求建议或确认保存。</p>}

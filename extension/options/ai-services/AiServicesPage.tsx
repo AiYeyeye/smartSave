@@ -70,12 +70,13 @@ function AiServicesPageInner({
     key: string;
     remember: boolean;
     step: 'models' | 'features';
+    onboarding?: boolean;
   } | null>(null);
   const wizardService = wizard ? services.find(s => s.id === wizard.serviceId) : undefined;
 
   async function onConnected(svc: ConnectedService, key: string, remember: boolean) {
     await controller.persistService(svc, key, remember);
-    setWizard({ serviceId: svc.id, key, remember, step: 'models' });
+    setWizard({ serviceId: svc.id, key, remember, step: 'models', onboarding: true });
   }
 
   async function assignAll(changes: { featureId: string; connId: string; modelId: string }[]) {
@@ -155,6 +156,7 @@ function AiServicesPageInner({
           services={services}
           features={features}
           initialStep={wizard.step}
+          onboarding={wizard.onboarding}
           onSaveModels={async (enabled, catalog) => {
             await controller.persistService({ ...wizardService, enabled, catalog }, wizard.key, wizard.remember);
           }}

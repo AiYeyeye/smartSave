@@ -18,12 +18,14 @@ export function PopupSettings({
   onOpenRoute,
   onOpenAiServices,
   onAssignFeature,
+  onTrial,
 }: {
   services: ConnectedService[];
   features: FeatureAssignment[];
   onOpenRoute: (route: string) => void;
   onOpenAiServices: (tab: AiServicesTab) => void;
   onAssignFeature: (featureId: string, connId: string, modelId: string) => void;
+  onTrial?: () => void;
 }) {
   return (
     <div className="popup-settings">
@@ -33,6 +35,11 @@ export function PopupSettings({
         <AccentPicker compact />
       </section>
       <AiSidebarSummary services={services} features={features} onOpen={onOpenAiServices} onAssign={onAssignFeature} />
+      {onTrial && (
+        <button type="button" onClick={onTrial}>
+          试分类当前网页
+        </button>
+      )}
       <section className="popup-block" aria-label="完整设置">
         <h2>完整设置</h2>
         <div className="link-list">

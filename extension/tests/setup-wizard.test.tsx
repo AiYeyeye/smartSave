@@ -87,3 +87,70 @@ it('can be skipped at the first step without assigning anything', async () => {
   expect(onClose).toHaveBeenCalledWith();
   expect(onAssign).not.toHaveBeenCalled();
 });
+
+it('does not recommend non-chat models when they are the entire catalog', () => {
+  expect(recommendModels(['text-embedding-3-small', 'tts-1']).picked).toEqual([]);
+  expect(Object.values(recommendAssignments(DEFAULT_FEATURES, 'c1', ['tts-1']))).toEqual(
+    DEFAULT_FEATURES.map(() => '__none__'),
+  );
+});
+
+it('onboards with one model, preserves existing assignments and provides an explicit webpage trial handoff', async () => {
+  const onAssign = vi.fn(async () => {});
+  const onSaveModels = vi.fn(async () => {});
+  const onClose = vi.fn();
+  const user = userEvent.setup();
+  render(
+    <SetupWizard
+      onboarding
+      service={service}
+      services={[service]}
+      features={DEFAULT_FEATURES.map(f => (f.id === 'search' ? { ...f, connId: 'c1', modelId: 'existing' } : f))}
+      onSaveModels={onSaveModels}
+      onAssign={onAssign}
+      onClose={onClose}
+    />,
+  );
+  expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+  await user.clear(screen.getByLabelText('使用哪个模型'));
+  await user.type(screen.getByLabelText('使用哪个模型'), 'my-existing-model');
+  await user.click(screen.getByRole('button', { name: '保存并继续' }));
+  await waitFor(() => expect(screen.getByRole('heading', { name: '在网页侧栏试一次' })).toBeVisible());
+  expect(onSaveModels).toHaveBeenCalledWith(
+    ['my-existing-model'],
+    expect.arrayContaining([{ id: 'my-existing-model', ctx: '自定义' }]),
+  );
+  expect(onAssign).toHaveBeenCalledWith(
+    DEFAULT_FEATURES.filter(f => f.id !== 'search').map(f => ({
+      featureId: f.id,
+      connId: 'c1',
+      modelId: 'my-existing-model',
+    })),
+  );
+  expect(onClose).not.toHaveBeenCalled();
+  await user.click(screen.getByRole('button', { name: '完成，稍后试分类' }));
+  expect(onClose).toHaveBeenCalledOnce();
+});
+
+it('keeps onboarding at the editable step after persistence failure and allows retry', async () => {
+  const onAssign = vi.fn(async () => {});
+  const onSaveModels = vi.fn().mockRejectedValueOnce(Error('storage')).mockResolvedValue(undefined);
+  const user = userEvent.setup();
+  render(
+    <SetupWizard
+      onboarding
+      service={service}
+      services={[service]}
+      features={DEFAULT_FEATURES}
+      onSaveModels={onSaveModels}
+      onAssign={onAssign}
+      onClose={vi.fn()}
+    />,
+  );
+  await user.click(screen.getByRole('button', { name: '保存并继续' }));
+  await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('配置尚未完成'));
+  expect(onAssign).not.toHaveBeenCalled();
+  await user.click(screen.getByRole('button', { name: '保存并继续' }));
+  await waitFor(() => expect(screen.getByRole('heading', { name: '在网页侧栏试一次' })).toBeVisible());
+  expect(onAssign).toHaveBeenCalledOnce();
+});

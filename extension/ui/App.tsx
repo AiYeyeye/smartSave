@@ -85,6 +85,7 @@ function PopupApp({ overlay = false }: { overlay?: boolean }) {
   const [view, setView] = useState<PopupView>('browse');
   const [query, setQuery] = useState('');
   const [batchNonce, setBatchNonce] = useState(0);
+  const [trialNonce, setTrialNonce] = useState(0);
 
   // Workbenches open in a settings tab; the overlay sidebar gets out of the way, the side panel stays.
   function open(route: string) {
@@ -120,7 +121,7 @@ function PopupApp({ overlay = false }: { overlay?: boolean }) {
       <main id="main" tabIndex={-1}>
         <div hidden={view !== 'browse'}>
           <SaveReceiptCard onOpen={open} />
-          <CurrentPageSave settings={settingsStore} aiServices={ai.store} />
+          <CurrentPageSave settings={settingsStore} aiServices={ai.store} trialNonce={trialNonce} />
           <SearchResults
             query={query}
             settings={settingsStore}
@@ -133,6 +134,11 @@ function PopupApp({ overlay = false }: { overlay?: boolean }) {
         </div>
         {view === 'settings' && (
           <PopupSettings
+            onTrial={() => {
+              setQuery('');
+              setView('browse');
+              setTrialNonce(value => value + 1);
+            }}
             services={ai.services}
             features={ai.features}
             onOpenRoute={open}

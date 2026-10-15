@@ -4,6 +4,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { SaveCard } from '../panel/SaveCard';
 import { SettingsStore } from '../persistence/settings';
 import { SiteRulesStore } from '../persistence/site-rules';
+import { AiServicesStore } from '../persistence/ai-services';
 import type { TreeSnapshot } from '../domain/node-reference';
 const tree: TreeSnapshot = {
   installationId: 'i',
@@ -42,7 +43,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
-async function harness(deferred = false, bodyEnabled = false) {
+async function harness(deferred = false, bodyEnabled = false, trial = false) {
   const listeners = new Set<() => void>();
   const event = {
     addListener: (listener: () => void) => listeners.add(listener),
@@ -73,6 +74,36 @@ async function harness(deferred = false, bodyEnabled = false) {
     false,
   );
   const rules = new SiteRulesStore(storage, run => run());
+  const services = trial ? new AiServicesStore(storage, run => run()) : undefined;
+  if (services) {
+    await services.load();
+    await services.upsertService(
+      {
+        id: 'trial',
+        name: 'Synthetic',
+        serviceType: 'API',
+        kind: 'api',
+        detail: '',
+        baseUrl: 'https://trial.test',
+        mode: 'openai',
+        status: 'ok',
+        letter: 'T',
+        avatarClass: 'custom',
+        catalog: [],
+        enabled: ['save-model', 'classify-model'],
+        streaming: false,
+      },
+      'trial-key',
+      false,
+    );
+    await services.saveFeatures(
+      services
+        .snapshotServices()
+        .features.map(feature => ({ ...feature, connId: 'trial', modelId: `${feature.id}-model` })),
+    );
+    const context = await settings.snapshot();
+    await settings.save(context.config!, { ...context.privacy, fullUrl: false }, context.key, false);
+  }
   let release!: (value: []) => void;
   if (deferred)
     vi.spyOn(rules, 'load').mockReturnValue(
@@ -88,12 +119,17 @@ async function harness(deferred = false, bodyEnabled = false) {
       }),
   );
   vi.stubGlobal('fetch', fetcher);
+  const send = vi.fn();
+  const extractBody = vi.fn(async () => 'ephemeral-body');
   const props = {
-    page: { title: 'Page', url: 'https://page.test/' },
+    page: { title: 'Page', url: 'https://page.test/private?secret=hidden' },
     snapshot: tree,
     settings,
     rulesStore: rules,
-    extractBody: async () => 'ephemeral-body',
+    aiServices: services,
+    readOnlyTrial: trial,
+    send,
+    extractBody,
     onClose: vi.fn(),
   };
   const view = render(createElement(SaveCard, props));
@@ -106,6 +142,9 @@ async function harness(deferred = false, bodyEnabled = false) {
     settings,
     view,
     data,
+    send,
+    extractBody,
+    services,
     rerender: (snapshot: TreeSnapshot) => view.rerender(createElement(SaveCard, { ...props, snapshot })),
   };
 }
@@ -126,6 +165,74 @@ async function acceptSuggestion(h: Awaited<ReturnType<typeof harness>>) {
   );
   await waitFor(() => expect(screen.getByLabelText('收藏目标目录')).toHaveValue('f'));
 }
+it('read-only trial waits for a click, uses the save route and privacy projection, and never exposes a write', async () => {
+  const h = await harness(false, true, true);
+  expect(screen.getByRole('heading', { name: '当前网页试分类' })).toBeVisible();
+  expect(h.fetcher).not.toHaveBeenCalled();
+  expect(screen.queryByRole('button', { name: '确认收藏保存' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '发送并试分类' }));
+  await waitFor(() => expect(h.fetcher).toHaveBeenCalledOnce());
+  const [url, init] = h.fetcher.mock.calls[0]!;
+  const wire = JSON.parse(String(init!.body));
+  expect(url).toBe('https://trial.test/v1/chat/completions');
+  expect(wire.model).toBe('save-model');
+  expect(init!.headers).toMatchObject({ Authorization: 'Bearer trial-key' });
+  const payload = JSON.parse(wire.messages[1].content);
+  expect(payload.items[0].url).toBe('https://page.test/private');
+  expect(JSON.stringify(payload)).not.toMatch(/secret|ephemeral-body/);
+  expect(h.extractBody).not.toHaveBeenCalled();
+  h.respond(
+    new Response(
+      JSON.stringify({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                assignments: [{ itemId: payload.items[0].id, folderId: 'f' }],
+                newFolders: [],
+              }),
+            },
+          },
+        ],
+      }),
+    ),
+  );
+  await waitFor(() => expect(screen.getByText('建议目录：Folder')).toBeVisible());
+  expect(h.send).not.toHaveBeenCalled();
+  expect(JSON.stringify(h.data)).not.toContain('trial-key');
+  h.revoke();
+  await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('建议已失效'));
+  expect(screen.queryByText('建议目录：Folder')).not.toBeInTheDocument();
+  h.view.unmount();
+  h.settings.dispose();
+  h.services?.dispose();
+});
+
+it('cancelled trial ignores a late successful response and cannot write', async () => {
+  const h = await harness(false, true, true);
+  fireEvent.click(screen.getByRole('button', { name: '发送并试分类' }));
+  await waitFor(() => expect(h.fetcher).toHaveBeenCalledOnce());
+  const init = h.fetcher.mock.calls[0]![1]!;
+  const itemId = JSON.parse(JSON.parse(String(init.body)).messages[1].content).items[0].id;
+  fireEvent.click(screen.getByRole('button', { name: '取消试分类' }));
+  expect(init.signal?.aborted).toBe(true);
+  h.respond(
+    new Response(
+      JSON.stringify({
+        choices: [
+          { message: { content: JSON.stringify({ assignments: [{ itemId, folderId: 'f' }], newFolders: [] }) } },
+        ],
+      }),
+    ),
+  );
+  await waitFor(() => expect(screen.getByRole('button', { name: '发送并试分类' })).toBeEnabled());
+  expect(screen.queryByText('建议目录：Folder')).not.toBeInTheDocument();
+  expect(screen.getByText('已取消试分类。')).toBeVisible();
+  expect(h.send).not.toHaveBeenCalled();
+  h.view.unmount();
+  h.settings.dispose();
+  h.services?.dispose();
+});
 it('an accepted AI destination survives unrelated tree changes and is revoked only when its folder changes', async () => {
   const h = await harness();
   await acceptSuggestion(h);
@@ -179,7 +286,7 @@ it('configured automatic initialization reaches actual ModelTransport with prove
   const options = h.fetcher.mock.calls[0]![1]!;
   const wire = JSON.parse(String(options.body));
   const payload = JSON.parse(wire.messages[1].content);
-  expect(payload.items[0]).toMatchObject({ title: 'Page', url: 'https://page.test/' });
+  expect(payload.items[0]).toMatchObject({ title: 'Page', url: 'https://page.test/private?secret=hidden' });
   expect(payload.snippet).toBeUndefined();
   expect(wire.messages).toHaveLength(2);
   expect(wire.messages[0].content).toMatch(

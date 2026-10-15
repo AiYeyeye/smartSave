@@ -1738,6 +1738,23 @@
   align-content: stretch;
   animation: zh-fade-up 200ms var(--ease-out) backwards;
 }
+.ai-svc-wizard.is-compact {
+  height: auto;
+  max-height: calc(100dvh - 48px);
+}
+.ai-svc-wizard.is-compact .ai-svc-wizard-body {
+  grid-template-rows: none;
+  align-content: start;
+}
+@media (max-width: 480px) {
+  .ai-svc-steps {
+    flex-wrap: wrap;
+    padding-inline: 16px;
+  }
+  .ai-svc-steps li + li::before {
+    display: none;
+  }
+}
 .ai-svc-wizard-tools {
   display: flex;
   gap: 8px;

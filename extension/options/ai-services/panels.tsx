@@ -436,7 +436,18 @@ export function AddServicePanel({
   return (
     <div>
       <h2 className="ai-svc-panel-title">添加服务</h2>
-      <p className="ai-svc-panel-desc">用账号登录或 API Key 连接。自定义端点排在 Key 区首位。</p>
+      <p className="ai-svc-panel-desc">选择你已有的 AI 服务，用已有账号或 API Key 连接；也可填写已有的自定义端点。</p>
+      <ol className="ai-svc-steps" aria-label="设置步骤">
+        <li className="is-current" aria-current="step">
+          <span>1</span>选择已有服务
+        </li>
+        <li>
+          <span>2</span>连接与模型
+        </li>
+        <li>
+          <span>3</span>试分类网页
+        </li>
+      </ol>
       <div className="ai-svc-search-wrap">
         <Search aria-hidden="true" />
         <input
