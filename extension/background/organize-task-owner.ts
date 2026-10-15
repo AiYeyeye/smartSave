@@ -7,12 +7,19 @@ import type { OrganizePreference } from '../domain/organize-preferences';
 import type { OrganizeCheckpoint } from '../domain/organize-checkpoint';
 import type { OrganizeCheckpointStore } from '../persistence/organize-checkpoints';
 import type { OrganizeMemoryStore } from '../persistence/organize-memory';
+import { organizeProtectionChanged } from '../domain/organize-memory-context';
 import { cancellable } from '../domain/cancellable';
 import { createWorkerTaskLifetime } from './worker-task-lifetime';
 import { organizeModelAuthority, type OrganizeCredentialGrant } from './organize-model-authority';
 import type { TreeProjection } from './tree-projection';
 
-export type OrganizeTaskView = { id: string; revision: number; state: OrganizeState; needsCredential: boolean };
+export type OrganizeTaskView = {
+  id: string;
+  revision: number;
+  state: OrganizeState;
+  needsCredential: boolean;
+  submission?: { requestId: string };
+};
 type Task = {
   installationId: string;
   id: string;
@@ -29,6 +36,7 @@ type Task = {
   retired: boolean;
   persistenceFailed: boolean;
   editing: boolean;
+  memoryRefresh?: Promise<void>;
 };
 type Options = {
   projection: Pick<TreeProjection, 'fresh' | 'subscribe' | 'state'>;
@@ -42,6 +50,7 @@ type Options = {
 /** Owns read-only generation. Subscribers and their ports are not task lifetime owners. */
 export class OrganizeTaskOwner {
   private tasks = new Map<string, Task>();
+  private submissions = new Map<string, OrganizeCheckpoint>();
   private listeners = new Set<(view: OrganizeTaskView) => void>();
   private lifetime: ReturnType<typeof createWorkerTaskLifetime>;
   private closed = false;
@@ -69,6 +78,34 @@ export class OrganizeTaskOwner {
     return () => {
       this.listeners.delete(listener);
     };
+  }
+  private submittedView(checkpoint: OrganizeCheckpoint): OrganizeTaskView {
+    return {
+      id: checkpoint.id,
+      revision: checkpoint.revision,
+      needsCredential: false,
+      submission: { requestId: checkpoint.submission!.requestId },
+      state: {
+        tree: this.options.projection.state,
+        scopeId: checkpoint.root.nativeId,
+        selected: [],
+        targets: {},
+        duplicates: [],
+        choices: {},
+        busy: false,
+        invalid: true,
+        message: '此整理任务已提交，请查看执行记录确认结果。',
+      },
+    };
+  }
+  /** Called only after the journal's atomic handoff. Retire generation without rewriting its association. */
+  submitted(checkpoint: OrganizeCheckpoint) {
+    if (!checkpoint.submission || this.closed) return;
+    this.submissions.set(checkpoint.id, structuredClone(checkpoint));
+    const task = this.tasks.get(checkpoint.id);
+    if (task) this.retire(task);
+    const view = this.submittedView(checkpoint);
+    for (const listener of this.listeners) listener(structuredClone(view));
   }
   private view(task: Task): OrganizeTaskView {
     return {
@@ -119,20 +156,32 @@ export class OrganizeTaskOwner {
   }
   private edit(id: string, revision: number) {
     const task = this.require(id, revision);
-    if (task.editing || this.loading.has(id)) throw Error('organize-task-conflict');
+    if (task.editing || task.memoryRefresh || this.loading.has(id)) throw Error('organize-task-conflict');
     task.editing = true;
     return task;
   }
   private async create(id: string, grant?: OrganizeCredentialGrant, checkpoint?: OrganizeCheckpoint) {
-    const authority = organizeModelAuthority(this.options.projection, this.options.settings, grant);
+    const slot: { value?: Task } = {};
+    const base = organizeModelAuthority(this.options.projection, this.options.settings, grant);
+    const authority: ModelAuthority = {
+      subscribe: listener => base.subscribe(listener),
+      read: async () => {
+        const task = slot.value;
+        const current = await base.read();
+        if (task?.checkpoint && this.options.memory) {
+          const memory = await this.bounded(this.options.memory.load(current.tree.installationId));
+          if (organizeProtectionChanged(task.checkpoint, current.tree, memory.protectedFolderIds)) {
+            task.controller.protectionChanged();
+            throw Error('stale-context');
+          }
+        }
+        return current;
+      },
+    };
     const context = await this.bounded(authority.read());
     if (this.options.memory && checkpoint) {
       const memory = await this.bounded(this.options.memory.load(context.tree.installationId));
-      if (
-        memory.protectedFolderIds.some(value => !checkpoint.options.protectedFolderIds?.includes(value)) ||
-        memory.rejected.some(value => !checkpoint.options.rejectedSignatures?.includes(value.signature))
-      )
-        throw Error('stale-context');
+      if (organizeProtectionChanged(checkpoint, context.tree, memory.protectedFolderIds)) throw Error('stale-context');
     }
     const model =
       this.options.model?.(authority) ??
@@ -149,6 +198,8 @@ export class OrganizeTaskOwner {
     });
     const controller = new OrganizeController(
       state => {
+        const task = slot.value;
+        if (!task) return;
         task.state = state;
         if (!state.busy && task.operation) return; // Completion is published only after its final checkpoint.
         if (state.invalid && task.checkpoint?.status !== 'invalid' && !task.operation)
@@ -165,7 +216,10 @@ export class OrganizeTaskOwner {
       model,
       undefined,
       undefined,
-      { generationOnly: true, persist: () => this.persist(task) },
+      {
+        generationOnly: true,
+        persist: () => (slot.value ? this.persist(slot.value) : Promise.reject(Error('organize-task-unavailable'))),
+      },
     );
     const task: Task = {
       installationId: context.tree.installationId,
@@ -193,6 +247,7 @@ export class OrganizeTaskOwner {
       persistenceFailed: false,
       editing: true,
     };
+    slot.value = task;
     this.tasks.set(id, task);
     task.stopTree = this.options.projection.subscribe(tree => controller.setTree(tree));
     return task;
@@ -269,11 +324,68 @@ export class OrganizeTaskOwner {
   async get(id: string, credential?: OrganizeCredentialGrant) {
     return this.load(id, credential);
   }
+  /** Memory edits prune review choices; they do not pretend the model route has changed. */
+  async refreshMemory(installationId: string) {
+    await Promise.all(
+      [...this.tasks.values()]
+        .filter(task => task.installationId === installationId)
+        .map(task => this.refreshTaskMemory(task)),
+    );
+  }
+  private refreshTaskMemory(task: Task): Promise<void> {
+    if (!this.options.memory || !task.checkpoint || task.state.invalid || task.retired || this.closed)
+      return Promise.resolve();
+    if (task.memoryRefresh) return task.memoryRefresh;
+    const pending = Promise.resolve()
+      .then(async () => {
+        const memory = await this.bounded(this.options.memory!.load(task.installationId));
+        if (task.retired || this.closed) return;
+        const state = this.options.projection.state;
+        if (state.status !== 'ready') throw Error('organize-task-unavailable');
+        if (organizeProtectionChanged(task.checkpoint!, state.snapshot, memory.protectedFolderIds)) {
+          task.controller.protectionChanged();
+          if (task.operation) await this.bounded(task.operation);
+          if (!task.retired) await this.persist(task);
+          return;
+        }
+        let result = task.controller.refreshRejections(memory.rejected.map(value => value.signature));
+        if (result.locked) {
+          // A taxonomy refusal changes subsequent destinations. Return to its review before any further batch.
+          task.controller.pauseBatches();
+          if (task.operation) await this.bounded(task.operation);
+          if (task.retired || this.closed) return;
+          task.controller.returnToFolders();
+          result = task.controller.refreshRejections(memory.rejected.map(value => value.signature));
+          result.changed = true;
+        }
+        if (result.changed) await this.persist(task);
+        this.publish(task);
+      })
+      .catch(error => {
+        if (!task.retired && !this.closed) {
+          if (error instanceof Error && error.message.startsWith('organize-checkpoint-')) task.persistenceFailed = true;
+          task.state.message = '无法读取整理偏好，请检查本机存储后重新打开；已保存进度保留。';
+          this.publish(task);
+        }
+        throw error;
+      })
+      .finally(() => {
+        task.memoryRefresh = undefined;
+      });
+    task.memoryRefresh = pending;
+    return pending;
+  }
   private async load(id: string, credential?: OrganizeCredentialGrant, editing?: Task) {
+    if (this.closed) throw Error('organize-task-unavailable');
+    const submission = this.submissions.get(id);
+    if (submission) return this.submittedView(submission);
     if (this.loading.has(id)) throw Error('organize-task-busy');
     const existing = this.tasks.get(id);
     if (existing?.editing && existing !== editing) throw Error('organize-task-busy');
-    if (existing && !credential) return this.view(existing);
+    if (existing && !credential) {
+      await this.refreshTaskMemory(existing);
+      return this.view(existing);
+    }
     if (existing?.operation) throw Error('organize-task-busy');
     if (this.starting) throw Error('organize-task-busy');
     this.loading.add(id);
@@ -281,10 +393,15 @@ export class OrganizeTaskOwner {
     try {
       const checkpoint = await this.bounded(this.options.store.get(id));
       if (!checkpoint) throw Error('organize-task-unavailable');
+      if (checkpoint.submission) {
+        this.submitted(checkpoint);
+        return this.submittedView(checkpoint);
+      }
       if (existing) this.retire(existing);
       const task = await this.create(id, credential, checkpoint);
       try {
         await task.controller.restoreCheckpoint(checkpoint, { allowMissingCredential: true });
+        await this.refreshTaskMemory(task);
         await this.persist(task); // A running call becomes a durable paused task after worker replacement.
         task.editing = false;
         this.publish(task);
@@ -315,6 +432,8 @@ export class OrganizeTaskOwner {
         task = this.require(id);
         task.editing = true;
       }
+      await this.refreshTaskMemory(task);
+      if (task.state.invalid && action !== 'cancel') throw Error('stale-context');
       if (action === 'pause' || action === 'cancel') {
         if (action === 'pause') task.controller.pauseBatches();
         else task.controller.cancel();
@@ -348,6 +467,8 @@ export class OrganizeTaskOwner {
   ) {
     const task = this.edit(id, revision);
     try {
+      await this.refreshTaskMemory(task);
+      if (task.revision !== revision) throw Error('organize-task-conflict');
       if (task.operation || task.state.busy) throw Error('organize-task-busy');
       if ('ids' in edit) task.controller.toggleMany(edit.ids, edit.selected);
       else task.controller.target(edit.id, edit.target);
@@ -364,6 +485,7 @@ export class OrganizeTaskOwner {
     this.stopping.abort();
     for (const task of this.tasks.values()) this.retire(task);
     this.listeners.clear();
+    this.submissions.clear();
     this.lifetime.dispose();
   }
 }

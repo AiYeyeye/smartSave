@@ -4,6 +4,7 @@ import { organizeOutputSchema } from '../schemas/model-output';
 import { scopeNodes } from './organize-proposal';
 import { dependencyDigest, settingsIdentity } from './context-dependencies';
 import type { ModelAuthority } from '../adapters/model-authority';
+import { batchCommandSchema, organizerBindingSchema } from '../schemas/messages';
 
 const id = z.string().min(1);
 const ids = z.array(id);
@@ -22,7 +23,7 @@ const batch = z.strictObject({
   status: z.enum(['pending', 'accepted', 'merged']),
   output: organizeOutputSchema.optional(),
 });
-/** Suggestions and progress only. No model config/key, authority token or native mutation request. */
+/** Generation data plus a journal-owned submission association. Never credentials or live authority. */
 export const organizeCheckpointSchema = z
   .strictObject({
     schemaVersion: z.literal(1),
@@ -55,10 +56,25 @@ export const organizeCheckpointSchema = z
     batches: z.array(batch),
     selection,
     elapsedMs: z.number().nonnegative().finite(),
+    submission: z
+      .strictObject({
+        requestId: id,
+        binding: organizerBindingSchema,
+        command: batchCommandSchema,
+      })
+      .optional(),
   })
   .superRefine((value, context) => {
     const invalid = () => context.addIssue({ code: 'custom', message: 'invalid-organize-checkpoint' });
     const unique = (values: string[]) => new Set(values).size === values.length;
+    if (
+      value.submission &&
+      (value.stage !== 'complete' ||
+        value.status !== 'review' ||
+        value.submission.binding.checkpointId !== value.id ||
+        value.submission.binding.checkpointRevision + 1 !== value.revision)
+    )
+      invalid();
     if (
       value.installationId !== value.baseline.installationId ||
       value.root.installationId !== value.installationId ||

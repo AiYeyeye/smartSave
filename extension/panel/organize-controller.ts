@@ -33,6 +33,7 @@ import {
   organizeCleanup,
   scopeNodes,
   type OrganizeProposal,
+  type OrganizeAction,
   organizePrivacy,
   actionDependencies,
   reconcileOrganizeSelection,
@@ -125,6 +126,7 @@ export class OrganizeController {
   private operation?: { generation: number; controller: AbortController; timer: ReturnType<typeof setTimeout> };
   private reviewing = false;
   private staged?: StagedRun;
+  private memoryRejections = new Set<string>();
   private runId?: string;
   private runStartedAt = 0;
   private debug = createDebugLog('organizer');
@@ -159,6 +161,35 @@ export class OrganizeController {
       targets: { ...this.state.targets },
       choices: { ...this.state.choices },
     });
+  }
+  /** Global memory is a live selection overlay, never a replacement for immutable generation options. */
+  refreshRejections(signatures: string[]): { changed: boolean; locked: boolean } {
+    this.memoryRejections = new Set(signatures);
+    const proposal = this.state.proposal;
+    if (!proposal || this.state.invalid) return { changed: false, locked: false };
+    const rejected = proposal.actions
+      .filter(action => this.memoryRejections.has(organizeRejectionKey(proposal, action, this.state.targets)))
+      .map(action => action.id);
+    const locked = rejected.some(id => this.state.pipeline?.lockedActionIds.includes(id));
+    if (locked) return { changed: false, locked: true };
+    const selected = reconcileOrganizeSelection(
+      proposal,
+      this.state.selected.filter(id => !rejected.includes(id)),
+      this.state.targets,
+    );
+    const changed = JSON.stringify(selected) !== JSON.stringify(this.state.selected);
+    if (changed) {
+      this.state.selected = selected;
+      this.publish();
+    }
+    return { changed, locked: false };
+  }
+  protectionChanged() {
+    this.invalidate('保护范围已变化，请重新生成整理建议。未修改书签。', 'protected-folders-changed');
+  }
+  private rejected(proposal: OrganizeProposal, action: OrganizeAction, targets: Record<string, string> = {}) {
+    const signature = organizeRejectionKey(proposal, action, targets);
+    return this.memoryRejections.has(signature) || !!this.staged?.options.rejectedSignatures?.includes(signature);
   }
   private clearReview() {
     this.reviewing = false;
@@ -345,7 +376,9 @@ export class OrganizeController {
     this.state.targets = {};
     this.state.selected = reconcileOrganizeSelection(
       proposal,
-      proposal.actions.filter(a => !rejected.includes(organizeRejectionKey(proposal, a, {}))).map(a => a.id),
+      proposal.actions
+        .filter(a => !rejected.includes(organizeRejectionKey(proposal, a, {})) && !this.rejected(proposal, a))
+        .map(a => a.id),
       {},
     );
     this.state.invalid = false;
@@ -601,6 +634,7 @@ export class OrganizeController {
     )
       return;
     const run = this.staged;
+    const generation = this.generation;
     try {
       run.folderReview = {
         proposal: this.state.proposal,
@@ -642,6 +676,7 @@ export class OrganizeController {
         lockedActionIds: [...this.state.selected],
       };
       if (this.runtime.persist) await this.persistGeneration();
+      if (generation !== this.generation) return;
       await this.resumeBatches();
     } catch (error) {
       if (error instanceof Error && error.message === 'checkpoint-unavailable') this.state.invalid = true;
@@ -659,7 +694,7 @@ export class OrganizeController {
     }
   }
   pauseBatches() {
-    if (!this.staged?.approved || !this.state.pipeline || !this.state.busy || this.applying) return;
+    if (!this.staged?.approved || this.state.pipeline?.stage !== 'bookmarks' || this.applying) return;
     this.record('paused');
     this.stopAnalysisClock();
     this.generation++;
@@ -874,12 +909,7 @@ export class OrganizeController {
         this.state.proposal = proposal;
         this.state.selected = reconcileOrganizeSelection(
           proposal,
-          [
-            ...this.state.selected,
-            ...actions
-              .filter(a => !run.options.rejectedSignatures?.includes(organizeRejectionKey(proposal, a, {})))
-              .map(a => a.id),
-          ],
+          [...this.state.selected, ...actions.filter(a => !this.rejected(proposal, a)).map(a => a.id)],
           this.state.targets,
         );
         run.queue.shift();
@@ -900,13 +930,7 @@ export class OrganizeController {
         cleaned,
         [
           ...this.state.selected,
-          ...cleaned.actions
-            .filter(
-              a =>
-                !oldActions.has(a.id) &&
-                !run.options.rejectedSignatures?.includes(organizeRejectionKey(cleaned, a, {})),
-            )
-            .map(a => a.id),
+          ...cleaned.actions.filter(a => !oldActions.has(a.id) && !this.rejected(cleaned, a)).map(a => a.id),
         ],
         this.state.targets,
       );

@@ -15,6 +15,7 @@ export type OrganizeCheckpointMetadata = {
   stage: string;
   status: string;
   readable: boolean;
+  requestId?: string;
 };
 
 /** Sole durable generation-data facet. Writing a checkpoint never grants mutation authority. */
@@ -52,9 +53,14 @@ export class OrganizeCheckpointStore {
         const cursor = request.result;
         if (!cursor) return;
         const parsed = metadataSchema.safeParse(cursor.value);
+        const checkpoint = organizeCheckpointSchema.safeParse(cursor.value);
         rows.push(
           parsed.success && parsed.data.id === cursor.key
-            ? { ...parsed.data, readable: true }
+            ? {
+                ...parsed.data,
+                readable: true,
+                ...(checkpoint.data?.submission ? { requestId: checkpoint.data.submission.requestId } : {}),
+              }
             : { id: String(cursor.key), updatedAt: 0, stage: 'unknown', status: 'unknown', readable: false },
         );
         cursor.continue();
@@ -71,6 +77,7 @@ export class OrganizeCheckpointStore {
   }
   async put(checkpoint: OrganizeCheckpoint, expectedRevision: number | null): Promise<void> {
     const value = organizeCheckpointSchema.parse(checkpoint);
+    if (value.submission) throw Error('organize-checkpoint-submitted');
     if (value.revision !== (expectedRevision === null ? 0 : expectedRevision + 1))
       throw Error('organize-checkpoint-conflict');
     const db = await openOperationsDatabase(this.factory, this.name);
@@ -82,6 +89,11 @@ export class OrganizeCheckpointStore {
       request.onsuccess = () => {
         try {
           const previous = request.result === undefined ? undefined : organizeCheckpointSchema.parse(request.result);
+          if (previous?.submission) {
+            reason = 'organize-checkpoint-submitted';
+            tx.abort();
+            return;
+          }
           if (expectedRevision === null ? previous !== undefined : previous?.revision !== expectedRevision) {
             reason = 'organize-checkpoint-conflict';
             tx.abort();
@@ -132,7 +144,7 @@ export class OrganizeCheckpointStore {
       let reason = 'organize-checkpoint-unavailable';
       request.onsuccess = () => {
         const previous = organizeCheckpointSchema.safeParse(request.result);
-        if (!previous.success || previous.data.revision !== expectedRevision) {
+        if (!previous.success || previous.data.submission || previous.data.revision !== expectedRevision) {
           reason = 'organize-checkpoint-conflict';
           tx.abort();
           return;

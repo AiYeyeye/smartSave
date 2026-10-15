@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { importSelectionSchema } from '../domain/import-preview';
 import type { ImportAuthority } from './import-authority';
 import type { OrganizerAuthority } from './organizer-authority';
+import type { OrganizeTaskAuthority } from './organize-task-authority';
 import type { ConfirmMutation } from '../schemas/messages';
 import { bookmarksWrite, type BookmarkWriter } from '../adapters/bookmarks-write';
 import { OperationsStore, type OperationJournal } from '../persistence/operations';
@@ -15,6 +16,7 @@ export function startMutationService(
   importAuthority?: ImportAuthority,
   journal: OperationJournal = new OperationsStore(),
   writer: BookmarkWriter = bookmarksWrite(chrome.bookmarks),
+  organizeTaskAuthority?: OrganizeTaskAuthority,
 ) {
   const coordinator = new MutationCoordinator(
     projection,
@@ -24,6 +26,7 @@ export function startMutationService(
     validateSaveContext,
     organizerAuthority,
     importAuthority,
+    organizeTaskAuthority,
   );
   chrome.runtime.onMessage.addListener((message: unknown, sender, respond) => {
     if (
@@ -32,6 +35,7 @@ export function startMutationService(
       !('type' in message) ||
       ![
         'registerImportPreview',
+        'registerOrganizeTaskPreview',
         'registerMutationPreview',
         'recoveryDiscard',
         'recoveryList',
@@ -49,6 +53,42 @@ export function startMutationService(
       sender,
       chrome.runtime.id,
       () => {
+        if (message.type === 'registerOrganizeTaskPreview') {
+          const parsed = z
+            .strictObject({
+              version: z.literal(1),
+              type: z.literal('registerOrganizeTaskPreview'),
+              organizerContext: z.string().min(1),
+              checkpointId: z.string().min(1),
+              checkpointRevision: z.number().int().nonnegative(),
+            })
+            .safeParse(message);
+          if (!parsed.success) {
+            respond({ status: 'rejected', reason: 'invalid-organize-preview' });
+            return false;
+          }
+          const value = parsed.data;
+          void coordinator
+            .registerOrganizeTaskPreview(value.organizerContext, value.checkpointId, value.checkpointRevision, sender)
+            .then(proposal => respond(proposal ? { status: 'preview', proposal } : { status: 'empty' }))
+            .catch(error =>
+              respond({
+                status: 'rejected',
+                reason:
+                  error instanceof Error &&
+                  [
+                    'organize-task-conflict',
+                    'organize-selection-rejected',
+                    'stale-organize-authority',
+                    'organize-persistence-owner-mismatch',
+                    'unsupported-organize-checkpoint',
+                  ].includes(error.message)
+                    ? error.message
+                    : 'organize-preview-unavailable',
+              }),
+            );
+          return true;
+        }
         const importPreview = z
           .object({
             type: z.literal('registerImportPreview'),

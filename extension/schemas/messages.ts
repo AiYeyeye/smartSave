@@ -45,6 +45,12 @@ export const importBindingSchema = z
     titleEdits: z.array(z.object({ sourceOrdinal: z.number().int().nonnegative(), title: z.string() }).strict()),
   })
   .strict();
+export const organizerBindingSchema = z.strictObject({
+  checkpointId: z.string().min(1),
+  checkpointRevision: z.number().int().nonnegative(),
+  contextDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  selectionDigest: z.string().regex(/^[a-f0-9]{64}$/),
+});
 /** Single source for skipped-coverage entries: durable requests, recovery responses and domain previews share it. */
 export const recoveryConflictSchema = z.object({ nativeId: z.string(), reason: z.string() }).strict();
 export const durableMutationRequestSchema = z.object({
@@ -58,6 +64,7 @@ export const durableMutationRequestSchema = z.object({
   before: z.array(nodeSchema.strict()),
   command: commandSchema,
   importBinding: importBindingSchema.optional(),
+  organizerBinding: organizerBindingSchema.optional(),
   recovery: z
     .object({
       sourceRequestId: z.string(),

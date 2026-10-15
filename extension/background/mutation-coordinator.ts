@@ -1,6 +1,7 @@
 import type { ImportAuthority } from './import-authority';
 import type { ImportPreviewSelection } from '../domain/import-preview';
 import type { OrganizerAuthority } from './organizer-authority';
+import type { OrganizeTaskAuthority } from './organize-task-authority';
 import { recoveryMessageSchema, type RecoveryResponse } from '../schemas/recovery';
 import { prepareRecovery } from '../domain/undo';
 import { prepareRecoveryCopy } from '../domain/recovery-copy';
@@ -45,7 +46,8 @@ export class MutationCoordinator {
     if (!trustedMutationSender(sender, this.extensionId)) throw Error('invalid-sender');
     const request = confirmSchema.parse(raw);
     if (
-      ((request.organizerContext || request.importContext || request.importBinding) && !organizerValidated) ||
+      ((request.organizerContext || request.importContext || request.importBinding || request.organizerBinding) &&
+        !organizerValidated) ||
       this.previews.has(request.requestId) ||
       request.previewId ||
       !this.validateSaveContext(request)
@@ -66,8 +68,29 @@ export class MutationCoordinator {
       !(await this.organizerAuthority?.validate(request, sender))
     )
       throw Error('invalid-organizer-authority');
+    if (
+      request.organizerBinding &&
+      (!this.organizeTaskAuthority?.sharesPersistence(this.journal) ||
+        !(await this.organizeTaskAuthority.validate(request, sender)))
+    )
+      throw Error('invalid-organize-authority');
     preflight(request, await this.projection.fresh());
     if (!this.organizerAuthority?.current(request)) throw Error('stale-organizer-authority');
+    return this.register(request, sender, true);
+  }
+  async registerOrganizeTaskPreview(
+    token: string,
+    id: string,
+    revision: number,
+    sender: { id?: string; url?: string; tab?: unknown },
+  ) {
+    const authority = this.organizeTaskAuthority;
+    if (!authority?.sharesPersistence(this.journal)) throw Error('organize-persistence-owner-mismatch');
+    const request = await authority.prepare(token, id, revision, sender);
+    if (!request) return undefined;
+    preflight(request, await this.projection.fresh());
+    if (!(await authority.validate(request, sender)) || !authority.current(request))
+      throw Error('stale-organize-authority');
     return this.register(request, sender, true);
   }
   async registerImportPreview(
@@ -93,9 +116,10 @@ export class MutationCoordinator {
   // Retain ambiguous state even when its final journal write fails in this worker.
   private volatile = new Map<string, { result: MutationResult; semantics: string }>();
   private requestSemantics(request: OperationRecord['request']): string {
-    const { installationId, scope, command, recovery, importBinding } = durableMutationRequestSchema.parse(request);
+    const { installationId, scope, command, recovery, importBinding, organizerBinding } =
+      durableMutationRequestSchema.parse(request);
     // Cleanup clears before; epochs/revisions are preview freshness, not retry identity.
-    return JSON.stringify({ installationId, scope, command, recovery, importBinding });
+    return JSON.stringify({ installationId, scope, command, recovery, importBinding, organizerBinding });
   }
   private cacheResult(record: OperationRecord, result: MutationResult) {
     this.volatile.set(record.requestId, { result, semantics: this.requestSemantics(record.request) });
@@ -135,6 +159,7 @@ export class MutationCoordinator {
       !request.saveContext && !request.requestId.startsWith('save:'),
     private organizerAuthority?: OrganizerAuthority,
     private importAuthority?: ImportAuthority,
+    private organizeTaskAuthority?: OrganizeTaskAuthority,
   ) {}
   submit(raw: unknown, sender: { id?: string; url?: string; tab?: unknown }): Promise<MutationResult> {
     const parsed = mutationMessageSchema.safeParse(raw);
@@ -287,6 +312,8 @@ export class MutationCoordinator {
     if (message.type !== 'confirmMutation') return rejected('request-not-found');
     if (message.importBinding && !this.importAuthority?.sharesPersistence(this.journal))
       return rejected('import-persistence-owner-mismatch');
+    if (message.organizerBinding && !this.organizeTaskAuthority?.sharesPersistence(this.journal))
+      return rejected('organize-persistence-owner-mismatch');
     const registered = this.previews.get(message.requestId);
     if (
       registered ||
@@ -295,7 +322,8 @@ export class MutationCoordinator {
       message.saveContext ||
       message.organizerContext ||
       message.importContext ||
-      message.importBinding
+      message.importBinding ||
+      message.organizerBinding
     ) {
       if (!registered || JSON.stringify(registered) !== JSON.stringify(message)) return rejected('preview-required');
       this.previews.delete(message.requestId);
@@ -305,6 +333,8 @@ export class MutationCoordinator {
       return rejected('expired-organizer-context');
     if ((message.importContext || message.importBinding) && !(await this.importAuthority?.validate(message, sender)))
       return rejected('expired-import-context');
+    if (message.organizerBinding && !(await this.organizeTaskAuthority?.validate(message, sender)))
+      return rejected('expired-organize-task');
     if (message.recovery) {
       const preview = this.recoveryPreviews.get(message.requestId);
       this.recoveryPreviews.delete(message.requestId);
@@ -330,7 +360,22 @@ export class MutationCoordinator {
     } catch {
       return this.finish(operationRecord(message, [], []), 'rejected', 'preflight-conflict');
     }
-    if (message.importBinding) {
+    if (message.organizerBinding) {
+      const { organizeTaskAuthority, journal } = this;
+      if (!organizeTaskAuthority || !journal.handoffOrganize) return rejected('organize-persistence-owner-mismatch');
+      try {
+        const handoff = await organizeTaskAuthority.authorizeHandoff(message, sender);
+        await journal.handoffOrganize(handoff.checkpoint, record, handoff.expectedRevision);
+        this.remember(record);
+        try {
+          organizeTaskAuthority.committed(handoff.checkpoint);
+        } catch {
+          /* Observers do not own the journal. */
+        }
+      } catch {
+        return rejected('organize-checkpoint-freeze-failed');
+      }
+    } else if (message.importBinding) {
       // Explicit capability check: a journal without atomic handoff is not the import persistence owner.
       const { importAuthority, journal } = this;
       if (!importAuthority || !journal.handoffImport) return rejected('import-persistence-owner-mismatch');
@@ -448,6 +493,24 @@ export class MutationCoordinator {
         if (!valid || !this.importAuthority?.current(message)) {
           entry.state = 'planned';
           return this.finish(record, 'failed', 'expired-import-context');
+        }
+      }
+      if (!record.steps.some(s => s.state === 'receipt') && message.organizerBinding) {
+        let valid = await this.organizeTaskAuthority?.validate(message, sender);
+        try {
+          const finalTree = await this.projection.fresh();
+          valid =
+            valid &&
+            finalTree.installationId === current.installationId &&
+            finalTree.epoch === current.epoch &&
+            finalTree.observedRevision === current.observedRevision &&
+            sameTree(finalTree.nodes, current.nodes);
+        } catch {
+          valid = false;
+        }
+        if (!valid || !this.organizeTaskAuthority?.current(message) || !this.organizerAuthority?.current(message)) {
+          entry.state = 'planned';
+          return this.finish(record, 'failed', 'expired-organize-task');
         }
       }
       if (this.cancellations.delete(record.requestId)) {

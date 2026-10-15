@@ -27,8 +27,8 @@ import { SaveReceiptLog } from '../persistence/save-receipts';
 import { startWorkerDiagnostics } from './worker-diagnostics';
 import { OrganizeTaskOwner } from './organize-task-owner';
 import { startOrganizeTaskService } from './organize-task-service';
-import { OrganizeCheckpointStore } from '../persistence/organize-checkpoints';
 import { OrganizeMemoryStore } from '../persistence/organize-memory';
+import { OrganizeTaskAuthority } from './organize-task-authority';
 
 const workerDiagnostics = startWorkerDiagnostics();
 
@@ -73,13 +73,45 @@ const aiServices = new AiServicesStore(chrome.storage.local);
 const ownWrites = new OwnWriteGuard();
 const writer = ownWrites.wrap(bookmarksWrite(chrome.bookmarks));
 const persistence = new ImportPersistenceStore();
+const organizeSettings = featureModelSettings(settings, aiServices, 'organize');
+const organizeMemory = new OrganizeMemoryStore(chrome.storage.local);
+const organizerAuthority = startOrganizerAuthority(organizeSettings, workerDiagnostics);
+const organizeTasks = new OrganizeTaskOwner({
+  projection,
+  settings: organizeSettings,
+  store: persistence.organizeCheckpoints,
+  memory: organizeMemory,
+});
+const organizeTaskAuthority = new OrganizeTaskAuthority(
+  organizeSettings,
+  projection,
+  persistence.organizeCheckpoints,
+  organizerAuthority,
+  chrome.runtime.id,
+  organizeMemory,
+  checkpoint => organizeTasks.submitted(checkpoint),
+);
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local') return;
+  for (const key of Object.keys(changes)) {
+    if (!key.startsWith('organize.memory.')) continue;
+    try {
+      const installationId = decodeURIComponent(key.slice('organize.memory.'.length));
+      organizeTaskAuthority.memoryChanged(installationId);
+      void organizeTasks.refreshMemory(installationId).catch(() => {});
+    } catch {
+      /* An unrelated malformed storage key does not change task authority. */
+    }
+  }
+});
 const coordinator = startMutationService(
   projection,
   validateSaveContext,
-  startOrganizerAuthority(featureModelSettings(settings, aiServices, 'organize'), workerDiagnostics),
+  organizerAuthority,
   startImportAuthority(featureModelSettings(settings, aiServices, 'import'), projection, persistence.importCheckpoints),
   persistence,
   writer,
+  organizeTaskAuthority,
 );
 const nativeSaves = startNativeBookmarkIngress({
   projection,
@@ -92,28 +124,7 @@ const nativeSaves = startNativeBookmarkIngress({
   badge: nativeSaveBadge,
 });
 
-const organizeSettings = featureModelSettings(settings, aiServices, 'organize');
-startOrganizeTaskService(
-  new OrganizeTaskOwner({
-    projection,
-    settings: {
-      snapshot: () => organizeSettings.snapshot(),
-      subscribe(listener) {
-        const stop = organizeSettings.subscribe(listener);
-        const changed = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
-          if (area === 'local' && Object.keys(changes).some(key => key.startsWith('organize.memory.'))) listener();
-        };
-        chrome.storage.onChanged.addListener(changed);
-        return () => {
-          stop();
-          chrome.storage.onChanged.removeListener(changed);
-        };
-      },
-    },
-    store: new OrganizeCheckpointStore(),
-    memory: new OrganizeMemoryStore(chrome.storage.local),
-  }),
-);
+startOrganizeTaskService(organizeTasks);
 
 chrome.runtime.onMessage.addListener((message, sender, reply) => {
   if (!message || typeof message !== 'object' || !('type' in message) || message.type !== 'nativeSaveUndo')

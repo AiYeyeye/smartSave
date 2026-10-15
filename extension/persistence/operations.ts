@@ -1,4 +1,6 @@
 import type { ImportCheckpointStore, ImportCheckpoint } from './import-checkpoints';
+import type { OrganizeCheckpointStore } from './organize-checkpoints';
+import type { OrganizeCheckpoint } from '../domain/organize-checkpoint';
 import { openOperationsDatabase } from './operations-database';
 import { z } from 'zod';
 import { durableMutationRequestSchema, type MutationResult } from '../schemas/messages';
@@ -8,6 +10,8 @@ export { operationSchema, type OperationRecord, type OperationRecordV2 };
 export interface OperationJournal {
   readonly importCheckpoints?: ImportCheckpointStore;
   handoffImport?(checkpoint: ImportCheckpoint, initial: OperationRecord, expectedRevision: number): Promise<void>;
+  readonly organizeCheckpoints?: OrganizeCheckpointStore;
+  handoffOrganize?(checkpoint: OrganizeCheckpoint, initial: OperationRecord, expectedRevision: number): Promise<void>;
   all(): Promise<OperationRecord[]>;
   get?(requestId: string): Promise<OperationRecord | undefined>;
   put(record: OperationRecord): Promise<void>;

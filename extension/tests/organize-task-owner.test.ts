@@ -6,6 +6,8 @@ import type { ModelTransport, ModelResult } from '../adapters/model-transport';
 import { settingsIdentity } from '../domain/context-dependencies';
 import type { TreeState } from '../domain/node-reference';
 import { organizerTree } from './fixtures/organizer-tree';
+import { OrganizeMemoryStore } from '../persistence/organize-memory';
+import { organizeRejectionKey } from '../domain/organize-review';
 
 const folder = {
   status: 'completed' as const,
@@ -16,7 +18,7 @@ const request = {
   preference: { style: 'topic' as const, instructions: '' },
   options: { batchSize: 1, cleanupEmpty: false },
 };
-function setup(factory = new IDBFactory()) {
+function setup(factory = new IDBFactory(), memory?: Pick<OrganizeMemoryStore, 'load'>) {
   const tree = organizerTree();
   const state: TreeState = { status: 'ready', snapshot: tree };
   const treeListeners = new Set<(state: TreeState) => void>();
@@ -60,11 +62,148 @@ function setup(factory = new IDBFactory()) {
     settings,
     store,
     lifetime,
+    memory,
     model: () => ({ run, cancel, dispose, fork: () => ({ run, cancel, dispose }) }),
   });
   const credential = { revision: value.revision, identity: settingsIdentity(value), key: 'task-temporary-secret' };
-  return { owner, store, run, tree, value, projection, settings, lifetime, release, credential, settingsListeners };
+  return {
+    owner,
+    store,
+    run,
+    cancel,
+    tree,
+    value,
+    projection,
+    settings,
+    lifetime,
+    release,
+    credential,
+    settingsListeners,
+  };
 }
+
+it('keeps review and cached batches restorable after remembered rejection without changing generation options', async () => {
+  const factory = new IDBFactory(),
+    memory = new OrganizeMemoryStore(),
+    h = setup(factory, memory);
+  h.run.mockResolvedValueOnce(folder).mockImplementation(async input => ({
+    status: 'completed',
+    output: {
+      newFolders: [],
+      merges: [],
+      moves: 'itemIds' in input.request ? input.request.itemIds.map(itemId => ({ itemId, folderId: 'new' })) : [],
+    },
+  }));
+  const started = await h.owner.start({ ...request, credential: h.credential });
+  const folders = await idle(h, started.id);
+  await h.owner.command(started.id, folders.revision, 'confirmFolders');
+  let reviewed = await idle(h, started.id);
+  reviewed = await h.owner.select(started.id, reviewed.revision, { id: 'move:a', target: 'right' });
+  const signature = organizeRejectionKey(
+    reviewed.state.proposal!,
+    reviewed.state.proposal!.actions.find(a => a.id === 'move:a')!,
+    reviewed.state.targets,
+  );
+  await h.owner.select(started.id, reviewed.revision, { ids: ['move:a'], selected: false });
+  const before = (await h.store.get(started.id))!;
+  await memory.update('install', value => ({ ...value, rejected: [{ signature, label: 'move' }] }));
+  await h.owner.refreshMemory('install');
+  expect((await h.owner.get(started.id)).state).toMatchObject({ invalid: false, targets: { 'move:a': 'right' } });
+  h.owner.dispose();
+  const next = setup(factory, memory);
+  const restored = await next.owner.get(started.id);
+  expect(restored.state.pipeline?.stage).toBe('complete');
+  expect(restored.state.invalid).toBe(false);
+  expect(restored.state.selected).not.toContain('move:a');
+  expect(restored.state.selected).toContain('move:b');
+  expect(restored.state.targets['move:a']).toBe('right');
+  expect(next.run).not.toHaveBeenCalled();
+  const after = (await next.store.get(started.id))!;
+  expect(after.options).toEqual(before.options);
+  expect(after.batches).toEqual(before.batches);
+  await memory.update('install', value => ({ ...value, rejected: [] }));
+  await next.owner.refreshMemory('install');
+  expect((await next.owner.get(started.id)).state.selected).toEqual(restored.state.selected);
+  next.owner.dispose();
+});
+
+it('returns a refused locked taxonomy to review and stops in-flight batches without losing its folder output', async () => {
+  const memory = new OrganizeMemoryStore(),
+    h = setup(new IDBFactory(), memory);
+  h.run.mockResolvedValueOnce(folder).mockImplementation(() => new Promise(() => {}));
+  const started = await h.owner.start(request);
+  const folders = await idle(h, started.id);
+  const signature = organizeRejectionKey(folders.state.proposal!, folders.state.proposal!.actions[0]!, {});
+  await h.owner.command(started.id, folders.revision, 'confirmFolders');
+  await vi.waitFor(() => expect(h.run).toHaveBeenCalledTimes(3));
+  await memory.update('install', value => ({ ...value, rejected: [{ signature, label: 'folder' }] }));
+  await h.owner.refreshMemory('install');
+  const reviewed = await h.owner.get(started.id);
+  expect(reviewed.state).toMatchObject({
+    busy: false,
+    invalid: false,
+    pipeline: { stage: 'folders', status: 'review' },
+  });
+  expect(reviewed.state.selected).toEqual([]);
+  expect((await h.store.get(started.id))?.folderPlan?.output).toEqual(folder.output);
+  expect((await h.store.get(started.id))?.batches).toEqual([]);
+  expect(h.run).toHaveBeenCalledTimes(3);
+  h.owner.dispose();
+});
+
+it('stops a taxonomy refusal during the pending-batch checkpoint before issuing any bookmark model call', async () => {
+  const memory = new OrganizeMemoryStore(),
+    h = setup(new IDBFactory(), memory);
+  h.run.mockResolvedValue(folder);
+  const started = await h.owner.start(request);
+  const folders = await idle(h, started.id);
+  const signature = organizeRejectionKey(folders.state.proposal!, folders.state.proposal!.actions[0]!, {});
+  let release!: () => void;
+  const delayed = new Promise<void>(resolve => {
+    release = resolve;
+  });
+  const put = h.store.put.bind(h.store);
+  let pending = false;
+  vi.spyOn(h.store, 'put').mockImplementation(async (checkpoint, revision) => {
+    await put(checkpoint, revision);
+    if (checkpoint.stage === 'bookmarks' && !pending) {
+      pending = true;
+      await delayed;
+    }
+  });
+  await h.owner.command(started.id, folders.revision, 'confirmFolders');
+  await vi.waitFor(() => expect(pending).toBe(true));
+  await memory.update('install', value => ({ ...value, rejected: [{ signature, label: 'folder' }] }));
+  h.cancel.mockClear();
+  const refreshing = h.owner.refreshMemory('install');
+  await vi.waitFor(() => expect(h.cancel).toHaveBeenCalled());
+  release();
+  await refreshing;
+  expect((await h.owner.get(started.id)).state).toMatchObject({ invalid: false, pipeline: { stage: 'folders' } });
+  expect(h.run).toHaveBeenCalledTimes(1);
+  h.owner.dispose();
+});
+
+it('ignores unrelated memory and protection but stops new relevant protection before another model request', async () => {
+  const memory = new OrganizeMemoryStore(),
+    h = setup(new IDBFactory(), memory);
+  h.run.mockResolvedValue(folder);
+  const started = await h.owner.start(request);
+  await idle(h, started.id);
+  await memory.update('another-install', value => ({ ...value, protectedFolderIds: ['bar'] }));
+  await h.owner.refreshMemory('another-install');
+  await memory.update('install', value => ({ ...value, protectedFolderIds: ['outside', 'missing'] }));
+  await h.owner.refreshMemory('install');
+  const reviewed = await h.owner.get(started.id);
+  expect(reviewed.state.invalid).toBe(false);
+  expect(h.run).toHaveBeenCalledTimes(1);
+  // No storage event is necessary: the next explicit continuation reads the latest protection itself.
+  await memory.update('install', value => ({ ...value, protectedFolderIds: ['0'] }));
+  await expect(h.owner.command(started.id, reviewed.revision, 'confirmFolders')).rejects.toThrow('stale-context');
+  expect(h.run).toHaveBeenCalledTimes(1);
+  expect((await h.store.get(started.id))?.status).toBe('invalid');
+  h.owner.dispose();
+});
 async function idle(h: ReturnType<typeof setup>, id: string) {
   await vi.waitFor(async () => expect((await h.owner.get(id)).state.busy).toBe(false));
   return h.owner.get(id);
