@@ -51,6 +51,7 @@ type OrganizeModel = Pick<ModelTransport, 'run' | 'cancel' | 'dispose'> & {
   fork?: () => Pick<ModelTransport, 'run' | 'cancel' | 'dispose'>;
 };
 const failureMessages: Record<string, string> = {
+  'organize-credential-required': '本次整理使用的临时密钥已失效。请重新输入密钥后继续；已完成建议保留。',
   'checkpoint-unavailable': '无法保存整理进度，已停止生成。请检查本机存储后重试；未修改书签。',
   'folder-context-too-large': '分类目录连同提示词超过 1 MiB 请求上限，请选择一个子目录后重新整理。',
   'bookmark-context-too-large':
@@ -420,6 +421,7 @@ export class OrganizeController {
       if (options.staged) {
         const bookmarks = new Set(context.tree.nodes.filter(n => n.ref.kind === 'bookmark').map(n => n.ref.nativeId));
         this.staged = {
+          requiresCredential: !!context.key,
           context: { ...context, config: context.config },
           preference: selectedPreference,
           options,
@@ -732,6 +734,7 @@ export class OrganizeController {
       const operation = this.operation!;
       const checkContext = async () => {
         const current = await cancellable(this.authority!.read(), operation.controller.signal);
+        if (run.requiresCredential && !current.key) throw Error('organize-credential-required');
         if (
           scopeDependencies(current.tree, run.request.rootId) !== this.scopeDigest ||
           current.tree.installationId !== run.context.tree.installationId ||
@@ -977,14 +980,17 @@ export class OrganizeController {
     if (!this.staged || !this.state.pipeline || this.state.invalid) return undefined;
     return exportOrganizeGeneration(this.state, this.staged, id, revision);
   }
-  async restoreCheckpoint(checkpoint: unknown) {
+  async restoreCheckpoint(checkpoint: unknown, options: { allowMissingCredential?: boolean } = {}) {
     if (!this.runtime.generationOnly || !this.authority || this.state.busy) throw Error('unavailable');
     this.invalidate(undefined, 'restore-checkpoint');
     const generation = await this.begin();
     const operation = this.operation!;
     try {
       const context = await cancellable(this.authority.read(), operation.controller.signal);
-      const restored = await cancellable(restoreOrganizeGeneration(checkpoint, context), operation.controller.signal);
+      const restored = await cancellable(
+        restoreOrganizeGeneration(checkpoint, context, options),
+        operation.controller.signal,
+      );
       const latest = await cancellable(this.authority.read(), operation.controller.signal);
       if (
         latest.tree.installationId !== context.tree.installationId ||

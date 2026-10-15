@@ -25,6 +25,10 @@ import { nativeSaveBadge, startNativeBookmarkIngress } from './native-bookmark-i
 import { SiteRulesStore } from '../persistence/site-rules';
 import { SaveReceiptLog } from '../persistence/save-receipts';
 import { startWorkerDiagnostics } from './worker-diagnostics';
+import { OrganizeTaskOwner } from './organize-task-owner';
+import { startOrganizeTaskService } from './organize-task-service';
+import { OrganizeCheckpointStore } from '../persistence/organize-checkpoints';
+import { OrganizeMemoryStore } from '../persistence/organize-memory';
 
 const workerDiagnostics = startWorkerDiagnostics();
 
@@ -87,6 +91,29 @@ const nativeSaves = startNativeBookmarkIngress({
   rules: new SiteRulesStore(chrome.storage.local),
   badge: nativeSaveBadge,
 });
+
+const organizeSettings = featureModelSettings(settings, aiServices, 'organize');
+startOrganizeTaskService(
+  new OrganizeTaskOwner({
+    projection,
+    settings: {
+      snapshot: () => organizeSettings.snapshot(),
+      subscribe(listener) {
+        const stop = organizeSettings.subscribe(listener);
+        const changed = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
+          if (area === 'local' && Object.keys(changes).some(key => key.startsWith('organize.memory.'))) listener();
+        };
+        chrome.storage.onChanged.addListener(changed);
+        return () => {
+          stop();
+          chrome.storage.onChanged.removeListener(changed);
+        };
+      },
+    },
+    store: new OrganizeCheckpointStore(),
+    memory: new OrganizeMemoryStore(chrome.storage.local),
+  }),
+);
 
 chrome.runtime.onMessage.addListener((message, sender, reply) => {
   if (!message || typeof message !== 'object' || !('type' in message) || message.type !== 'nativeSaveUndo')

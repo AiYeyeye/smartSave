@@ -61,6 +61,7 @@ export type RunContext = Awaited<ReturnType<ModelAuthority['read']>> & {
   config: NonNullable<Awaited<ReturnType<ModelAuthority['read']>>['config']>;
 };
 export type StagedRun = {
+  requiresCredential?: boolean;
   checkpointBaseline?: TreeSnapshot;
   folderOutput?: OrganizeOutput;
   batchIds?: Map<string[], string>;

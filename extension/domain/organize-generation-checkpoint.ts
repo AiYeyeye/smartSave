@@ -60,7 +60,7 @@ export async function exportOrganizeGeneration(
     root: baseline.nodes.find(node => node.ref.nativeId === run.request.rootId)!.ref,
     baseline,
     ...(await organizeCheckpointContext({ ...run.context, tree: baseline }, run.request.rootId)),
-    requiresCredential: !!run.context.key,
+    requiresCredential: run.requiresCredential ?? !!run.context.key,
     preference: run.preference,
     options: {
       batchSize: options.batchSize ?? 100,
@@ -120,11 +120,16 @@ function validateSelection(
 }
 
 /** Rebuild suggestions with fresh epochs/observations, after independently matching semantic context. */
-export async function restoreOrganizeGeneration(input: unknown, current: Awaited<ReturnType<ModelAuthority['read']>>) {
+export async function restoreOrganizeGeneration(
+  input: unknown,
+  current: Awaited<ReturnType<ModelAuthority['read']>>,
+  restoreOptions: { allowMissingCredential?: boolean } = {},
+) {
   const value = organizeCheckpointSchema.parse(input);
   const rootId = value.root.nativeId;
   if (!current.config) throw Error('model-unconfigured');
-  if (value.requiresCredential && !current.key) throw Error('organize-credential-required');
+  if (value.requiresCredential && !current.key && !restoreOptions.allowMissingCredential)
+    throw Error('organize-credential-required');
   const digests = await organizeCheckpointContext(current, rootId);
   if (
     value.installationId !== current.tree.installationId ||
@@ -160,6 +165,7 @@ export async function restoreOrganizeGeneration(input: unknown, current: Awaited
     sampleLimit: 2,
   };
   const run: StagedRun = {
+    requiresCredential: value.requiresCredential,
     context,
     checkpointBaseline: value.baseline,
     preference: value.preference,
