@@ -67,7 +67,7 @@ export function CommandMenu({
       window.removeEventListener('resize', position);
       document.removeEventListener('scroll', position, true);
     };
-  }, [open, items.length, description]);
+  }, [open, items.length, description, label]);
   useEffect(() => {
     if (!open) return;
     const onDoc = (event: MouseEvent) => {

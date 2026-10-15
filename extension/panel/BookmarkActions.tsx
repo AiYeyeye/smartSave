@@ -63,6 +63,7 @@ export function BookmarkActions({
   initialMode?: Mode;
   containerRef?: Ref<HTMLElement>;
 }) {
+  const { t, message } = useI18n();
   const [draft, setDraft] = useState<Draft>();
   const [result, setResult] = useState<MutationResult>();
   const [busy, setBusy] = useState(false);
@@ -173,30 +174,32 @@ export function BookmarkActions({
   const disabled = busy || !!draft || interactionBlocked;
   const destination = draft ? draft.snapshot.nodes.find(n => n.ref.nativeId === draft.selectedId) : selected;
   return (
-    <section ref={containerRef} className="bookmark-actions" aria-label="书签操作">
+    <section ref={containerRef} className="bookmark-actions" aria-label={t('书签操作')}>
       {hideCommands && draft && (draft.mode === 'bookmark' || draft.mode === 'folder') && (
-        <p className="hint">目标目录：{destination?.title || '无标题'}</p>
+        <p className="hint">{t('目标目录：{title}', { title: destination?.title || t('无标题') })}</p>
       )}
       {!hideCommands && (
         <>
           <p className="hint">
-            {selected ? `已选择：${selected.title || '无标题'}` : '选择一项后管理；移动也可使用键盘表单。'}
+            {selected
+              ? t('已选择：{title}', { title: selected.title || t('无标题') })
+              : t('选择一项后管理；移动也可使用键盘表单。')}
           </p>
           <div className="actions">
             <button disabled={disabled || !selected?.childrenWritable} onClick={() => begin('bookmark')}>
-              新建书签
+              {t('新建书签')}
             </button>
             <button disabled={disabled || !selected?.childrenWritable} onClick={() => begin('folder')}>
-              新建目录
+              {t('新建目录')}
             </button>
             <button disabled={disabled || !selected || selected.readOnly} onClick={() => begin('edit')}>
-              编辑 / 重命名
+              {t('编辑 / 重命名')}
             </button>
             <button disabled={disabled || !selected || selected.readOnly} onClick={() => begin('move')}>
-              移动
+              {t('移动')}
             </button>
             <button disabled={disabled || !selected || selected.readOnly} onClick={() => begin('delete')}>
-              删除
+              {t('删除')}
             </button>
           </div>
         </>
@@ -213,14 +216,14 @@ export function BookmarkActions({
           {draft.mode !== 'move' ? (
             <>
               <label className="field">
-                标题
+                {t('标题')}
                 <input value={draft.title} disabled={busy} onChange={event => patch({ title: event.target.value })} />
               </label>
               {(draft.mode === 'bookmark' ||
                 (draft.mode === 'edit' &&
                   draft.snapshot.nodes.find(n => n.ref.nativeId === draft.selectedId)?.ref.kind === 'bookmark')) && (
                 <label className="field">
-                  网址
+                  {t('网址')}
                   <input value={draft.url} disabled={busy} onChange={event => patch({ url: event.target.value })} />
                 </label>
               )}
@@ -232,11 +235,11 @@ export function BookmarkActions({
                       checked={draft.newFolder}
                       onChange={event => patch({ newFolder: event.target.checked })}
                     />
-                    在新目录中创建书签
+                    {t('在新目录中创建书签')}
                   </label>
                   {draft.newFolder && (
                     <label className="field">
-                      新目录名称
+                      {t('新目录名称')}
                       <input value={draft.folderTitle} onChange={event => patch({ folderTitle: event.target.value })} />
                     </label>
                   )}
@@ -246,9 +249,9 @@ export function BookmarkActions({
           ) : (
             <>
               <label className="field">
-                目标目录
+                {t('目标目录')}
                 <Select
-                  aria-label="目标目录"
+                  aria-label={t('目标目录')}
                   value={draft.parentId}
                   disabled={busy || interactionBlocked}
                   onChange={event => {
@@ -272,27 +275,27 @@ export function BookmarkActions({
                     void confirm(next);
                   }}
                 >
-                  <option value="">请选择目录</option>
+                  <option value="">{t('请选择目录')}</option>
                   {draft.snapshot.nodes
                     .filter(n => n.childrenWritable)
                     .map(n => (
                       <option key={n.ref.nativeId} value={n.ref.nativeId}>
-                        {n.title || '根目录'}（{n.ref.nativeId}）
+                        {n.title || t('根目录')}（{n.ref.nativeId}）
                       </option>
                     ))}
                 </Select>
               </label>
-              <p className="hint">选择目标目录后立即移动到末尾。</p>
+              <p className="hint">{t('选择目标目录后立即移动到末尾。')}</p>
             </>
           )}
-          {invalid && <p role="alert">{invalid}</p>}
+          {invalid && <p role="alert">{message(invalid)}</p>}
           <div className="actions">
             <button type="button" disabled={busy} onClick={() => setDraft(undefined)}>
-              取消
+              {t('取消')}
             </button>
             {draft.mode !== 'move' && (
               <button type="submit" disabled={busy || !!invalid}>
-                确认保存
+                {t('确认保存')}
               </button>
             )}
           </div>
@@ -306,13 +309,15 @@ export function BookmarkActions({
           onConfirm={() => void confirm()}
         >
           <p>
-            删除“{draft.snapshot.nodes.find(n => n.ref.nativeId === draft.selectedId)?.title}”及 {deleteCount}{' '}
-            个子项。中途变化会停止，已完成部分不会自动回滚。
+            {t('删除“{title}”及 {count} 个子项。中途变化会停止，已完成部分不会自动回滚。', {
+              title: draft.snapshot.nodes.find(n => n.ref.nativeId === draft.selectedId)?.title ?? '',
+              count: deleteCount,
+            })}
           </p>
-          {invalid && <p role="alert">{invalid}</p>}
+          {invalid && <p role="alert">{message(invalid)}</p>}
         </ImpactConfirmDialog>
       )}
-      {busy && <BusyIndicator label={draft?.mode === 'move' ? '正在移动书签…' : '正在提交，请勿重复操作。'} />}
+      {busy && <BusyIndicator label={draft?.mode === 'move' ? t('正在移动书签…') : t('正在提交，请勿重复操作。')} />}
       {result && <MutationFeedback result={result} />}
     </section>
   );

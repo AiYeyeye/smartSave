@@ -1,3 +1,4 @@
+import { useI18n } from '../ui/i18n';
 import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import {
   ArrowDown,
@@ -29,6 +30,7 @@ import type { ConfirmMutation, MutationResult } from '../schemas/messages';
 import { BusyIndicator } from '../ui/BusyIndicator';
 
 export function BookmarkTree({ batchNonce = 0 }: { batchNonce?: number }) {
+  const { t, message } = useI18n();
   const [state, setState] = useState<TreeState>({ status: 'loading' });
   const [retry, setRetry] = useState(0);
   const [lastSnapshot, setLastSnapshot] = useState<TreeSnapshot>();
@@ -48,13 +50,15 @@ export function BookmarkTree({ batchNonce = 0 }: { batchNonce?: number }) {
       {state.status !== 'ready' && (
         <StateMessage
           kind={state.status === 'loading' ? 'loading' : 'error'}
-          title={state.status === 'loading' ? (snapshot ? '正在重新连接书签' : '正在读取书签') : state.message}
+          title={message(state.status === 'loading' ? (snapshot ? '正在重新连接书签' : '正在读取书签') : state.message)}
         >
-          <p>{snapshot ? '保留上次列表供查看；连接恢复前不能修改。不会自动重放操作。' : '等待浏览器提供当前目录。'}</p>
+          <p>
+            {snapshot ? t('保留上次列表供查看；连接恢复前不能修改。不会自动重放操作。') : t('等待浏览器提供当前目录。')}
+          </p>
           {state.status === 'error' && (
             <>
-              <button onClick={() => setRetry(value => value + 1)}>重试读取</button>
-              <p>若重试仍失败，请关闭并重新打开智栏以重新绑定身份。</p>
+              <button onClick={() => setRetry(value => value + 1)}>{t('重试读取')}</button>
+              <p>{t('若重试仍失败，请关闭并重新打开智栏以重新绑定身份。')}</p>
             </>
           )}
         </StateMessage>
@@ -72,6 +76,7 @@ export function TreeRows({
   batchNonce?: number;
   connectionReady?: boolean;
 }) {
+  const { t, message } = useI18n();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [selectedId, setSelectedId] = useState<string>();
   const [intentMode, setIntentMode] = useState<Mode>();
@@ -401,7 +406,11 @@ export function TreeRows({
         onSelect: () => act(id, 'folder'),
       });
     }
-    return items;
+    return items.map(item => ({
+      ...item,
+      label: message(item.label),
+      disabledReason: item.disabledReason ? message(item.disabledReason) : undefined,
+    }));
   }
   function toggleCheck(id: string, on: boolean) {
     setChecked(previous => {
@@ -416,8 +425,8 @@ export function TreeRows({
   const canMutate = connectionReady && checked.size === 1 && !!onlyNode && !onlyNode.readOnly;
   if (!snapshot.nodes.length)
     return (
-      <StateMessage kind="empty" title="暂无书签">
-        浏览器尚未返回目录。
+      <StateMessage kind="empty" title={t('暂无书签')}>
+        {t('浏览器尚未返回目录。')}
       </StateMessage>
     );
   return (
@@ -435,24 +444,24 @@ export function TreeRows({
           if (!active) setIntentMode(undefined);
         }}
       />
-      {dragError && <p role="alert">{dragError}</p>}
-      {openError && <p role="alert">{openError}</p>}
-      {copyStatus && <p role="status">{copyStatus}</p>}
-      {moving && <BusyIndicator label="正在移动书签…" />}
+      {dragError && <p role="alert">{message(dragError)}</p>}
+      {openError && <p role="alert">{message(openError)}</p>}
+      {copyStatus && <p role="status">{message(copyStatus)}</p>}
+      {moving && <BusyIndicator label={t('正在移动书签…')} />}
       {moveResult && <MutationFeedback result={moveResult} />}
-      {memoryError && <p role="alert">展开状态无法记忆，本次仍可浏览。</p>}
+      {memoryError && <p role="alert">{t('展开状态无法记忆，本次仍可浏览。')}</p>}
       {batch && (
-        <div className="batch-bar" role="region" aria-label="批量管理">
-          <p>已选 {checked.size} 项</p>
-          {checked.size > 1 && <p role="status">当前版本暂不支持批量修改，请只选择一项进行编辑、移动或删除</p>}
+        <div className="batch-bar" role="region" aria-label={t('批量管理')}>
+          <p>{t('已选 {count} 项', { count: checked.size })}</p>
+          {checked.size > 1 && <p role="status">{t('当前版本暂不支持批量修改，请只选择一项进行编辑、移动或删除')}</p>}
           <button disabled={!canMutate} onClick={() => only && act(only, 'edit')}>
-            编辑 / 重命名
+            {t('编辑 / 重命名')}
           </button>
           <button disabled={!canMutate} onClick={() => only && act(only, 'move')}>
-            移动
+            {t('移动')}
           </button>
           <button disabled={!canMutate} onClick={() => only && act(only, 'delete')}>
-            删除
+            {t('删除')}
           </button>
           <button
             type="button"
@@ -461,15 +470,15 @@ export function TreeRows({
               setChecked(new Set());
             }}
           >
-            退出选择
+            {t('退出选择')}
           </button>
         </div>
       )}
-      <ul className="bookmark-tree" aria-label="原生书签">
+      <ul className="bookmark-tree" aria-label={t('原生书签')}>
         {visible.map(({ id, depth }) => {
           const node = byId.get(id)!;
           const open = isOpen(id);
-          const title = node.title || (node.ref.kind === 'folder' ? '书签根目录' : '无标题书签');
+          const title = node.title || (node.ref.kind === 'folder' ? t('书签根目录') : t('无标题书签'));
           return (
             <li
               key={id}
@@ -530,7 +539,7 @@ export function TreeRows({
               {!node.readOnly && node.parentId !== undefined && (
                 <span
                   className="drop-zone"
-                  aria-label={`移到 ${title} 前`}
+                  aria-label={t('移到 {title} 前', { title })}
                   onDragOver={event => {
                     event.stopPropagation();
                     if (connectionReady && drag.current && resolveDropTarget(byId, drag.current.id, id, 'before')) {
@@ -554,7 +563,7 @@ export function TreeRows({
                     type="checkbox"
                     checked={checked.has(id)}
                     onChange={event => toggleCheck(id, event.target.checked)}
-                    aria-label={`选择 ${title}`}
+                    aria-label={t('选择 {title}', { title })}
                   />
                 </label>
               )}
@@ -573,7 +582,7 @@ export function TreeRows({
                   <ChevronRight aria-hidden="true" />
                   <Folder aria-hidden="true" />
                   <span>{title}</span>
-                  {node.readOnly && depth > 0 && <small>只读</small>}
+                  {node.readOnly && depth > 0 && <small>{t('只读')}</small>}
                 </button>
               ) : (
                 <div
@@ -614,14 +623,16 @@ export function TreeRows({
               ) : null}
               {menuItems(id).length > 0 && (
                 <CommandMenu
-                  label={`${title} 操作`}
+                  label={t('{title} 操作', { title })}
                   items={menuItems(id)}
-                  description={mutationBlockReason}
+                  description={mutationBlockReason ? message(mutationBlockReason) : undefined}
                   open={menuId === id}
                   onOpenChange={open => setMenuId(current => (open ? id : current === id ? undefined : current))}
                 />
               )}
-              {node.ref.kind === 'folder' && open && !node.childrenIds.length && <p className="hint">空文件夹</p>}
+              {node.ref.kind === 'folder' && open && !node.childrenIds.length && (
+                <p className="hint">{t('空文件夹')}</p>
+              )}
             </li>
           );
         })}

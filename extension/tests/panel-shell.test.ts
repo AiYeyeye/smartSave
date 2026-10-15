@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { App } from '../ui/App';
 import { TreeRows } from '../panel/BookmarkTree';
 import { TREE_PORT, type TreeSnapshot } from '../domain/node-reference';
+import { LANGUAGE_KEY, LanguagePicker, LocaleProvider } from '../ui/i18n';
 const tree: TreeSnapshot = {
   installationId: 'i',
   epoch: 'e',
@@ -94,6 +95,43 @@ function chromeStub(readyTree = false) {
 
 afterEach(() => {
   location.hash = '';
+});
+
+it('language switching retains selection, an edited title and deletion confirmation without submitting', async () => {
+  chromeStub();
+  const send = vi.fn();
+  chrome.runtime.sendMessage = send;
+  localStorage.setItem(LANGUAGE_KEY, 'en');
+  render(
+    createElement(LocaleProvider, null, createElement(LanguagePicker), createElement(TreeRows, { snapshot: tree })),
+  );
+  const bookmark = await screen.findByRole('button', { name: 'Book' });
+  fireEvent.contextMenu(bookmark);
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Select bookmark' }));
+  fireEvent.change(screen.getByLabelText('Language'), { target: { value: 'zh-CN' } });
+  expect(screen.getByLabelText('选择 Book')).toBeChecked();
+  expect(screen.getByText('已选 1 项')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: '退出选择' }));
+  fireEvent.contextMenu(bookmark);
+  fireEvent.change(screen.getByLabelText('语言'), { target: { value: 'en' } });
+  expect(screen.getByRole('menuitem', { name: 'Edit' })).toBeVisible();
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Edit' }));
+  const title = screen.getByLabelText('Title', { exact: true });
+  fireEvent.change(title, { target: { value: '删除 <&>' } });
+  fireEvent.change(screen.getByLabelText('Language'), { target: { value: 'zh-CN' } });
+  expect(screen.getByLabelText('标题', { exact: true })).toBe(title);
+  expect(title).toHaveValue('删除 <&>');
+  expect(screen.getByLabelText('网址', { exact: true })).toHaveValue('https://example.test/');
+  fireEvent.click(screen.getByRole('button', { name: '取消' }));
+  fireEvent.contextMenu(bookmark);
+  fireEvent.click(screen.getByRole('menuitem', { name: '删除' }));
+  const dialog = screen.getByRole('dialog', { name: '删除影响确认' });
+  fireEvent.change(screen.getByLabelText('语言'), { target: { value: 'en' } });
+  expect(screen.getByRole('dialog', { name: 'Review deletion' })).toBe(dialog);
+  expect(dialog).toHaveTextContent('Delete “Book”');
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(send).not.toHaveBeenCalled();
 });
 
 it('popup: brand, always-on search, pinned tool dock; long workbenches open in the options page', async () => {

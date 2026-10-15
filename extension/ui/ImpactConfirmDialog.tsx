@@ -1,3 +1,4 @@
+import { useI18n } from './i18n';
 import { useEffect, useId, useRef, type ReactNode } from 'react';
 export function ImpactConfirmDialog({
   children,
@@ -12,6 +13,7 @@ export function ImpactConfirmDialog({
   disabled: boolean;
   busy: boolean;
 }) {
+  const { t } = useI18n();
   const ref = useRef<HTMLDivElement>(null);
   const title = useId();
   useEffect(() => {
@@ -50,14 +52,14 @@ export function ImpactConfirmDialog({
           }
         }}
       >
-        <h2 id={title}>删除影响确认</h2>
+        <h2 id={title}>{t('删除影响确认')}</h2>
         {children}
         <div className="actions">
           <button onClick={onCancel} disabled={busy}>
-            取消
+            {t('取消')}
           </button>
           <button onClick={onConfirm} disabled={disabled || busy}>
-            确认删除
+            {t('确认删除')}
           </button>
         </div>
       </div>
