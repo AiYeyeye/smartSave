@@ -1,10 +1,13 @@
 import type { ModelAuthority } from '../adapters/model-authority';
-import type { ModelTransport } from '../adapters/model-transport';
+import type { ModelProgress, ModelTransport } from '../adapters/model-transport';
+import type { AiRequest } from '../domain/ai-payload';
 import type { TreeState } from '../domain/node-reference';
 import { SearchIndex, type SearchHit } from '../domain/search-index';
 import { applySearchOrder, searchCandidates } from '../domain/search-rerank';
 import { openUrl } from '../domain/open-url';
 import { cancellable } from '../domain/cancellable';
+import { fastSearchCandidates } from '../domain/search-retrieval';
+import { AI_SEARCH_CANDIDATES, AI_SEARCH_RESULTS } from '../domain/search-limits';
 export interface SearchState {
   query: string;
   hits: SearchHit[];
@@ -27,6 +30,7 @@ function failureMessage(reason: string): string {
     permission: '模型服务尚未授权，请检查 AI 服务权限。',
     'stale-context': '搜索期间书签或设置已变化，请重新搜索。',
     schema: '模型返回的搜索结果无效，请重试。',
+    'no-fast-candidates': '快速搜索没有找到足够候选，可以尝试“深度搜索”，分段检查全部允许搜索的书签。',
   };
   return `AI 搜索未完成，保留本地结果。${messages[reason] ?? '请检查模型连接后重试。'}`;
 }
@@ -120,7 +124,7 @@ export class SearchController {
   cancel() {
     this.invalidate('已取消 AI 搜索，保留本地结果。');
   }
-  async rerank() {
+  async rerank(mode: 'fast' | 'deep' = 'fast') {
     this.invalidate();
     const generation = this.generation;
     if (!this.authority || !this.transport || !this.state.query.trim() || this.tree.status !== 'ready') {
@@ -129,6 +133,7 @@ export class SearchController {
       return;
     }
     this.state.reranking = true;
+    this.state.message = mode === 'deep' ? '正在分段检查允许搜索的书签…' : '正在理解描述并查找候选书签…';
     this.publish();
     const started = Date.now();
     const operation = new AbortController();
@@ -143,29 +148,65 @@ export class SearchController {
       if (remaining <= 0) throw Error('timeout');
       const candidates = searchCandidates(context.tree, context.privacy);
       if (!candidates.length) throw Error('no-allowed-candidates');
-      const result = await cancellable(
-        this.transport.run({
-          ...context,
-          config: context.config,
-          timeoutMs: remaining,
-          request: { task: 'search', query: this.state.query, itemIds: candidates, folderIds: [] },
-          signal: operation.signal,
-          onProgress: progress => {
-            if (generation !== this.generation || !progress.retry) return;
-            this.state.message = `服务繁忙，${progress.retry.delaySeconds} 秒后重试（${progress.retry.attempt}/3），可随时取消。`;
+      const onProgress = (progress: ModelProgress) => {
+        if (generation !== this.generation || !progress.retry) return;
+        this.state.message = `服务繁忙，${progress.retry.delaySeconds} 秒后重试（${progress.retry.attempt}/3），可随时取消。`;
+        this.publish();
+      };
+      const run = async (request: AiRequest) => {
+        const result = await cancellable(
+          this.transport!.run({
+            ...context,
+            config: context.config!,
+            timeoutMs: remaining,
+            request,
+            signal: operation.signal,
+            onProgress,
+          }),
+          operation.signal,
+        );
+        if (generation !== this.generation || operation.signal.aborted) throw Error('cancelled');
+        if (result.status !== 'completed') throw Error(result.reason);
+        return result.output;
+      };
+      const rank = async (ids: string[]) => {
+        const output = await run({ task: 'search', query: this.state.query, itemIds: ids, folderIds: [] });
+        if (!('rankedIds' in output)) throw Error('schema');
+        return output.rankedIds.slice(0, AI_SEARCH_RESULTS);
+      };
+      let ranked: string[];
+      if (mode === 'fast' && candidates.length > AI_SEARCH_CANDIDATES) {
+        const expanded = await run({ task: 'search-expand', query: this.state.query, itemIds: [], folderIds: [] });
+        if (!('terms' in expanded)) throw Error('schema');
+        const shortList = fastSearchCandidates(
+          new SearchIndex(context.tree),
+          candidates,
+          this.state.query,
+          expanded.terms,
+        );
+        if (!shortList.length) throw Error('no-fast-candidates');
+        this.state.message = `正在比较 ${shortList.length} 条候选书签…找不到时可尝试深度搜索。`;
+        this.publish();
+        ranked = await rank(shortList);
+      } else if (mode === 'deep' && candidates.length > AI_SEARCH_CANDIDATES) {
+        let pool = candidates;
+        while (pool.length > AI_SEARCH_CANDIDATES) {
+          const next: string[] = [];
+          for (let i = 0; i < pool.length; i += AI_SEARCH_CANDIDATES) {
+            next.push(...(await rank(pool.slice(i, i + AI_SEARCH_CANDIDATES))));
+            this.state.message = `深度搜索：已检查 ${Math.min(i + AI_SEARCH_CANDIDATES, pool.length)} / ${pool.length} 条，正在比较相关结果…`;
             this.publish();
-          },
-        }),
-        operation.signal,
-      );
+          }
+          pool = [...new Set(next)];
+        }
+        ranked = pool.length ? await rank(pool) : [];
+      } else ranked = await rank(candidates);
       if (generation !== this.generation) return;
-      if (result.status !== 'completed') throw Error(result.reason);
-      if (!('rankedIds' in result.output)) throw Error('schema');
       if (this.tree.status !== 'ready') throw Error('tree-unavailable');
       // Candidates removed from the tree while the model answered are simply no longer rankable.
       const catalog = this.index?.all() ?? [];
       const present = new Set(catalog.map(hit => hit.id));
-      const rankedIds = result.output.rankedIds.filter(id => present.has(id));
+      const rankedIds = ranked.filter(id => present.has(id));
       this.state.hits = applySearchOrder(this.local, candidates, rankedIds, catalog);
       const selected = new Set(rankedIds);
       this.semantic = {

@@ -5,6 +5,7 @@ import { partitionOrganizeItems } from '../domain/organize-batches';
 import { SearchIndex } from '../domain/search-index';
 import type { TreeSnapshot } from '../domain/node-reference';
 import { localClassification } from '../domain/local-classification';
+import { fastSearchCandidates } from '../domain/search-retrieval';
 
 // Deterministic synthetic data only. This is not the author's missing fixture or a model-quality benchmark.
 const tree: TreeSnapshot = {
@@ -65,7 +66,7 @@ const config = {
 const bytes = (text: string) => new TextEncoder().encode(text).byteLength;
 const envelope = (request: AiRequest) =>
   modelRequestBody(config, request.task, serializeAiPayload(tree, privacy, request));
-const search: AiRequest = { task: 'search', query: '前端工具', itemIds: bookmarkIds, folderIds };
+const search: AiRequest = { task: 'search', query: '前端工具', itemIds: bookmarkIds, folderIds: [] };
 const save: AiRequest = { task: 'save', targetId: '0', item: { source: 'bookmark', id: bookmarkIds[0]! }, folderIds };
 const saveCandidates = localClassification(tree, bookmarkIds[0]!, privacy, []).folderIds;
 const base = {
@@ -91,6 +92,10 @@ const index = new SearchIndex(tree);
 const indexMs = performance.now() - indexStart;
 const queryStart = performance.now();
 const hits = index.query('前端工具');
+const queryMs = performance.now() - queryStart;
+const candidateStart = performance.now();
+const fastCandidates = fastSearchCandidates(index, bookmarkIds, '前端工具', ['前端', '工具']);
+const candidateSelectionMs = performance.now() - candidateStart;
 console.log(
   JSON.stringify(
     {
@@ -100,7 +105,12 @@ console.log(
       saveRequestBytes: bytes(envelope({ ...save, folderIds: saveCandidates })),
       saveAllFoldersRequestBytes: bytes(envelope(save)),
       saveCandidateFolders: saveCandidates.length,
-      searchRequestBytes: bytes(envelope(search)),
+      legacyWholeSearchRequestBytes: bytes(envelope(search)),
+      fastSearchCandidateRequestBytes: bytes(envelope({ ...search, itemIds: fastCandidates })),
+      fastSearchExpandRequestBytes: bytes(
+        envelope({ task: 'search-expand', query: search.query, itemIds: [], folderIds: [] }),
+      ),
+      fastSearchCandidates: fastCandidates.length,
       organize100RequestBytes: bytes(envelope({ ...base, itemIds: bookmarkIds.slice(0, 100) })),
       partition: {
         batches: batches.length,
@@ -108,7 +118,8 @@ console.log(
         sizeCalls: measurements,
         ms: partitionMs,
       },
-      localSearch: { indexMs, queryMs: performance.now() - queryStart, hits: hits.length },
+      localSearch: { indexMs, queryMs, hits: hits.length },
+      candidateSelectionMs,
       providerRequests: 0,
     },
     null,

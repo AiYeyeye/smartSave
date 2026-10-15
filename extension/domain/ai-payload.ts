@@ -86,6 +86,7 @@ export function serializedItemRequestSize(payload: string, emptyRequestBytes: nu
 }
 export type AiRequest =
   | { task: 'search'; query: string; itemIds: string[]; folderIds: string[] }
+  | { task: 'search-expand'; query: string; itemIds: []; folderIds: [] }
   | {
       task: 'organize';
       rootId: string;
@@ -108,6 +109,8 @@ export type AiRequest =
       proposedFolders?: { id: string; parentId: string; title: string }[];
     };
 export function serializeAiPayload(tree: TreeSnapshot, privacy: AiPrivacy, request: AiRequest): string {
+  if (request.task === 'search-expand')
+    return JSON.stringify({ task: request.task, query: request.query, folders: [], items: [] });
   const nodes = new Map(tree.nodes.map(n => [n.ref.nativeId, n]));
   const excluded = new Set(
     privacy.excludedFolders.filter(r => r.installationId === tree.installationId).map(r => r.nativeId),

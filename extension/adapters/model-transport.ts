@@ -441,10 +441,15 @@ export class ModelTransport {
       const context: ModelOutputContext = {
         ...JSON.parse(payload),
         policy,
-        ...(frozen.request.task === 'search'
+        ...(['search', 'search-expand'].includes(frozen.request.task)
           ? {}
           : {
-              rootId: frozen.request.task === 'organize' ? frozen.request.rootId : frozen.request.targetId,
+              rootId:
+                frozen.request.task === 'organize'
+                  ? frozen.request.rootId
+                  : 'targetId' in frozen.request
+                    ? frozen.request.targetId
+                    : undefined,
             }),
       };
       await fresh();

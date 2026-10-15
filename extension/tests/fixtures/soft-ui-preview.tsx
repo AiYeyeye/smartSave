@@ -103,10 +103,31 @@ if (semanticPreview) {
   const bookmark = snapshot.nodes.find(node => node.ref.nativeId === 'figma')!;
   bookmark.title = 'diagrams.net';
   bookmark.url = 'https://app.diagrams.net/';
+  if (location.search.includes('semantic-large')) {
+    const parent = snapshot.nodes.find(node => node.ref.nativeId === 'dev')!;
+    for (let i = 0; i < 200; i++) {
+      const id = `semantic-${i}`;
+      snapshot.nodes.push({
+        ...bookmark,
+        ref: { ...bookmark.ref, nativeId: id },
+        parentId: 'dev',
+        title: `Archive reference ${i}`,
+        url: `https://catalog.example.test/${i}`,
+        index: parent.childrenIds.length,
+      });
+      parent.childrenIds.push(id);
+    }
+  }
   globalThis.fetch = async (_url, init) => {
-    requests.push(JSON.parse(String(init?.body)));
+    const body = JSON.parse(String(init?.body));
+    requests.push(body);
+    const input = JSON.parse(body.input) as { task: string; items: { id: string }[] };
     await new Promise(resolve => setTimeout(resolve, 300));
-    return new Response(JSON.stringify({ status: 'completed', output_text: '{"rankedIds":["figma"]}' }));
+    const output =
+      input.task === 'search-expand'
+        ? { terms: ['diagrams.net', '流程图', 'flowchart'] }
+        : { rankedIds: input.items.some(item => item.id === 'figma') ? ['figma'] : [] };
+    return new Response(JSON.stringify({ status: 'completed', output_text: JSON.stringify(output) }));
   };
 }
 const stored: Record<string, unknown> = {};

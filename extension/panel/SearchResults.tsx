@@ -105,10 +105,20 @@ export function SearchResults({
           >
             AI 帮我找
           </button>
-          <p className="hint">描述用途或大致内容，AI 会从允许搜索的书签标题、网址和目录中查找。</p>
+          <button
+            type="button"
+            disabled={!settings || !state.connectionReady || state.reranking}
+            onClick={() => void controller.current?.rerank('deep')}
+          >
+            深度搜索
+          </button>
+          <p className="hint">
+            描述用途或大致内容，优先快速查找少量候选。深度搜索会分段检查全部允许搜索的书签，可能需要更久。
+          </p>
           {state.reranking && (
             <>
               <BusyIndicator label="AI 正在理解描述并查找相关书签…" />
+              {state.message && <p role="status">{state.message}</p>}
               <button type="button" onClick={() => controller.current?.cancel()}>
                 取消 AI 搜索
               </button>

@@ -1,8 +1,12 @@
 import { z } from 'zod';
+import { AI_SEARCH_TERMS, AI_SEARCH_TERM_CHARS } from '../domain/search-limits';
 const id = z.string().min(1);
 // urlPath null is an explicit refusal: no field of this shape holds a URL. It must not be paired with a title path.
 const mapping = z.strictObject({ urlPath: z.array(id).min(1).nullable(), titlePath: z.array(id).min(1).nullable() });
 const search = z.strictObject({ rankedIds: z.array(id) });
+const searchExpansion = z.strictObject({
+  terms: z.array(z.string().trim().min(1).max(AI_SEARCH_TERM_CHARS)).min(1).max(AI_SEARCH_TERMS),
+});
 const folder = z.strictObject({ id, parentId: id, title: z.string().min(1) });
 const assignments = z.strictObject({
   assignments: z.array(z.strictObject({ itemId: id, folderId: id })),
@@ -44,6 +48,7 @@ export interface ModelOutputContext {
   omittedItemsUnchanged?: boolean;
 }
 export function outputSchema(task: string) {
+  if (task === 'search-expand') return searchExpansion;
   return task === 'import-classify'
     ? importAssignments
     : task === 'import-map'
@@ -73,6 +78,7 @@ function reject(code: string, path: string): never {
 export function parseModelOutput(value: unknown, context: ModelOutputContext) {
   try {
     const result = outputSchema(context.task).parse(value);
+    if ('terms' in result) return result;
     if ('urlPath' in result) {
       const paths = new Set(context.fields?.map(f => JSON.stringify(f.path)));
       if (result.urlPath === null) {

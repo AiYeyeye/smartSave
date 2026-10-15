@@ -73,6 +73,25 @@ with sync_playwright() as p:
             assert page.evaluate('globalThis.__visualTreeConnections.filter(x => x === "zhilan.tree.v1").length') == 2
             checks.append(f'{width}px: zero keyword hits -> AI result from full catalog; one shared port; cached search while loading/error; explicit recovery')
         page.set_viewport_size({'width': 380, 'height': 900})
+        for width in [320, 380, 480]:
+            page.set_viewport_size({'width': width, 'height': 900})
+            page.goto(base + '?semantic-large')
+            page.get_by_role('searchbox').fill('之前收藏的那个做流程图的网站')
+            expect(page.locator('.search-hit-list button')).to_have_count(0)
+            page.get_by_role('button', name='AI 帮我找', exact=True).click()
+            expect(page.get_by_role('button', name='diagrams.net', exact=True)).to_be_visible()
+            payloads = page.evaluate('globalThis.__visualSearchRequests.map(r => JSON.parse(r.input))')
+            assert len(payloads) == 2 and payloads[0]['task'] == 'search-expand' and payloads[0]['items'] == []
+            assert 0 < len(payloads[1]['items']) <= 80
+            page.get_by_role('button', name='深度搜索', exact=True).click()
+            expect(page.get_by_role('button', name='diagrams.net', exact=True)).to_be_visible()
+            expect(page.get_by_role('button', name='深度搜索', exact=True)).to_be_enabled()
+            segments = page.evaluate('globalThis.__visualSearchRequests.slice(2).map(r => JSON.parse(r.input))')
+            assert [len(part['items']) for part in segments] == [80, 80, 43, 1]
+            assert len({item['id'] for part in segments[:3] for item in part['items']}) == 203
+            assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+            page.screenshot(path=str(out / f'bounded-search-{width}.png'), full_page=True, animations='disabled')
+            checks.append(f'{width}px: 203-bookmark zero-hit fast query expansion plus bounded candidates; explicit deep segments cover all203; no overflow')
         page.goto(base + '?pending')
         title = page.get_by_label('收藏标题', exact=True)
         expect(title).to_be_visible()

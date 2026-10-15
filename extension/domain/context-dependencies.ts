@@ -35,6 +35,9 @@ function descends(nodes: Map<string, Node>, node: Node, rootId: string): boolean
 export function dependencyIds(tree: TreeSnapshot, request: AiRequest): string[] {
   const ids = new Set<string>();
   switch (request.task) {
+    case 'search-expand':
+      // Query-only expansion reads no bookmark metadata; route/privacy/installation still bind the call.
+      break;
     case 'save':
       ids.add(request.targetId);
       request.folderIds.forEach(id => ids.add(id));
