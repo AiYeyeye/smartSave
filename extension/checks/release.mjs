@@ -67,7 +67,10 @@ export async function checkRelease(directory) {
   await attempt(() => validateBuild(dist));
   await attempt(async () => assertClassicScript(await readFile(resolve(dist, 'content-script.js'), 'utf8')));
   const artifacts = (await attempt(() => inventory(dist))) ?? [];
-  const sourceFiles = (await attempt(() => inventory(root, ['node_modules', 'dist', 'release-candidate.json']))) ?? [];
+  // Private evaluation inputs/reports are local evidence, never distributable source inventory.
+  const sourceFiles =
+    (await attempt(() => inventory(root, ['node_modules', 'dist', '.local-evaluation', 'release-candidate.json']))) ??
+    [];
   const sourceInventoryHash = sha(JSON.stringify(sourceFiles));
   const artifactInventoryHash = sha(JSON.stringify(artifacts));
   const pkg = await attempt(async () => JSON.parse(await readFile(resolve(root, 'package.json'), 'utf8')));

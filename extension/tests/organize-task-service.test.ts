@@ -56,9 +56,10 @@ function setup() {
       };
     }),
   };
-  const stop = startOrganizeTaskService(owner);
+  const badge = { focus: vi.fn(), seen: vi.fn() };
+  const stop = startOrganizeTaskService(owner, badge);
   const sender = { id: 'extension', url: 'chrome-extension://extension/options/index.html' };
-  return { messages, connected, owner, stop, sender, subscribers, view };
+  return { messages, connected, owner, stop, sender, subscribers, view, badge };
 }
 function port(sender: SenderLite) {
   const onMessage = event<(message: unknown) => void>(),
@@ -72,6 +73,26 @@ function port(sender: SenderLite) {
     disconnect: vi.fn(() => onDisconnect.emit()),
   };
 }
+it('never acknowledges automatic reads and binds visible acknowledgements to the watched, delivered task', async () => {
+  const h = setup(),
+    one = port(h.sender);
+  h.messages.emit({ version: 1, type: 'organizeTask', action: 'get', id: 'task' }, h.sender, vi.fn());
+  await vi.waitFor(() => expect(h.owner.get).toHaveBeenCalled());
+  expect(h.badge.seen).not.toHaveBeenCalled();
+  expect(h.badge.focus).not.toHaveBeenCalled();
+  h.connected.emit(one as unknown as chrome.runtime.Port);
+  one.onMessage.emit({ version: 1, type: 'seen', id: 'task', revision: 0 });
+  expect(h.badge.seen).not.toHaveBeenCalled();
+  one.onMessage.emit({ version: 1, type: 'subscribe', id: 'task' });
+  await vi.waitFor(() => expect(one.postMessage).toHaveBeenCalledWith({ version: 1, task: h.view }));
+  one.onMessage.emit({ version: 1, type: 'seen', id: 'other', revision: 0 });
+  one.onMessage.emit({ version: 1, type: 'seen', id: 'task', revision: 1 });
+  expect(h.badge.seen).not.toHaveBeenCalled();
+  one.onMessage.emit({ version: 1, type: 'seen', id: 'task', revision: 0 });
+  expect(h.badge.seen).toHaveBeenCalledExactlyOnceWith('task', 0);
+  one.disconnect();
+  h.stop();
+});
 
 it('rejects untrusted and malformed RPC before touching tasks and routes exact trusted commands', async () => {
   const h = setup(),
@@ -90,6 +111,14 @@ it('rejects untrusted and malformed RPC before touching tasks and routes exact t
     reply,
   );
   expect(h.owner.command).toHaveBeenCalledWith('task', 3, 'pause', undefined);
+  await vi.waitFor(() => expect(reply).toHaveBeenLastCalledWith({ ok: true, task: h.view }));
+  expect(h.badge.focus).not.toHaveBeenCalled();
+  h.messages.emit(
+    { version: 1, type: 'organizeTask', action: 'resume', id: 'task', expectedRevision: 3 },
+    h.sender,
+    reply,
+  );
+  await vi.waitFor(() => expect(h.badge.focus).toHaveBeenCalledExactlyOnceWith(h.view));
   h.stop();
 });
 

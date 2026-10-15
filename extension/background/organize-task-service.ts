@@ -7,10 +7,12 @@ import {
   type OrganizeTaskReply,
 } from '../domain/organize-task-protocol';
 import type { OrganizeTaskOwner } from './organize-task-owner';
+import type { OrganizeTaskBadge } from './organize-task-badge';
 
 /** Register synchronously. Page disconnect only removes its subscription, never the worker's task. */
 export function startOrganizeTaskService(
   owner: Pick<OrganizeTaskOwner, 'start' | 'get' | 'list' | 'command' | 'select' | 'subscribe' | 'dispose'>,
+  badge?: Pick<OrganizeTaskBadge, 'focus' | 'seen'>,
 ) {
   const message = (
     input: unknown,
@@ -30,7 +32,11 @@ export function startOrganizeTaskService(
         const request = parsed.data;
         const execute = async (): Promise<OrganizeTaskReply> => {
           if (request.action === 'list') return { ok: true, tasks: await owner.list() };
-          if (request.action === 'start') return { ok: true, task: await owner.start(request) };
+          if (request.action === 'start') {
+            const task = await owner.start(request);
+            badge?.focus(task);
+            return { ok: true, task };
+          }
           if (request.action === 'get') return { ok: true, task: await owner.get(request.id, request.credential) };
           if (request.action === 'select')
             return {
@@ -48,10 +54,9 @@ export function startOrganizeTaskService(
                 target: request.targetId,
               }),
             };
-          return {
-            ok: true,
-            task: await owner.command(request.id, request.expectedRevision, request.action, request.credential),
-          };
+          const task = await owner.command(request.id, request.expectedRevision, request.action, request.credential);
+          if (['confirmFolders', 'resume', 'returnToFolders'].includes(request.action)) badge?.focus(task);
+          return { ok: true, task };
         };
         void execute().then(respond, error => respond({ ok: false, reason: organizeTaskError(error) }));
         return true;
@@ -67,6 +72,7 @@ export function startOrganizeTaskService(
     }
     let connected = true;
     let watched: string | undefined;
+    let delivered: { id: string; revision: number } | undefined;
     let stop: (() => void) | undefined;
     const send = (value: unknown) => {
       if (connected) {
@@ -87,7 +93,10 @@ export function startOrganizeTaskService(
       () => {
         if (!connected) return;
         stop = owner.subscribe(task => {
-          if (!watched || watched === task.id) send({ version: 1, task });
+          if (!watched || watched === task.id) {
+            delivered = { id: task.id, revision: task.revision };
+            send({ version: 1, task });
+          }
         });
         port.onMessage.addListener((input: unknown) => {
           const parsed = organizeTaskSubscriptionSchema.safeParse(input);
@@ -95,14 +104,24 @@ export function startOrganizeTaskService(
             port.disconnect();
             return;
           }
+          if (parsed.data.type === 'seen') {
+            if (watched === parsed.data.id && delivered?.id === watched && parsed.data.revision <= delivered.revision)
+              badge?.seen(parsed.data.id, parsed.data.revision);
+            return;
+          }
           watched = parsed.data.id;
           if (watched) {
             const requested = watched;
             void owner.get(requested).then(
               task => {
-                if (watched === requested) send({ version: 1, task });
+                if (watched === requested) {
+                  delivered = { id: task.id, revision: task.revision };
+                  send({ version: 1, task });
+                }
               },
-              error => { if (watched === requested) send({ version: 1, error: organizeTaskError(error) }); },
+              error => {
+                if (watched === requested) send({ version: 1, error: organizeTaskError(error) });
+              },
             );
           }
         });

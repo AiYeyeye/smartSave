@@ -78,6 +78,15 @@ it('hashes changed source, lock and artifact bytes without inventorying its own 
   await writeFile(join(root, 'dist/content-script.js'), '(()=>{const changed=true;})();');
   expect((await checkRelease(root)).artifactInventoryHash).not.toBe(before.artifactInventoryHash);
 });
+it('does not read or inventory private evaluation data and reports', async () => {
+  const root = await fixture();
+  const before = await checkRelease(root);
+  await mkdir(join(root, '.local-evaluation/private-folder'), { recursive: true });
+  await writeFile(join(root, '.local-evaluation/private-folder/labels.json'), 'private fixture titles and URLs');
+  const result = await checkRelease(root);
+  expect(result.sourceInventoryHash).toBe(before.sourceInventoryHash);
+  expect(result.sourceFiles.some(file => file.path.includes('.local-evaluation'))).toBe(false);
+});
 it('reports malformed package metadata as source failure rather than losing the inventory', async () => {
   const root = await fixture();
   await writeFile(join(root, 'package.json'), '{');

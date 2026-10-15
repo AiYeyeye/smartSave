@@ -12,6 +12,32 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it('acknowledges a task only after its workbench is visible in a visible document', () => {
+  const seen = vi.fn();
+  const settings = new SettingsStore({
+    get: async () => ({}),
+    set: async () => {},
+    remove: async () => {},
+    setAccessLevel: async () => {},
+  });
+  const create = (emit: ConstructorParameters<typeof OrganizeController>[0]) => {
+    const controller = new OrganizeController(emit);
+    return Object.assign(controller, { setVisible: seen });
+  };
+  const page = render(<OrganizeWorkbench visible={false} settings={settings} createController={create} />);
+  expect(seen).toHaveBeenLastCalledWith(false);
+  expect(seen).not.toHaveBeenCalledWith(true);
+  page.rerender(<OrganizeWorkbench visible settings={settings} createController={create} />);
+  expect(seen).toHaveBeenLastCalledWith(true);
+  const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+  fireEvent(document, new Event('visibilitychange'));
+  expect(seen).toHaveBeenLastCalledWith(false);
+  visibility.mockRestore();
+  fireEvent(document, new Event('visibilitychange'));
+  expect(seen).toHaveBeenLastCalledWith(true);
+  settings.dispose();
+});
+
 it('uses the worker client to reopen a persisted review and confirms only the restored selection', async () => {
   const h = organizeClientRuntime();
   h.run.mockImplementation(async input => ({

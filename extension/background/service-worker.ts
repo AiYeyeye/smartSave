@@ -29,8 +29,12 @@ import { OrganizeTaskOwner } from './organize-task-owner';
 import { startOrganizeTaskService } from './organize-task-service';
 import { OrganizeMemoryStore } from '../persistence/organize-memory';
 import { OrganizeTaskAuthority } from './organize-task-authority';
+import { actionBadges } from './action-badge';
+import { OrganizeTaskBadge } from './organize-task-badge';
 
 const workerDiagnostics = startWorkerDiagnostics();
+const badges = actionBadges();
+if (badges) void badges.initialize(chrome.tabs);
 
 // Toolbar click: overlay sidebar sliding in from the left (default) or the browser's native side panel.
 void Promise.resolve(chrome.sidePanel?.setPanelBehavior?.({ openPanelOnActionClick: false })).catch(() => {});
@@ -93,6 +97,11 @@ const organizeTasks = new OrganizeTaskOwner({
   store: persistence.organizeCheckpoints,
   memory: organizeMemory,
 });
+const organizeBadge = badges ? new OrganizeTaskBadge(badges, chrome.storage.session) : undefined;
+if (organizeBadge) {
+  organizeTasks.subscribe(view => organizeBadge.observe(view));
+  void organizeBadge.restore(persistence.organizeCheckpoints);
+}
 const organizeTaskAuthority = new OrganizeTaskAuthority(
   organizeSettings,
   projection,
@@ -139,7 +148,7 @@ const nativeSaves = startNativeBookmarkIngress({
   badge: nativeSaveBadge,
 });
 
-startOrganizeTaskService(organizeTasks);
+startOrganizeTaskService(organizeTasks, organizeBadge);
 
 chrome.runtime.onMessage.addListener((message, sender, reply) => {
   if (!message || typeof message !== 'object' || !('type' in message) || message.type !== 'nativeSaveUndo')

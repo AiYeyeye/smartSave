@@ -37,6 +37,8 @@ type Task = {
   persistenceFailed: boolean;
   editing: boolean;
   memoryRefresh?: Promise<void>;
+  notificationKey?: string;
+  notificationTimer?: ReturnType<typeof setTimeout>;
 };
 type Options = {
   projection: Pick<TreeProjection, 'fresh' | 'subscribe' | 'state'>;
@@ -119,8 +121,29 @@ export class OrganizeTaskOwner {
       needsCredential: !!task.checkpoint?.requiresCredential && !task.hasCredential,
     };
   }
-  private publish(task: Task) {
+  private publish(task: Task, progressOnly = false) {
     if (this.closed || task.retired) return;
+    const pipeline = task.state.pipeline;
+    const key = JSON.stringify([
+      task.revision,
+      task.state.busy,
+      task.state.invalid,
+      pipeline?.stage,
+      pipeline?.status,
+      pipeline?.analyzed,
+      pipeline?.completed,
+      task.state.progress?.phase,
+    ]);
+    if (progressOnly && key === task.notificationKey) {
+      task.notificationTimer ??= setTimeout(() => {
+        task.notificationTimer = undefined;
+        this.publish(task);
+      }, 100);
+      return;
+    }
+    clearTimeout(task.notificationTimer);
+    task.notificationTimer = undefined;
+    task.notificationKey = key;
     const view = this.view(task);
     for (const listener of this.listeners) listener(structuredClone(view));
   }
@@ -143,6 +166,7 @@ export class OrganizeTaskOwner {
   }
   private retire(task: Task) {
     task.retired = true;
+    clearTimeout(task.notificationTimer);
     task.stopTree();
     task.controller.dispose();
     this.tasks.delete(task.id);
@@ -211,7 +235,7 @@ export class OrganizeTaskOwner {
               this.publish(task);
             },
           );
-        else this.publish(task);
+        else this.publish(task, state.busy && !!state.progress);
       },
       authority,
       model,

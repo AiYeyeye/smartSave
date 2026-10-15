@@ -35,6 +35,7 @@ export type OrganizeWorkbenchOwner = Pick<
   refreshTasks?(): Promise<void>;
   observe?(reconcile?: boolean): Promise<void>;
   deselectForMemory?(id: string): Promise<boolean>;
+  setVisible?(visible: boolean): void;
 };
 
 /** Page observer and explicit command client. Disposing it never cancels worker generation. */
@@ -137,6 +138,15 @@ export class OrganizeTaskClient implements OrganizeWorkbenchOwner {
     if (this.port) this.connected = true;
     if (task.submission) this.requestId = task.submission.requestId;
     this.publish();
+  }
+  setVisible(visible: boolean) {
+    if (!visible || this.mode !== 'remote' || !this.current || !this.port) return;
+    // Called after React committed the visible task, never by automatic get/list or a hidden observer.
+    try {
+      this.port.postMessage({ version: 1, type: 'seen', id: this.current.id, revision: this.current.revision });
+    } catch {
+      /* Advisory acknowledgement; no task or native authority depends on it. */
+    }
   }
   private watch() {
     this.port?.postMessage({

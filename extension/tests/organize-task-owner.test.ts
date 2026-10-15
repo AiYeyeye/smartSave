@@ -2,7 +2,7 @@ import { expect, it, vi } from 'vitest';
 import { IDBFactory } from 'fake-indexeddb';
 import { OrganizeTaskOwner } from '../background/organize-task-owner';
 import { OrganizeCheckpointStore } from '../persistence/organize-checkpoints';
-import type { ModelTransport, ModelResult } from '../adapters/model-transport';
+import type { ModelTransport, ModelResult, ModelProgress } from '../adapters/model-transport';
 import { settingsIdentity } from '../domain/context-dependencies';
 import type { TreeState } from '../domain/node-reference';
 import { organizerTree } from './fixtures/organizer-tree';
@@ -18,6 +18,41 @@ const request = {
   preference: { style: 'topic' as const, instructions: '' },
   options: { batchSize: 1, cleanupEmpty: false },
 };
+it('coalesces token progress before cloning full task views but publishes durable completion immediately', async () => {
+  const h = setup();
+  let progress!: (value: ModelProgress) => void;
+  let finish!: (value: ModelResult) => void;
+  h.run.mockImplementation(input => {
+    progress = input.onProgress!;
+    return new Promise(done => {
+      finish = done;
+    });
+  });
+  const notify = vi.fn();
+  h.owner.subscribe(notify);
+  const started = await h.owner.start(request);
+  await vi.waitFor(() => expect(h.run).toHaveBeenCalledOnce());
+  notify.mockClear();
+  for (let i = 1; i <= 1000; i++) progress({ phase: 'receiving', streaming: true, text: '{', receivedChars: i });
+  expect(notify.mock.calls.length).toBeLessThanOrEqual(2);
+  await vi.waitFor(() =>
+    expect(notify).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        state: expect.objectContaining({ progress: expect.objectContaining({ receivedChars: 1000 }) }),
+      }),
+    ),
+  );
+  finish(folder);
+  const reviewed = await idle(h, started.id);
+  expect(notify).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      revision: reviewed.revision,
+      state: expect.objectContaining({ busy: false, pipeline: expect.objectContaining({ status: 'review' }) }),
+    }),
+  );
+  expect((await h.store.get(started.id))?.status).toBe('review');
+  h.owner.dispose();
+});
 function setup(factory = new IDBFactory(), memory?: Pick<OrganizeMemoryStore, 'load'>) {
   const tree = organizerTree();
   const state: TreeState = { status: 'ready', snapshot: tree };

@@ -222,7 +222,7 @@ it('named save command captures before UI registration and the popup retrieves i
     type: 'page',
     page: { tabId: 4, token: expect.any(String), url: 'https://page1.test/', title: 'Page 1' },
   });
-  expect(h.setBadgeText).toHaveBeenLastCalledWith({ tabId: 4, text: '' });
+  expect(h.setBadgeText).toHaveBeenLastCalledWith({ tabId: 4, text: null });
   expect(h.nativeWrite).not.toHaveBeenCalled();
 });
 it('two windows do not steal save ports through the production worker', async () => {

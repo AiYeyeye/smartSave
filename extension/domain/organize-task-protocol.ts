@@ -31,11 +31,15 @@ export const organizeTaskMessageSchema = z.discriminatedUnion('action', [
   task.extend({ action: z.literal('select'), ids: z.array(id), selected: z.boolean() }),
   task.extend({ action: z.literal('target'), actionId: id, targetId: id }),
 ]);
-export const organizeTaskSubscriptionSchema = z.strictObject({
+const subscription = z.strictObject({
   version: z.literal(1),
   type: z.literal('subscribe'),
   id: id.optional(),
 });
+export const organizeTaskSubscriptionSchema = z.discriminatedUnion('type', [
+  subscription,
+  z.strictObject({ version: z.literal(1), type: z.literal('seen'), id, revision: z.number().int().nonnegative() }),
+]);
 export type OrganizeTaskMessage = z.infer<typeof organizeTaskMessageSchema>;
 export type OrganizeTaskReply =
   | { ok: true; task: OrganizeTaskView }

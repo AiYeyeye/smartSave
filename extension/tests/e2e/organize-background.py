@@ -124,6 +124,26 @@ with sync_playwright() as playwright:
     try:
         worker = context.service_workers[0] if context.service_workers else context.wait_for_event('serviceworker', timeout=15000)
         extension_id = worker.url.split('/')[2]
+        # Verify the real action API inheritance contract used by the sole renderer (old Chrome typings omit null).
+        badge_contract = worker.evaluate("""async () => {
+          const tab=await chrome.tabs.create({url:'about:blank',active:false});
+          const original={text:await chrome.action.getBadgeText({}),color:await chrome.action.getBadgeBackgroundColor({})};
+          try {
+            await chrome.action.setBadgeText({text:'审'});
+            await chrome.action.setBadgeBackgroundColor({color:'#16A34A'});
+            await chrome.action.setBadgeText({tabId:tab.id,text:'●'});
+            await chrome.action.setBadgeBackgroundColor({tabId:tab.id,color:'#6155A6'});
+            const pending=await chrome.action.getBadgeText({tabId:tab.id});
+            await chrome.action.setBadgeText({tabId:tab.id,text:null});
+            await chrome.action.setBadgeBackgroundColor({tabId:tab.id,color:await chrome.action.getBadgeBackgroundColor({})});
+            return {pending,inherited:await chrome.action.getBadgeText({tabId:tab.id}),color:await chrome.action.getBadgeBackgroundColor({tabId:tab.id})};
+          } finally {
+            await chrome.action.setBadgeText({text:original.text});
+            await chrome.action.setBadgeBackgroundColor({color:original.color});
+            await chrome.tabs.remove(tab.id);
+          }
+        }""")
+        assert badge_contract == {'pending': '●', 'inherited': '审', 'color': [22, 163, 74, 255]}, badge_contract
         fixture.update(worker.evaluate("""async () => {
           const bar=(await chrome.bookmarks.getTree())[0].children[0].id;
           const root=await chrome.bookmarks.create({parentId:bar,title:'Organizer isolated fixture'});
@@ -159,10 +179,13 @@ with sync_playwright() as playwright:
         wait_for(lambda: any(any(b['status'] == 'accepted' for b in task['batches']) for task in worker.evaluate(read_tasks)))
         first_id = worker.evaluate(read_tasks)[0]['id']
         page.close()
+        wait_for(lambda: worker.evaluate('()=>chrome.action.getBadgeText({})') == '50%')
         gate.set()
         wait_for(lambda: any(task['id'] == first_id and task['stage'] == 'complete' for task in worker.evaluate(read_tasks)))
+        wait_for(lambda: worker.evaluate('()=>chrome.action.getBadgeText({})') == '审')
         count = len([e for e in events if e['state'] == 'started'])
         page = open_ui()
+        wait_for(lambda: worker.evaluate('()=>chrome.action.getBadgeText({})') == '')
         page.get_by_text('查看并调整 2 条书签', exact=True).click()
         expect(page.get_by_label(f'选择 move:{fixture["a"]}', exact=True)).to_be_checked()
         page.get_by_label(f'选择 move:{fixture["a"]}', exact=True).click()
@@ -190,6 +213,7 @@ with sync_playwright() as playwright:
         gate.set()
         context = launch()
         worker = context.service_workers[0] if context.service_workers else context.wait_for_event('serviceworker', timeout=15000)
+        wait_for(lambda: worker.evaluate('()=>chrome.action.getBadgeText({})') == '停')
         page = open_ui()
         resume = page.get_by_role('button', name='继续未完成批次', exact=True)
         expect(resume).to_be_enabled()
@@ -217,6 +241,8 @@ with sync_playwright() as playwright:
         result = {'status': 'PASS', 'browser': context.browser.version, 'taskId': task['id'], 'requestId': submitted,
                   'events': events, 'evidence': str(root), 'manifestDelta': {'host_permissions': ['http://127.0.0.1/*']},
                   'productionWorkerSHA256': hashlib.sha256((extension / 'service-worker.js').read_bytes()).hexdigest(),
+                  'badge': 'PASS: closed-page progress, unread review, visible acknowledgement, restart-paused reminder',
+                  'badgeContract': badge_contract,
                   'scope': 'Fresh synthetic profile; production UI/worker bytes; loopback provider only. Debugger attached; not an idle-lifetime or branded-browser acceptance.'}
         (root / 'results.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
         if args.output:

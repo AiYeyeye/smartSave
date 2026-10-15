@@ -102,7 +102,7 @@ it('shortcut captures the gesture tab, opens the UI, and a registering popup rec
     type: 'page',
     page: { tabId: 4, url: 'https://example.test/', title: 'Example', token: expect.any(String) },
   });
-  expect(h.setBadgeText).toHaveBeenLastCalledWith({ tabId: 4, text: '' });
+  expect(h.setBadgeText).toHaveBeenLastCalledWith({ tabId: 4, text: null });
   expect(h.validate({ saveContext: popup.messages.at(-1)!.page!.token } as never)).toBe(true);
 });
 it('page context menu remains an explicit capture entry', async () => {
@@ -260,7 +260,7 @@ it('navigation and tab removal invalidate the live capture and clear the badge',
   h.update.emit(4, { status: 'loading' });
   expect(onInvalidated).toHaveBeenCalledOnce();
   expect(popup.messages.at(-1)).toEqual({ type: 'invalidated' });
-  expect(h.setBadgeText).toHaveBeenLastCalledWith({ tabId: 4, text: '' });
+  expect(h.setBadgeText).toHaveBeenLastCalledWith({ tabId: 4, text: null });
   expect(h.validate({ saveContext: token } as never)).toBe(false);
   expect(h.validate({} as never)).toBe(true);
   expect(h.livePageForSender(popup.sender as chrome.runtime.MessageSender)).toBeUndefined();

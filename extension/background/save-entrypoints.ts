@@ -1,10 +1,10 @@
 import { validateUrl } from '../domain/preflight';
 import { withTrustedSender } from '../domain/trusted-sender';
 import type { ConfirmMutation } from '../schemas/messages';
+import { actionBadges } from './action-badge';
+export { SAVE_BADGE } from './action-badge';
 
 export const SAVE_PORT = 'zhilan.save.v1';
-export const SAVE_BADGE = '●';
-const BADGE_COLOR = '#6155A6';
 const PAGE_UNAVAILABLE = '当前页面资料不可用；仅支持 http(s) 网页，请切换到网页标签后重试。';
 const NO_ACTIVE_TAB = '无法确定当前标签页；请在浏览器窗口中重新打开智栏。';
 
@@ -21,15 +21,7 @@ type Session = { page?: SavePage; port?: chrome.runtime.Port; generation: number
 type Sender = Pick<chrome.runtime.MessageSender, 'documentId' | 'tab'>;
 
 async function setBadge(tabId: number, on: boolean): Promise<void> {
-  const action = typeof chrome !== 'undefined' ? chrome.action : undefined;
-  if (!action || typeof action.setBadgeText !== 'function') return;
-  try {
-    await action.setBadgeText({ tabId, text: on ? SAVE_BADGE : '' });
-    if (on && typeof action.setBadgeBackgroundColor === 'function')
-      await action.setBadgeBackgroundColor({ tabId, color: BADGE_COLOR });
-  } catch {
-    /* The badge is advisory; the capture itself stays valid without it. */
-  }
+  await actionBadges()?.savePending(tabId, on);
 }
 /**
  * Brings the side panel up for the captured tab. sidePanel.open must run inside the shortcut/menu gesture, so it is

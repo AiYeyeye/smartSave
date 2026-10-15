@@ -19,13 +19,14 @@ import { createWorkerTaskLifetime } from './worker-task-lifetime';
 import type { ModelTiming } from '../domain/save-performance';
 import { localClassification } from '../domain/local-classification';
 import type { SiteRulesStore } from '../persistence/site-rules';
+import { actionBadges, type NativeBadgeState } from './action-badge';
 
 export type NativeClassifyResult =
   | { status: 'skipped'; reason: string; bookmarkId: string }
   | { status: 'failed'; reason: string; bookmarkId: string }
   | { status: 'completed'; bookmarkId: string; destinationId: string; createdFolderIds: string[] };
 
-export type BadgeState = 'working' | 'done' | 'attention' | 'clear';
+export type BadgeState = NativeBadgeState;
 
 export type NativeBookmarkIngressOptions = {
   projection: TreeProjection;
@@ -695,33 +696,7 @@ export function startNativeBookmarkIngress(options: NativeBookmarkIngressOptions
   };
 }
 
-let badgeTimer: ReturnType<typeof setTimeout> | undefined;
-
 /** Toolbar badge: … while classifying, ✓ on success, ! when AI did not run or failed. */
 export function nativeSaveBadge(state: BadgeState) {
-  const action = typeof chrome !== 'undefined' ? chrome.action : undefined;
-  if (!action?.setBadgeText) return;
-  if (badgeTimer) clearTimeout(badgeTimer);
-  badgeTimer = undefined;
-  const styles: Record<Exclude<BadgeState, 'clear'>, { text: string; color: string }> = {
-    working: { text: '…', color: '#6366F1' },
-    done: { text: '✓', color: '#16A34A' },
-    attention: { text: '!', color: '#D97706' },
-  };
-  if (state === 'clear') {
-    void Promise.resolve(action.setBadgeText({ text: '' })).catch(() => {});
-    return;
-  }
-  const style = styles[state];
-  void Promise.resolve(action.setBadgeText({ text: style.text })).catch(() => {});
-  if (action.setBadgeBackgroundColor)
-    void Promise.resolve(action.setBadgeBackgroundColor({ color: style.color })).catch(() => {});
-  if (state !== 'working') {
-    badgeTimer = setTimeout(
-      () => {
-        void Promise.resolve(action.setBadgeText({ text: '' })).catch(() => {});
-      },
-      state === 'attention' ? 8000 : 3000,
-    );
-  }
+  void actionBadges()?.nativeSave(state);
 }

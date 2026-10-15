@@ -93,6 +93,26 @@ export function OrganizeWorkbench({
     };
   }, [settings, aiServices, createController]);
   useEffect(() => {
+    const update = () =>
+      owner.current?.setVisible?.(visible && method === 'ai' && document.visibilityState !== 'hidden');
+    update();
+    document.addEventListener('visibilitychange', update);
+    return () => {
+      document.removeEventListener('visibilitychange', update);
+      owner.current?.setVisible?.(false);
+    };
+  }, [
+    visible,
+    method,
+    state.task?.id,
+    state.task?.revision,
+    state.pipeline?.stage,
+    state.pipeline?.status,
+    settings,
+    aiServices,
+    createController,
+  ]);
+  useEffect(() => {
     if (state.task?.id) {
       setMethod('ai');
       setStep(state.task.requestId ? 3 : 2);
