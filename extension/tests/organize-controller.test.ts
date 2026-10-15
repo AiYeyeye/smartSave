@@ -93,6 +93,44 @@ it('defaults to the first writable native root and preserves an explicit scope a
   expect(state.scopeId).toBe('');
   controller.dispose();
 });
+it('counts active analysis time and stops the clock during review and pauses', async () => {
+  let now = 1000;
+  const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);
+  const h = setup();
+  let finish!: (value: Awaited<ReturnType<ModelTransport['run']>>) => void;
+  h.model.run.mockImplementationOnce(
+    () =>
+      new Promise(resolve => {
+        finish = resolve;
+      }),
+  );
+  try {
+    const generating = h.controller.generate(undefined, { staged: true });
+    await vi.waitFor(() => expect(h.state().pipeline?.stage).toBe('folders'));
+    now = 5000;
+    finish({ status: 'completed', output: { moves: [], newFolders: [], merges: [] } });
+    await generating;
+    expect(h.state().pipeline).toMatchObject({ elapsedMs: 4000, activeSince: undefined });
+    now = 100_000;
+    h.model.run.mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          finish = resolve;
+        }),
+    );
+    const batches = h.controller.confirmFolders();
+    await vi.waitFor(() => expect(h.state().pipeline?.status).toBe('running'));
+    now = 103_000;
+    h.controller.pauseBatches();
+    await batches;
+    expect(h.state().pipeline).toMatchObject({ status: 'paused', elapsedMs: 3000, activeSince: undefined });
+    now = 200_000;
+    expect(h.state().pipeline?.elapsedMs).toBe(3000);
+  } finally {
+    h.controller.dispose();
+    clock.mockRestore();
+  }
+});
 it('selects or cancels a target group in one update and ignores foreign action IDs', async () => {
   const h = setup();
   await h.controller.generate();
@@ -101,6 +139,37 @@ it('selects or cancels a target group in one update and ignores foreign action I
   expect(h.state().selected).toEqual([]);
   h.controller.toggleMany(['move:a', 'move:b', 'foreign'], true);
   expect(h.state().selected).toEqual(['move:a', 'move:b']);
+  expect(h.send).not.toHaveBeenCalled();
+  h.controller.dispose();
+});
+it('classifies only direct unfiled bookmarks against the existing taxonomy without a folder request or cleanup', async () => {
+  const h = setup();
+  const tree = h.context.tree;
+  tree.nodes.find(node => node.ref.nativeId === 'bar')!.childrenIds.push('direct');
+  tree.nodes.push({
+    ...structuredClone(tree.nodes.find(node => node.ref.nativeId === 'a')!),
+    ref: { installationId: tree.installationId, nativeId: 'direct', kind: 'bookmark' },
+    parentId: 'bar',
+    title: 'unfiled',
+  });
+  h.controller.setTree({ status: 'ready', snapshot: tree });
+  await h.controller.generate(undefined, { unfiledOnly: true, cleanupEmpty: true, allowRename: true });
+  expect(h.model.run).not.toHaveBeenCalled();
+  expect(h.state().pipeline).toMatchObject({ stage: 'folders', total: 1, status: 'review' });
+  expect(h.state().proposal?.actions).toEqual([]);
+  h.model.run.mockResolvedValueOnce({
+    status: 'completed',
+    output: {
+      moves: [{ itemId: 'direct', folderId: 'right' }],
+      newFolders: [],
+      merges: [],
+    },
+  });
+  await h.controller.confirmFolders();
+  expect(h.model.run).toHaveBeenCalledTimes(1);
+  expect(h.model.run.mock.calls[0]![0].request).toMatchObject({ stage: 'bookmarks', itemIds: ['direct'] });
+  expect(h.state().proposal?.actions.map(action => action.id)).toEqual(['move:direct']);
+  expect(h.state().pipeline).toMatchObject({ stage: 'complete', completed: 1 });
   expect(h.send).not.toHaveBeenCalled();
   h.controller.dispose();
 });

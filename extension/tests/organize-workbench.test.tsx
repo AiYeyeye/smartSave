@@ -61,6 +61,12 @@ it('requires custom instructions, previews streaming suggestions read-only and e
   expect(screen.getByLabelText('整理范围')).toHaveValue('bar');
   expect(screen.getByLabelText('每批最多书签')).not.toBeVisible();
   fireEvent.click(screen.getByText('高级选项'));
+  fireEvent.click(screen.getByLabelText('只整理未分类的书签'));
+  expect(screen.getByLabelText('建议清理原有空分类和迁移后变空的分类')).toBeDisabled();
+  expect(screen.getByLabelText('建议清理原有空分类和迁移后变空的分类')).not.toBeChecked();
+  expect(screen.getByLabelText('允许建议重命名分类')).toBeDisabled();
+  fireEvent.click(screen.getByLabelText('只整理未分类的书签'));
+  expect(screen.getByLabelText('建议清理原有空分类和迁移后变空的分类')).toBeChecked();
   expect(screen.getByLabelText('每批最多书签')).toHaveValue(100);
   fireEvent.change(screen.getByLabelText('整理范围'), { target: { value: 'bar' } });
   fireEvent.change(screen.getByLabelText('分类方式'), { target: { value: 'custom' } });

@@ -73,12 +73,17 @@ with sync_playwright() as p:
             # Two independent requests; finish the later batch first, without merging it out of order.
             finish(request_index=2)
             expect(progress).to_contain_text('已完成 0 / 3 批，已分析 10 / 23 条书签')
+            page.clock.run_for(4000)
+            expect(page.get_by_label('整理用时', exact=True)).to_contain_text('预计剩余约')
             expect(page.get_by_label('选择 move:figma', exact=True)).to_have_count(0)
             expect(page.get_by_role('button', name='下一步：确认操作', exact=True)).to_be_disabled()
             assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
             page.screenshot(path=str(out / f'first-batch-{width}.png'), full_page=True, animations='disabled')
             # Completed out-of-order results survive pause. Resume a + c, without asking b again.
             page.get_by_role('button', name='暂停后续批次', exact=True).click()
+            paused_time = page.get_by_label('整理用时', exact=True).inner_text()
+            page.clock.run_for(60_000)
+            expect(page.get_by_label('整理用时', exact=True)).to_have_text(paused_time)
             expect(page.get_by_role('button', name='继续未完成批次', exact=True)).to_be_enabled()
             before = count()
             page.get_by_role('button', name='继续未完成批次', exact=True).click()
@@ -159,6 +164,23 @@ with sync_playwright() as p:
         page.get_by_role('button', name='下一步：确认操作', exact=True).click()
         assert page.evaluate('globalThis.__visualSubmitted.length') == 0
         checks.append('Folder review and completed plan remain actionable after thirty minutes each; no write before final confirmation')
+        page.goto(f'http://127.0.0.1:{server.server_port}/index.html?options&organize-stream&organize-unfiled#organize')
+        expect(page.get_by_label('整理范围', exact=True)).to_have_value('root')
+        page.get_by_label('只整理未分类的书签', exact=True).check()
+        page.get_by_role('button', name='下一步：生成整理方案', exact=True).click()
+        confirm = page.get_by_role('button', name='确认分类，开始分批整理书签', exact=True)
+        expect(confirm).to_be_enabled()
+        assert count() == 0
+        confirm.click()
+        await_request(1)
+        request = page.evaluate('JSON.parse(globalThis.__visualSearchRequests[0].input)')
+        assert request['stage'] == 'bookmarks' and [i['id'] for i in request['items']] == ['figma']
+        finish()
+        expect(page.get_by_role('button', name='下一步：确认操作', exact=True)).to_be_enabled()
+        expect(page.get_by_label('选择 create:tools', exact=True)).to_have_count(0)
+        assert page.evaluate('globalThis.__visualSubmitted.length') == 0
+        page.screenshot(path=str(out / 'unfiled-review.png'), full_page=True, animations='disabled')
+        checks.append('Unfiled preset: default native root; no folder model call; only the direct bookmark is transmitted; descendants and existing folders untouched; explicit final confirmation required')
         assert not errors, errors
     except Exception:
         print(json.dumps({'errors': errors, 'body': page.locator('body').inner_text()}, ensure_ascii=True))

@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { organizeProgressPreview } from '../domain/organize-progress';
+import { organizeDuration, organizeProgressPreview, organizeProgressTiming } from '../domain/organize-progress';
 import { organizeCandidates } from '../domain/organize-proposal';
 import { serializeAiPayload } from '../domain/ai-payload';
 import { organizePreference } from '../domain/organize-preferences';
@@ -7,6 +7,16 @@ import { organizerTree } from './fixtures/organizer-tree';
 const tree = organizerTree();
 const privacy = { fullUrl: false, bodyEnabled: false, excludedFolders: [] };
 const candidates = organizeCandidates(tree, 'bar', privacy);
+it('estimates from actual analyzed work and excludes paused/review time', () => {
+  const progress = { total: 100, completed: 20, analyzed: 40, elapsedMs: 2000, activeSince: 1000 };
+  expect(organizeProgressTiming(progress, 3000)).toEqual({ elapsedMs: 4000, remainingMs: 6000 });
+  expect(organizeProgressTiming({ ...progress, activeSince: undefined }, 60_000)).toEqual({
+    elapsedMs: 2000,
+    remainingMs: 3000,
+  });
+  expect(organizeProgressTiming({ total: 100, completed: 0 }, 1000).remainingMs).toBeUndefined();
+  expect(organizeDuration(3_665_000)).toBe('1 小时 1 分');
+});
 it('previews complete known actions inside incomplete JSON without accepting unknown IDs or incomplete strings', () => {
   const text =
     '{"moves":[{"itemId":"a","folderId":"right"},{"itemId":"unknown","folderId":"right"},{"itemId":"b","folderId":"rig';

@@ -17,6 +17,7 @@ import {
 import { OrganizeTreePreview } from './OrganizeTreePreview';
 import { OrganizeFlowDetails } from './OrganizeFlowDetails';
 import { OrganizeTargetReview } from './OrganizeTargetReview';
+import { OrganizeTiming } from './OrganizeTiming';
 import { cancellable } from '../domain/cancellable';
 import { OrganizeMemoryStore, emptyOrganizeMemory, type OrganizeMemory } from '../persistence/organize-memory';
 import type { DuplicateChoice } from '../domain/exact-duplicates';
@@ -45,6 +46,7 @@ export function OrganizeWorkbench({
   const [instructions, setInstructions] = useState('');
   const preferenceReady = style !== 'custom' || !!instructions.trim();
   const [cleanupEmpty, setCleanupEmpty] = useState(true);
+  const [unfiledOnly, setUnfiledOnly] = useState(false);
   const [allowRename, setAllowRename] = useState(true);
   const [batchSizeInput, setBatchSizeInput] = useState(String(ORGANIZE_BATCH_SIZE));
   const batchSize = Number(batchSizeInput);
@@ -156,6 +158,7 @@ export function OrganizeWorkbench({
         { style, instructions },
         {
           cleanupEmpty,
+          unfiledOnly,
           allowRename,
           staged: true,
           batchSize,
@@ -340,6 +343,23 @@ export function OrganizeWorkbench({
           </label>
         </div>
         {method === 'ai' && (
+          <label className="organize-option">
+            <input
+              type="checkbox"
+              checked={unfiledOnly}
+              disabled={state.busy || memoryBusy}
+              onChange={e => {
+                owner.current?.cancel();
+                setUnfiledOnly(e.target.checked);
+              }}
+            />
+            只整理未分类的书签
+          </label>
+        )}
+        {method === 'ai' && unfiledOnly && (
+          <p className="hint">只处理当前目录直接收藏的书签，沿用现有分类；子目录内容、目录名称和空目录保持不动。</p>
+        )}
+        {method === 'ai' && (
           <details className="workflow-help organize-advanced">
             <summary>高级选项</summary>
             <div className="organize-preferences">
@@ -409,8 +429,8 @@ export function OrganizeWorkbench({
             <label className="organize-option">
               <input
                 type="checkbox"
-                checked={cleanupEmpty}
-                disabled={state.busy || memoryBusy}
+                checked={cleanupEmpty && !unfiledOnly}
+                disabled={state.busy || memoryBusy || unfiledOnly}
                 onChange={e => {
                   owner.current?.cancel();
                   setCleanupEmpty(e.target.checked);
@@ -421,8 +441,8 @@ export function OrganizeWorkbench({
             <label className="organize-option">
               <input
                 type="checkbox"
-                checked={allowRename}
-                disabled={state.busy || memoryBusy}
+                checked={allowRename && !unfiledOnly}
+                disabled={state.busy || memoryBusy || unfiledOnly}
                 onChange={e => {
                   owner.current?.cancel();
                   setAllowRename(e.target.checked);
@@ -550,6 +570,7 @@ export function OrganizeWorkbench({
         {memoryError && <p role="alert">{memoryError}</p>}
         {state.pipeline && (
           <section className="organize-batches" aria-label="分阶段整理进度">
+            <OrganizeTiming pipeline={state.pipeline} />
             {folderReview ? (
               <>
                 <p>

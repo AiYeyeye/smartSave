@@ -156,6 +156,13 @@ if (organizeStreamPreview) {
       parent.childrenIds.push(id);
     }
   }
+  if (location.search.includes('organize-unfiled')) {
+    snapshot.nodes.find(node => node.ref.nativeId === 'design')!.childrenIds = ['figma-copy'];
+    snapshot.nodes.find(node => node.ref.nativeId === 'root')!.childrenIds.push('figma');
+    const bookmark = snapshot.nodes.find(node => node.ref.nativeId === 'figma')!;
+    bookmark.parentId = 'root';
+    bookmark.index = 2;
+  }
   globalThis.fetch = async (_url, init) => {
     const body = JSON.parse(String(init?.body));
     requests.push(body);

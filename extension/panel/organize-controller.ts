@@ -47,6 +47,8 @@ export interface OrganizeState {
     completed: number;
     analyzed?: number;
     concurrency?: number;
+    elapsedMs?: number;
+    activeSince?: number;
     batchCount: number;
     finished: { count: number; actionIds: string[] }[];
     lockedActionIds: string[];
@@ -210,7 +212,17 @@ export class OrganizeController {
   private clearReview() {
     this.reviewing = false;
   }
+  private stopAnalysisClock() {
+    const pipeline = this.state.pipeline;
+    if (pipeline?.activeSince === undefined) return;
+    this.state.pipeline = {
+      ...pipeline,
+      elapsedMs: (pipeline.elapsedMs ?? 0) + Math.max(0, Date.now() - pipeline.activeSince),
+      activeSince: undefined,
+    };
+  }
   private invalidate(message?: string, cause = 'context-changed') {
+    this.stopAnalysisClock();
     this.record('invalidated', { cause, receivedChars: this.state.progress?.receivedChars });
     this.staged = undefined;
     if (this.state.pipeline) this.state.pipeline = { ...this.state.pipeline, status: 'invalid' };
@@ -409,6 +421,7 @@ export class OrganizeController {
     try {
       const selectedPreference = organizePreference(preference);
       options = structuredClone(options);
+      if (options.unfiledOnly) options = { ...options, staged: true, cleanupEmpty: false, allowRename: false };
       if (!this.authority || !this.model || this.state.tree.status !== 'ready') throw Error('unavailable');
       this.state.proposal = undefined;
       this.state.selected = [];
@@ -434,7 +447,15 @@ export class OrganizeController {
         organizePrivacy(context.tree, context.privacy, options.protectedFolderIds),
       );
       clearTimeout(operation.timer);
-      const candidateIds = new Set(candidates.items.map(item => item.id));
+      const directBookmarks = new Set(
+        context.tree.nodes
+          .filter(node => node.ref.kind === 'bookmark' && node.parentId === rootId && !node.readOnly)
+          .map(node => node.ref.nativeId),
+      );
+      const itemIds = candidates.items
+        .map(item => item.id)
+        .filter(id => !options.unfiledOnly || directBookmarks.has(id));
+      const candidateIds = new Set(itemIds);
       const bookmarkCount = context.tree.nodes.filter(
         node => node.ref.kind === 'bookmark' && candidateIds.has(node.ref.nativeId),
       ).length;
@@ -442,7 +463,7 @@ export class OrganizeController {
         task: 'organize',
         preference: selectedPreference,
         rootId,
-        itemIds: candidates.items.map(i => i.id),
+        itemIds,
         folderIds: candidates.folders.map(f => f.id),
       };
       if (options.staged) {
@@ -469,6 +490,8 @@ export class OrganizeController {
           batchSize: options.batchSize ?? ORGANIZE_BATCH_SIZE,
           folderCount: request.folderIds.length,
           completed: 0,
+          elapsedMs: 0,
+          activeSince: Date.now(),
           batchCount: 0,
           finished: [],
           lockedActionIds: [],
@@ -490,49 +513,51 @@ export class OrganizeController {
       this.state.message = `AI 正在分析 ${candidates.items.length} 项内容，生成整理方案…`;
       phase = '模型生成';
       this.publish();
-      const result = await cancellable(
-        this.model.run({
-          diagnosticRunId: this.runId,
-          ...context,
-          config: context.config,
-          signal: operation.controller.signal,
-          timeoutMs,
-          policy: { ...DEFAULT_CLASSIFICATION_POLICY, allowRename: options.allowRename ?? true },
-          onProgress: progress => {
-            if (generation !== this.generation || operation.controller.signal.aborted) return;
-            const preview =
-              progress.phase === 'validating'
-                ? (this.state.progress?.preview ?? [])
-                : organizeProgressPreview(
-                    progress.text,
-                    options.staged
-                      ? JSON.parse(serializeAiPayload(context.tree, context.privacy, request))
-                      : candidates,
-                  );
-            this.state.progress = {
-              phase: progress.phase,
-              streaming: progress.streaming,
-              receivedChars: progress.receivedChars,
-              preview,
-              timeoutSeconds: Math.ceil(timeoutMs / 1000),
-              bookmarkCount,
-              outputTokenLimit,
-            };
-            this.state.message = progress.retry
-              ? `服务繁忙，${progress.retry.delaySeconds} 秒后重试（${progress.retry.attempt}/3），可随时取消。`
-              : progress.phase === 'validating'
-                ? '正在校验返回的整理内容…'
-                : progress.receivedChars > 0
-                  ? '正在接收 AI 整理建议…'
-                  : progress.phase === 'receiving'
-                    ? '模型服务已响应，正在生成整理建议…'
-                    : '正在等待 AI 返回整理建议…';
-            this.publish();
-          },
-          request,
-        }),
-        operation.controller.signal,
-      );
+      const result = options.unfiledOnly
+        ? { status: 'completed' as const, output: { moves: [], newFolders: [], merges: [] } }
+        : await cancellable(
+            this.model.run({
+              diagnosticRunId: this.runId,
+              ...context,
+              config: context.config,
+              signal: operation.controller.signal,
+              timeoutMs,
+              policy: { ...DEFAULT_CLASSIFICATION_POLICY, allowRename: options.allowRename ?? true },
+              onProgress: progress => {
+                if (generation !== this.generation || operation.controller.signal.aborted) return;
+                const preview =
+                  progress.phase === 'validating'
+                    ? (this.state.progress?.preview ?? [])
+                    : organizeProgressPreview(
+                        progress.text,
+                        options.staged
+                          ? JSON.parse(serializeAiPayload(context.tree, context.privacy, request))
+                          : candidates,
+                      );
+                this.state.progress = {
+                  phase: progress.phase,
+                  streaming: progress.streaming,
+                  receivedChars: progress.receivedChars,
+                  preview,
+                  timeoutSeconds: Math.ceil(timeoutMs / 1000),
+                  bookmarkCount,
+                  outputTokenLimit,
+                };
+                this.state.message = progress.retry
+                  ? `服务繁忙，${progress.retry.delaySeconds} 秒后重试（${progress.retry.attempt}/3），可随时取消。`
+                  : progress.phase === 'validating'
+                    ? '正在校验返回的整理内容…'
+                    : progress.receivedChars > 0
+                      ? '正在接收 AI 整理建议…'
+                      : progress.phase === 'receiving'
+                        ? '模型服务已响应，正在生成整理建议…'
+                        : '正在等待 AI 返回整理建议…';
+                this.publish();
+              },
+              request,
+            }),
+            operation.controller.signal,
+          );
       if (generation !== this.generation) throw Error('stale');
       if (result.status !== 'completed') throw Error(result.detail ?? result.reason ?? 'model-failed');
       phase = '方案校验';
@@ -556,7 +581,9 @@ export class OrganizeController {
       );
       if (this.state.pipeline) {
         this.state.pipeline = { ...this.state.pipeline, status: 'review' };
-        this.state.message = '文件夹方案已生成。先核对分类树与目录变更，再确认分类并开始分批整理书签；此时不会写入。';
+        this.state.message = options.unfiledOnly
+          ? `只整理当前目录直接收藏的 ${bookmarkCount} 条书签，沿用现有分类；确认后开始分析，子目录内容保持原位。`
+          : '文件夹方案已生成。先核对分类树与目录变更，再确认分类并开始分批整理书签；此时不会写入。';
       }
     } catch (error) {
       if (generation !== this.generation) return;
@@ -641,6 +668,8 @@ export class OrganizeController {
         ...this.state.pipeline,
         stage: 'bookmarks',
         status: 'paused',
+        elapsedMs: 0,
+        activeSince: undefined,
         batchCount: run.queue.length,
         lockedActionIds: [...this.state.selected],
       };
@@ -662,6 +691,7 @@ export class OrganizeController {
   pauseBatches() {
     if (!this.staged?.approved || !this.state.pipeline || !this.state.busy || this.applying) return;
     this.record('paused');
+    this.stopAnalysisClock();
     this.generation++;
     if (this.operation) {
       clearTimeout(this.operation.timer);
@@ -701,6 +731,8 @@ export class OrganizeController {
       finished: [],
       completed: 0,
       analyzed: 0,
+      elapsedMs: 0,
+      activeSince: undefined,
       batchCount: 0,
       lockedActionIds: [],
     };
@@ -742,7 +774,12 @@ export class OrganizeController {
       if (generation !== this.generation) return;
       run.acceptedBatches ??= new Map();
       run.concurrency ??= this.model.fork ? 2 : 1;
-      this.state.pipeline = { ...this.state.pipeline!, status: 'running', concurrency: run.concurrency };
+      this.state.pipeline = {
+        ...this.state.pipeline!,
+        status: 'running',
+        concurrency: run.concurrency,
+        activeSince: Date.now(),
+      };
       executor = new OrganizeBatchExecutor(
         run.acceptedBatches,
         async (ids, signal) => {
@@ -962,6 +999,7 @@ export class OrganizeController {
   }
   private finish(generation: number) {
     if (generation !== this.generation) return;
+    this.stopAnalysisClock();
     this.record('finished', { failureCode: this.state.failure?.code, invalid: this.state.invalid });
     if (this.operation?.generation === generation) {
       clearTimeout(this.operation.timer);

@@ -1,6 +1,34 @@
 import { findNodeAtLocation, parseTree } from 'jsonc-parser';
 import type { organizeCandidates } from './organize-proposal';
 
+export function organizeProgressTiming(
+  progress: {
+    elapsedMs?: number;
+    activeSince?: number;
+    total: number;
+    completed: number;
+    analyzed?: number;
+  },
+  now = Date.now(),
+) {
+  const elapsedMs =
+    Math.max(0, progress.elapsedMs ?? 0) +
+    (progress.activeSince === undefined ? 0 : Math.max(0, now - progress.activeSince));
+  const analyzed = Math.min(progress.total, Math.max(0, progress.analyzed ?? progress.completed));
+  return {
+    elapsedMs,
+    remainingMs:
+      analyzed > 0 && elapsedMs > 0 ? Math.ceil((elapsedMs * (progress.total - analyzed)) / analyzed) : undefined,
+  };
+}
+
+export function organizeDuration(ms: number) {
+  const seconds = Math.floor(Math.max(0, ms) / 1000);
+  if (seconds < 60) return `${seconds} 秒`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒`;
+  return `${Math.floor(seconds / 3600)} 小时 ${Math.floor((seconds % 3600) / 60)} 分`;
+}
+
 /** Bounded, provisional display only. This never constructs a writable proposal. */
 export function organizeProgressPreview(text: string, candidates: ReturnType<typeof organizeCandidates>): string[] {
   const source = text

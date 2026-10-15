@@ -24,6 +24,7 @@ export interface OrganizeProposal {
   protectedFolderIds?: string[];
 }
 export interface OrganizeOptions {
+  unfiledOnly?: boolean;
   cleanupEmpty?: boolean;
   protectedFolderIds?: string[];
   allowRename?: boolean;
