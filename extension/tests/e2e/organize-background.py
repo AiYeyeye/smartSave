@@ -119,7 +119,7 @@ with sync_playwright() as playwright:
     def launch():
         return playwright.chromium.launch_persistent_context(
             str(profile), executable_path=args.browser, headless=True,
-            args=[f'--disable-extensions-except={extension}', f'--load-extension={extension}', '--disable-background-networking'],
+            args=[f'--disable-extensions-except={extension}', f'--load-extension={extension}', '--disable-background-networking', f'--lang={args.language}'],
             viewport={'width': 1024, 'height': 900},
         )
 
@@ -199,7 +199,8 @@ with sync_playwright() as playwright:
         wait_for(lambda: worker.evaluate('()=>chrome.action.getBadgeText({})') == '50%')
         gate.set()
         wait_for(lambda: any(task['id'] == first_id and task['stage'] == 'complete' for task in worker.evaluate(read_tasks)))
-        wait_for(lambda: worker.evaluate('()=>chrome.action.getBadgeText({})') == '审')
+        wait_for(lambda: worker.evaluate('()=>chrome.action.getBadgeText({})') == text('审', '?'))
+        assert worker.evaluate('()=>chrome.action.getTitle({})') == text('智栏：分析完成，整理建议待审核', 'Zhilan: analysis complete; suggestions ready for review')
         count = len([e for e in events if e['state'] == 'started'])
         page = open_ui()
         wait_for(lambda: worker.evaluate('()=>chrome.action.getBadgeText({})') == '')
@@ -252,7 +253,8 @@ with sync_playwright() as playwright:
         gate.set()
         context = launch()
         worker = context.service_workers[0] if context.service_workers else context.wait_for_event('serviceworker', timeout=15000)
-        wait_for(lambda: worker.evaluate('()=>chrome.action.getBadgeText({})') == '停')
+        wait_for(lambda: worker.evaluate('()=>chrome.action.getBadgeText({})') == text('停', 'Ⅱ'))
+        assert text('智栏：整理已暂停', 'Zhilan: organization paused') in worker.evaluate('()=>chrome.action.getTitle({})')
         page = open_ui()
         resume = page.get_by_role('button', name=text('继续未完成批次', 'Continue unfinished batches'), exact=True)
         expect(resume).to_be_enabled()

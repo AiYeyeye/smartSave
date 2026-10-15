@@ -1,13 +1,14 @@
+import { browserMessage } from '../domain/browser-message';
 export type NativeBadgeState = 'working' | 'done' | 'attention' | 'clear';
 export type BadgeStyle = { text: string; color: string; title: string };
 export const SAVE_BADGE = '●';
-const empty: BadgeStyle = { text: '', color: '#6155A6', title: '智栏' };
+const empty: BadgeStyle = { text: '', color: '#6155A6', title: browserMessage('brand') };
 const nativeStyles: Record<Exclude<NativeBadgeState, 'clear'>, BadgeStyle> = {
-  working: { text: '…', color: '#6366F1', title: '智栏：正在归类新收藏' },
-  done: { text: '✓', color: '#16A34A', title: '智栏：收藏归类完成' },
-  attention: { text: '!', color: '#D97706', title: '智栏：收藏需要处理，请查看收藏记录' },
+  working: { text: '…', color: '#6366F1', title: browserMessage('nativeWorking') },
+  done: { text: '✓', color: '#16A34A', title: browserMessage('nativeDone') },
+  attention: { text: '!', color: '#D97706', title: browserMessage('nativeAttention') },
 };
-const pending: BadgeStyle = { text: SAVE_BADGE, color: '#6155A6', title: '智栏：打开智栏处理当前页面收藏' };
+const pending: BadgeStyle = { text: SAVE_BADGE, color: '#6155A6', title: browserMessage('savePending') };
 
 /** Sole action API writer. Timers withdraw their own source; they never clear another feature's badge. */
 export class ActionBadgeOwner {

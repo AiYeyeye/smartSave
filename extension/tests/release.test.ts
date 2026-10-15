@@ -19,6 +19,8 @@ async function fixture() {
     'public/THIRD_PARTY_NOTICES.txt': 'react MIT synthetic notice',
     'dist/THIRD_PARTY_NOTICES.txt': 'react MIT synthetic notice',
     'dist/manifest.json': await readFile('public/manifest.json', 'utf8'),
+    'dist/_locales/zh_CN/messages.json': await readFile('public/_locales/zh_CN/messages.json', 'utf8'),
+    'dist/_locales/en/messages.json': await readFile('public/_locales/en/messages.json', 'utf8'),
     'dist/service-worker.js': 'export {};',
     'dist/content-script.js': '(()=>{})();',
     'dist/panel/index.html': '<html></html>',

@@ -1,0 +1,74 @@
+{
+  "extensionName": {
+    "message": "智栏 · 书签助手"
+  },
+  "extensionDescription": {
+    "message": "原生书签助手：点击工具栏从左侧弹出书签侧栏，点空白处收起；选项页为完整工作台。"
+  },
+  "openSidebar": {
+    "message": "打开智栏书签侧栏"
+  },
+  "sidebarTitle": {
+    "message": "智栏书签侧栏"
+  },
+  "searchCommand": {
+    "message": "搜索智栏书签"
+  },
+  "savePage": {
+    "message": "使用智栏收藏当前页面"
+  },
+  "brand": {
+    "message": "智栏"
+  },
+  "nativeWorking": {
+    "message": "智栏：正在归类新收藏"
+  },
+  "nativeDone": {
+    "message": "智栏：收藏归类完成"
+  },
+  "nativeAttention": {
+    "message": "智栏：收藏需要处理，请查看收藏记录"
+  },
+  "savePending": {
+    "message": "智栏：打开智栏处理当前页面收藏"
+  },
+  "searchSuggestion": {
+    "message": "在智栏中搜索书签：<match>%s</match>"
+  },
+  "untitledBookmark": {
+    "message": "未命名书签"
+  },
+  "organizeWorking": {
+    "message": "智栏：已分析 $1/$2 条书签，可关闭工作台"
+  },
+  "organizeFolders": {
+    "message": "智栏：正在生成分类方案，可关闭工作台"
+  },
+  "organizeWorkingBadge": {
+    "message": "析"
+  },
+  "organizeReviewBadge": {
+    "message": "审"
+  },
+  "organizePausedBadge": {
+    "message": "停"
+  },
+  "organizeFolderReview": {
+    "message": "智栏：分类方案待审核"
+  },
+  "organizeBookmarkReview": {
+    "message": "智栏：分析完成，整理建议待审核"
+  },
+  "organizeNoSelection": {
+    "message": "智栏：分析完成，无已选调整"
+  },
+  "organizePaused": {
+    "message": "智栏：整理已暂停，已分析 $1/$2 条书签"
+  },
+  "organizePausedCredentials": {
+    "message": "智栏：整理已暂停，已分析 $1/$2 条书签，继续前需重新提供本次凭据"
+  },
+  "organizeStopped": {
+    "message": "智栏：整理已停止，请打开工作台核对"
+  }
+}

@@ -1,3 +1,4 @@
+import { browserMessage } from '../domain/browser-message';
 import { SearchIndex, type SearchHit } from '../domain/search-index';
 import { canOpenUrl } from '../domain/open-url';
 import { extensionDocumentKind } from '../domain/trusted-sender';
@@ -55,7 +56,7 @@ export function startSearchEntrypoints(projection: Pick<TreeProjection, 'state' 
   };
   browser.omnibox.onInputStarted.addListener(reset);
   browser.omnibox.onInputCancelled.addListener(reset);
-  browser.omnibox.setDefaultSuggestion({ description: '在智栏中搜索书签：<match>%s</match>' });
+  browser.omnibox.setDefaultSuggestion({ description: browserMessage('searchSuggestion') });
   browser.omnibox.onInputChanged.addListener((text, suggest) => {
     const current = ++generation;
     query = text;
@@ -76,7 +77,7 @@ export function startSearchEntrypoints(projection: Pick<TreeProjection, 'state' 
           offered.set(content, { hit, installationId: snapshot.installationId });
           return {
             content,
-            description: `<match>${escapeXml(hit.title.slice(0, 200) || '未命名书签')}</match> <dim>${escapeXml(hit.path.slice(0, 200))}</dim>`,
+            description: `<match>${escapeXml(hit.title.slice(0, 200) || browserMessage('untitledBookmark'))}</match> <dim>${escapeXml(hit.path.slice(0, 200))}</dim>`,
           };
         });
         suggest(suggestions);

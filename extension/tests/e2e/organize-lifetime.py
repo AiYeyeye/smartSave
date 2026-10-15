@@ -174,7 +174,7 @@ html.write_text(html.read_text(encoding='utf-8').replace('</body>', '<script src
 for file in (package / 'dist').rglob('*'):
     if file.is_file() and file.relative_to(package / 'dist').as_posix() not in ['manifest.json', 'options/index.html']:
         assert file.read_bytes() == (extension / file.relative_to(package / 'dist')).read_bytes()
-base = [args.browser, '--headless=new', '--no-first-run', '--no-default-browser-check', '--disable-background-networking',
+base = [args.browser, '--headless=new', '--lang=zh-CN', '--no-first-run', '--no-default-browser-check', '--disable-background-networking',
         f'--user-data-dir={profile}', f'--disable-extensions-except={extension}', f'--load-extension={extension}']
 flags = subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
 process = subprocess.Popen(base + [f'chrome-extension://{extension_id}/options/index.html#organize'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=flags)

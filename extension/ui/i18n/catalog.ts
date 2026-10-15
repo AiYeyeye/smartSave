@@ -11,6 +11,11 @@ import { importEnglish } from './import';
 import { preferencesEnglish } from './preferences';
 /** UI-owned messages only. Native bookmark content and provider output never enter this catalog. */
 export const english = {
+  '正在连接智栏…': 'Connecting to Zhilan…',
+  关闭侧栏: 'Close sidebar',
+  侧栏启动验证未通过: 'Could not start the sidebar',
+  '书签尚未连接。请关闭此侧栏，再点击扩展图标重新打开；若刚更新了扩展，请先刷新当前网页。':
+    'Bookmarks are not connected yet. Close this sidebar and reopen it from the extension icon. If the extension was just updated, refresh the webpage first.',
   ...aiServicesEnglish,
   ...saveEnglish,
   ...saveReceiptsEnglish,
@@ -25,8 +30,8 @@ export const english = {
   智栏: 'Zhilan',
   '智栏 · 书签助手': 'Zhilan · Bookmark assistant',
   语言: 'Language',
-  '语言保存在本机，已打开的智栏页面会同步切换。':
-    'The language is saved on this device and updates across open Zhilan pages.',
+  '语言保存在本机，已打开的智栏页面会同步切换。浏览器菜单和工具栏提示使用浏览器语言。':
+    'The language is saved on this device and updates across open Zhilan pages. Browser menus and toolbar hints use the browser language.',
   '语言已切换，但无法保存。重新打开后可能恢复默认语言。':
     'Language changed, but could not be saved. Reopening may restore the default.',
   跳到主要内容: 'Skip to main content',

@@ -1,0 +1,74 @@
+{
+  "extensionName": {
+    "message": "Zhilan · Bookmark Assistant"
+  },
+  "extensionDescription": {
+    "message": "Native bookmark assistant. Open a sidebar from the toolbar; use the options page for the full workspace."
+  },
+  "openSidebar": {
+    "message": "Open Zhilan bookmark sidebar"
+  },
+  "sidebarTitle": {
+    "message": "Zhilan bookmark sidebar"
+  },
+  "searchCommand": {
+    "message": "Search Zhilan bookmarks"
+  },
+  "savePage": {
+    "message": "Save current page with Zhilan"
+  },
+  "brand": {
+    "message": "Zhilan"
+  },
+  "nativeWorking": {
+    "message": "Zhilan: classifying a new bookmark"
+  },
+  "nativeDone": {
+    "message": "Zhilan: bookmark classified"
+  },
+  "nativeAttention": {
+    "message": "Zhilan: bookmark needs attention; check save history"
+  },
+  "savePending": {
+    "message": "Zhilan: open to finish saving this page"
+  },
+  "searchSuggestion": {
+    "message": "Search bookmarks in Zhilan: <match>%s</match>"
+  },
+  "untitledBookmark": {
+    "message": "Untitled bookmark"
+  },
+  "organizeWorking": {
+    "message": "Zhilan: analyzed $1/$2 bookmarks; you can close the workspace"
+  },
+  "organizeFolders": {
+    "message": "Zhilan: creating a folder plan; you can close the workspace"
+  },
+  "organizeWorkingBadge": {
+    "message": "…"
+  },
+  "organizeReviewBadge": {
+    "message": "?"
+  },
+  "organizePausedBadge": {
+    "message": "Ⅱ"
+  },
+  "organizeFolderReview": {
+    "message": "Zhilan: folder plan ready for review"
+  },
+  "organizeBookmarkReview": {
+    "message": "Zhilan: analysis complete; suggestions ready for review"
+  },
+  "organizeNoSelection": {
+    "message": "Zhilan: analysis complete; no adjustments selected"
+  },
+  "organizePaused": {
+    "message": "Zhilan: organization paused; analyzed $1/$2 bookmarks"
+  },
+  "organizePausedCredentials": {
+    "message": "Zhilan: organization paused; analyzed $1/$2 bookmarks; provide credentials to continue"
+  },
+  "organizeStopped": {
+    "message": "Zhilan: organization stopped; open the workspace to review"
+  }
+}

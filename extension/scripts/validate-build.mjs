@@ -6,6 +6,9 @@ import { z } from 'zod';
 
 const manifestSchema = z.object({
   manifest_version: z.literal(3),
+  default_locale: z.literal('zh_CN'),
+  name: z.literal('__MSG_extensionName__'),
+  description: z.literal('__MSG_extensionDescription__'),
   permissions: z.tuple([
     z.literal('bookmarks'),
     z.literal('storage'),
@@ -44,6 +47,30 @@ function rejectDynamicImports(node) {
   }
 }
 
+/** Browser catalogs are shipped assets, including those used only by manifest or action APIs. */
+export async function validateLocales(root, manifest) {
+  const catalogSchema = z.record(z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/), z.object({ message: z.string().min(1) }));
+  const catalogs = await Promise.all(
+    ['zh_CN', 'en'].map(async locale =>
+      catalogSchema.parse(JSON.parse(await readFile(resolve(root, '_locales', locale, 'messages.json'), 'utf8'))),
+    ),
+  );
+  const [source, english] = catalogs;
+  if (JSON.stringify(Object.keys(source).sort()) !== JSON.stringify(Object.keys(english).sort()))
+    throw new Error('Browser locale keys differ');
+  for (const key of Object.keys(source)) {
+    const slots = message =>
+      [...message.matchAll(/\$[1-9]/g)]
+        .map(match => match[0])
+        .sort()
+        .join(',');
+    if (slots(source[key].message) !== slots(english[key].message))
+      throw new Error(`Browser locale substitutions differ: ${key}`);
+  }
+  for (const match of JSON.stringify(manifest).matchAll(/__MSG_(\w+)__/g))
+    if (!Object.hasOwn(source, match[1])) throw new Error(`Missing browser locale message: ${match[1]}`);
+}
+
 export function assertClassicScript(code) {
   const ast = parse(code, { ecmaVersion: 'latest', sourceType: 'script' });
   rejectDynamicImports(ast);
@@ -52,6 +79,8 @@ export function assertClassicScript(code) {
 export async function validateBuild(directory) {
   const root = resolve(directory);
   const manifest = manifestSchema.parse(JSON.parse(await readFile(resolve(root, 'manifest.json'), 'utf8')));
+  // Use the raw manifest too: command descriptions must be checked, not stripped by the schema.
+  await validateLocales(root, JSON.parse(await readFile(resolve(root, 'manifest.json'), 'utf8')));
   const visited = new Set();
   async function check(file) {
     if (relative(root, file).startsWith('..')) throw new Error('Asset escapes distribution');

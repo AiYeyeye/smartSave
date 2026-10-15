@@ -1,3 +1,4 @@
+import { browserMessage } from '../domain/browser-message';
 import { validateUrl } from '../domain/preflight';
 import { withTrustedSender } from '../domain/trusted-sender';
 import type { ConfirmMutation } from '../schemas/messages';
@@ -124,7 +125,7 @@ export function startSaveEntrypoints(onInvalidated: () => void = () => {}, open:
     chrome.contextMenus.create(
       {
         id: 'zhilan-save-page',
-        title: '使用智栏收藏当前页面',
+        title: browserMessage('savePage'),
         contexts: ['page'],
         documentUrlPatterns: ['http://*/*', 'https://*/*'],
       },
@@ -132,6 +133,11 @@ export function startSaveEntrypoints(onInvalidated: () => void = () => {}, open:
         if (chrome.runtime.lastError) console.error('智栏收藏菜单创建失败');
       },
     );
+  });
+  // Menus survive worker/browser restarts. Refresh only the existing label when Chrome's language changes.
+  chrome.contextMenus.update?.('zhilan-save-page', { title: browserMessage('savePage') }, () => {
+    // On first install the menu may not exist yet; onInstalled creates it with the same localized title.
+    void chrome.runtime.lastError;
   });
   chrome.tabs.onUpdated.addListener((tabId, change) => {
     if (change.status !== 'loading' && change.url === undefined) return;

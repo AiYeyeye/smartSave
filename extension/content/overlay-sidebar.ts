@@ -1,3 +1,4 @@
+import { browserMessage } from '../domain/browser-message';
 /**
  * Left-edge overlay sidebar, injected only on an explicit toolbar click (activeTab). Runs in the isolated
  * world; the frame lives in a closed shadow root so the page can neither style nor read it. Clicking the
@@ -50,7 +51,7 @@ const scope = globalThis as unknown as { __zhilanOverlayInit?: Init; __zhilanOve
   const panel = document.createElement('div');
   panel.className = 'panel';
   const frame = document.createElement('iframe');
-  frame.title = '智栏书签侧栏';
+  frame.title = browserMessage('sidebarTitle');
   frame.allow = 'clipboard-write';
   frame.src = chrome.runtime.getURL(`panel/index.html#overlay=${init.token}`);
   const grip = document.createElement('div');

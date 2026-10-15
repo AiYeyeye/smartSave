@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "智栏 · 书签助手",
+  "name": "__MSG_extensionName__",
   "version": "0.1.0",
-  "description": "原生书签助手：点击工具栏从左侧弹出书签侧栏，点空白处收起；选项页为完整工作台。",
+  "description": "__MSG_extensionDescription__",
   "minimum_chrome_version": "116",
   "optional_host_permissions": [
     "https://*/*",
@@ -29,7 +29,7 @@
     "open_in_tab": true
   },
   "action": {
-    "default_title": "打开智栏书签侧栏"
+    "default_title": "__MSG_openSidebar__"
   },
   "side_panel": {
     "default_path": "panel/index.html"
@@ -39,14 +39,18 @@
   },
   "commands": {
     "search-bookmarks": {
-      "suggested_key": { "default": "Alt+Shift+K" },
-      "description": "搜索智栏书签"
+      "suggested_key": {
+        "default": "Alt+Shift+K"
+      },
+      "description": "__MSG_searchCommand__"
     },
     "save-current-page": {
-      "description": "Save current page with Zhilan"
+      "description": "__MSG_savePage__"
     }
   },
-  "omnibox": { "keyword": "zl" },
+  "omnibox": {
+    "keyword": "zl"
+  },
   "web_accessible_resources": [
     {
       "resources": [
@@ -56,5 +60,6 @@
         "<all_urls>"
       ]
     }
-  ]
+  ],
+  "default_locale": "zh_CN"
 }

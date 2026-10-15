@@ -7,6 +7,21 @@ import { searchStatusText } from '../panel/search-status-text';
 import { serviceStatusText } from '../options/ai-services/status-text';
 import { saveStatusText } from '../panel/save-status-text';
 import { organizeStatusText, organizePreviewText } from '../panel/organize-status-text';
+import { OverlayStatus } from '../panel/OverlayStatus';
+
+it('localizes the pre-authorization overlay status and preserves its explicit close-only action', () => {
+  localStorage.setItem(LANGUAGE_KEY, 'en');
+  const close = vi.spyOn(window.parent, 'postMessage').mockImplementation(() => {});
+  const view = render(<OverlayStatus />);
+  expect(screen.getByText('Connecting to Zhilan…')).toBeVisible();
+  view.rerender(<OverlayStatus failed />);
+  expect(screen.getByRole('alert')).toHaveTextContent('Could not start the sidebar');
+  expect(close).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Close sidebar' }));
+  expect(close).toHaveBeenCalledOnce();
+  expect(close).toHaveBeenCalledWith({ type: 'zhilan-overlay-close' }, '*');
+  close.mockRestore();
+});
 
 it('every translation preserves its parameters and interpolates values as literal text', () => {
   const placeholders = (value: string) => [...value.matchAll(/\{(\w+)\}/g)].map(match => match[1]).sort();

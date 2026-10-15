@@ -1,3 +1,4 @@
+import { browserMessage } from '../domain/browser-message';
 import { z } from 'zod';
 import type { OrganizeTaskView } from './organize-task-owner';
 import type { OrganizeCheckpointStore } from '../persistence/organize-checkpoints';
@@ -126,34 +127,38 @@ export class OrganizeTaskBadge {
     let style: BadgeStyle | undefined;
     if (task && !task.submitted && (task.status === 'running' || !this.marker?.seen)) {
       const analyzed = Math.max(0, Math.min(task.total, task.analyzed));
-      const progress = `已分析 ${analyzed}/${task.total} 条书签`;
+      const progress = [String(analyzed), String(task.total)];
       if (task.status === 'running')
         style =
           task.stage === 'bookmarks' && task.total > 0
             ? {
                 text: `${Math.floor((analyzed / task.total) * 100)}%`,
                 color: '#6366F1',
-                title: `智栏：${progress}，可关闭工作台`,
+                title: browserMessage('organizeWorking', progress),
               }
-            : { text: '析', color: '#6366F1', title: '智栏：正在生成分类方案，可关闭工作台' };
+            : {
+                text: browserMessage('organizeWorkingBadge'),
+                color: '#6366F1',
+                title: browserMessage('organizeFolders'),
+              };
       else if (task.status === 'review')
         style = {
-          text: '审',
+          text: browserMessage('organizeReviewBadge'),
           color: '#6155A6',
           title:
             task.stage === 'folders'
-              ? '智栏：分类方案待审核'
+              ? browserMessage('organizeFolderReview')
               : task.selected
-                ? '智栏：分析完成，整理建议待审核'
-                : '智栏：分析完成，无已选调整',
+                ? browserMessage('organizeBookmarkReview')
+                : browserMessage('organizeNoSelection'),
         };
       else if (task.status === 'paused')
         style = {
-          text: '停',
+          text: browserMessage('organizePausedBadge'),
           color: '#D97706',
-          title: `智栏：整理已暂停，${progress}${task.needsCredential ? '，继续前需重新提供本次凭据' : ''}`,
+          title: browserMessage(task.needsCredential ? 'organizePausedCredentials' : 'organizePaused', progress),
         };
-      else style = { text: '!', color: '#D97706', title: '智栏：整理已停止，请打开工作台核对' };
+      else style = { text: '!', color: '#D97706', title: browserMessage('organizeStopped') };
     }
     void this.badges.organize(style);
   }

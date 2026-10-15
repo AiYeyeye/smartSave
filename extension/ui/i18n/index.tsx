@@ -86,7 +86,7 @@ export function LanguagePicker() {
           English
         </option>
       </select>
-      <p className="hint">{t('语言保存在本机，已打开的智栏页面会同步切换。')}</p>
+      <p className="hint">{t('语言保存在本机，已打开的智栏页面会同步切换。浏览器菜单和工具栏提示使用浏览器语言。')}</p>
       {!saved && <p role="status">{t('语言已切换，但无法保存。重新打开后可能恢复默认语言。')}</p>}
     </fieldset>
   );

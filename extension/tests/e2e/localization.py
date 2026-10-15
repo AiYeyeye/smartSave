@@ -54,12 +54,29 @@ with sync_playwright() as playwright:
         expect(page.locator('.search-hit-list button')).to_have_text(['搜索书签'])
         page.reload()
         expect(page.get_by_role('searchbox', name='搜索书签')).to_be_visible()
+        # A forged embedded panel must show localized recovery instructions without mounting App.
+        preferences.get_by_label('语言', exact=True).select_option('en')
+        page.evaluate("""url=>{
+          window.__bootClose=0;
+          const frame=document.createElement('iframe');frame.id='invalid-overlay';frame.src=url;
+          frame.style.cssText='width:320px;height:560px;border:0';
+          window.addEventListener('message',event=>{if(event.source===frame.contentWindow&&event.data?.type==='zhilan-overlay-close')window.__bootClose++});
+          document.body.append(frame);
+        }""", f'chrome-extension://{extension_id}/panel/index.html#overlay=invalid-token')
+        boot = page.frame_locator('#invalid-overlay')
+        expect(boot.get_by_role('heading', name='Could not start the sidebar', exact=True)).to_be_visible()
+        expect(boot.locator('.bookmark-tree')).to_have_count(0)
+        page.locator('#invalid-overlay').screenshot(path=str(root / 'overlay-error-320.png'))
+        preferences.get_by_label('Language', exact=True).select_option('zh-CN')
+        expect(boot.get_by_role('heading', name='侧栏启动验证未通过', exact=True)).to_be_visible()
+        boot.get_by_role('button', name='关闭侧栏', exact=True).click()
+        page.wait_for_function('()=>window.__bootClose===1')
         after = worker.evaluate('()=>chrome.bookmarks.getTree()')
         assert before == after
         assert worker.evaluate('()=>chrome.runtime.getManifest().omnibox.keyword') == 'zl'
         result = {'status': 'PASS', 'browser': context.browser.version, 'evidence': str(root), 'geometry': geometry,
                   'nativeBookmarksUnchanged': True, 'workerSHA256': hashlib.sha256((extension / 'service-worker.js').read_bytes()).hexdigest(),
-                  'scope': 'Unmodified production build; local preference persistence, cross-document switching, native-title preservation and English search/appearance at 340/480/1024. Other workspaces are not yet fully localized.'}
+                  'scope': 'Unmodified production build; local preference persistence, cross-document switching, native-title preservation and English search/appearance at 340/480/1024. Forged embedded panel shows localized startup failure and sends close only. Other workspaces have separate acceptance fixtures.'}
         (root / 'results.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
         print(json.dumps(result), flush=True)
     except Exception:
