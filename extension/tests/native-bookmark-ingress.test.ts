@@ -275,6 +275,35 @@ it('recovers abandoned receipts before new saves without replaying any model or 
   h.ingress.dispose();
 });
 
+it('never reuses automatic undo after an explicit correction attempt', async () => {
+  const h = await harness({
+    initialReceipts: [
+      {
+        id: 'corrected',
+        bookmarkId: 'book',
+        title: 'Book',
+        url: 'https://example.test/',
+        at: 1,
+        status: 'moved',
+        fromParentId: '1',
+        fromIndex: 0,
+        fromPath: 'Bar',
+        toId: '2',
+        correction: {
+          requestId: 'correction',
+          status: 'completed',
+          target: { installationId: 'install', nativeId: '2', kind: 'folder' },
+        },
+      },
+    ],
+  });
+  const move = vi.spyOn(h.writer, 'move');
+  expect(await h.ingress.undo('corrected')).toEqual({ status: 'refused', reason: 'not-undoable' });
+  expect(move).not.toHaveBeenCalled();
+  expect(h.fetchMock).not.toHaveBeenCalled();
+  h.ingress.dispose();
+});
+
 it.each(['complete', 'timeout', 'dispose'] as const)(
   'keeps a slow native save alive and releases after %s',
   async outcome => {

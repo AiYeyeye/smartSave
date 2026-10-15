@@ -314,6 +314,7 @@ export function startNativeBookmarkIngress(options: NativeBookmarkIngressOptions
       id: typeof crypto?.randomUUID === 'function' ? crypto.randomUUID() : `${Date.now()}-${bookmarkId}`,
       bookmarkId,
       title: node.title,
+      installationId: tree.installationId,
       url: node.url,
       at: Date.now(),
       status: 'classifying',
@@ -628,9 +629,12 @@ export function startNativeBookmarkIngress(options: NativeBookmarkIngressOptions
    * Undo one auto-classify: move the bookmark back to where the browser put it and remove folders
    * this save created when they are empty. Refuses when the bookmark has been moved since.
    */
-  async function undo(receiptId: string): Promise<{ status: 'undone' } | { status: 'refused'; reason: string }> {
+  async function undoUnlocked(
+    receiptId: string,
+  ): Promise<{ status: 'undone' } | { status: 'refused'; reason: string }> {
     const receipt = await receipts?.get(receiptId);
-    if (!receipt || receipt.status !== 'moved' || !receipt.toId) return { status: 'refused', reason: 'not-undoable' };
+    if (!receipt || receipt.correction || receipt.status !== 'moved' || !receipt.toId)
+      return { status: 'refused', reason: 'not-undoable' };
     let tree: TreeSnapshot;
     try {
       tree = await projection.fresh();
@@ -639,6 +643,8 @@ export function startNativeBookmarkIngress(options: NativeBookmarkIngressOptions
     }
     const node = tree.nodes.find(n => n.ref.nativeId === receipt.bookmarkId);
     if (!node) return { status: 'refused', reason: 'missing-bookmark' };
+    if (node.url !== receipt.url || (receipt.installationId && receipt.installationId !== tree.installationId))
+      return { status: 'refused', reason: 'moved-since' };
     if (node.parentId !== receipt.toId) return { status: 'refused', reason: 'moved-since' };
     const origin = tree.nodes.find(n => n.ref.nativeId === receipt.fromParentId && n.childrenWritable);
     if (!origin) return { status: 'refused', reason: 'origin-missing' };
@@ -658,6 +664,8 @@ export function startNativeBookmarkIngress(options: NativeBookmarkIngressOptions
     debug('undo', { bookmarkId: receipt.bookmarkId });
     return { status: 'undone' };
   }
+  const undo = (receiptId: string) =>
+    receipts ? receipts.withAction(receiptId, () => undoUnlocked(receiptId)) : undoUnlocked(receiptId);
 
   bookmarksApi.onCreated.addListener(onCreated);
   bookmarksApi.onRemoved.addListener(onRemoved);

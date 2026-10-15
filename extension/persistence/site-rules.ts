@@ -36,6 +36,18 @@ export class SiteRulesStore {
       await this.storage.set({ siteRules: envelope.parse({ version: 1, rules: [...rules, rule] }) });
     });
   }
+  /** Explicit correction consent: compare the exact-host rule inside the same lock as the write. */
+  async setIfUnchanged(rule: SiteRule, expected: SiteRule | null, validate: () => Promise<void>) {
+    await this.lock(async () => {
+      const rules = await this.load();
+      const current = rules.find(entry => entry.host === rule.host) ?? null;
+      if (JSON.stringify(current) !== JSON.stringify(expected)) throw Error('rule-changed');
+      await validate();
+      await this.storage.set({
+        siteRules: envelope.parse({ version: 1, rules: [...rules.filter(entry => entry.host !== rule.host), rule] }),
+      });
+    });
+  }
   async remove(host: string) {
     await this.lock(async () => {
       await this.storage.set({ siteRules: { version: 1, rules: (await this.load()).filter(r => r.host !== host) } });

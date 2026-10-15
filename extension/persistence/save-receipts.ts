@@ -4,6 +4,7 @@
  * Stored locally only; contains bookmark titles/URLs but never keys or page text.
  */
 import type { SaveTiming } from '../domain/save-performance';
+import type { NodeRef } from '../domain/node-reference';
 
 export const SAVE_RECEIPTS_KEY = 'nativeSaveReceipts';
 export const SAVE_RECEIPTS_LIMIT = 30;
@@ -13,6 +14,8 @@ export type SaveReceiptStatus = 'classifying' | 'moved' | 'kept' | 'skipped' | '
 export type SaveReceipt = {
   id: string;
   bookmarkId: string;
+  installationId?: string;
+  correction?: { requestId: string; target: NodeRef; status: 'pending' | 'completed' | 'rejected' };
   title: string;
   url: string;
   at: number;
@@ -50,7 +53,19 @@ export async function readSaveReceipts(storage: LocalArea): Promise<SaveReceipt[
 /** Serialized writer: the service worker is the only owner, so one promise chain is enough. */
 export class SaveReceiptLog {
   private chain: Promise<unknown> = Promise.resolve();
+  private actions = new Map<string, Promise<unknown>>();
   constructor(private readonly storage: LocalArea) {}
+
+  /** Shared worker owner serializes explicit correction and native undo for one receipt. */
+  async withAction<T>(id: string, operation: () => Promise<T>): Promise<T> {
+    const next = (this.actions.get(id) ?? Promise.resolve()).then(operation, operation);
+    this.actions.set(id, next);
+    try {
+      return await next;
+    } finally {
+      if (this.actions.get(id) === next) this.actions.delete(id);
+    }
+  }
 
   private enqueue<T>(operation: () => Promise<T>): Promise<T> {
     const next = this.chain.then(operation, operation);
@@ -99,6 +114,10 @@ export class SaveReceiptLog {
   async get(id: string) {
     await this.chain;
     return (await readSaveReceipts(this.storage)).find(item => item.id === id);
+  }
+  async latestForBookmark(bookmarkId: string) {
+    await this.chain;
+    return (await readSaveReceipts(this.storage)).find(item => item.bookmarkId === bookmarkId);
   }
 }
 

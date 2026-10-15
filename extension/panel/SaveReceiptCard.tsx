@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AlertTriangle, Check, CornerUpLeft, Loader, Minus, X } from 'lucide-react';
 import { readSaveReceipts, receiptReasonText, SAVE_RECEIPTS_KEY, type SaveReceipt } from '../persistence/save-receipts';
+import { SaveCorrection } from './SaveCorrection';
 
 const SEEN_KEY = 'nativeSaveReceiptSeen';
 /** Only recent saves surface in the popup; older ones live in the options page history. */
@@ -59,6 +60,7 @@ export function ReceiptView({
   compact?: boolean;
 }) {
   const [undoState, setUndoState] = useState<'idle' | 'busy' | string>('idle');
+  const [correcting, setCorrecting] = useState(false);
   const tone =
     receipt.status === 'moved' || receipt.status === 'kept'
       ? 'ok'
@@ -129,6 +131,13 @@ export function ReceiptView({
       sub = reason;
   }
 
+  if (receipt.correction) {
+    title = receipt.correction.status === 'completed' ? '已手动纠正目录' : '手动纠正记录';
+    sub =
+      receipt.correction.status === 'pending'
+        ? '结果待核实，请查看恢复记录'
+        : `操作编号：${receipt.correction.requestId}`;
+  }
   return (
     <div className={`receipt is-${tone}`} role="status" aria-live="polite">
       <span className="receipt-icon" aria-hidden="true">
@@ -154,15 +163,18 @@ export function ReceiptView({
       ) : (
         <span />
       )}
-      {!compact && (receipt.status === 'moved' || receipt.status === 'skipped' || receipt.status === 'failed') ? (
+      {!compact && receipt.status !== 'classifying' ? (
         <div className="receipt-actions">
-          {receipt.status === 'moved' ? (
+          {receipt.status === 'moved' && !receipt.correction ? (
             <button type="button" onClick={undo} disabled={undoState === 'busy'}>
               <CornerUpLeft aria-hidden="true" />
               撤销
             </button>
           ) : null}
-          {receipt.status !== 'moved' && CONFIG_REASONS.has(receipt.reason ?? '') && onOpen ? (
+          <button type="button" disabled={undoState === 'busy' || correcting} onClick={() => setCorrecting(true)}>
+            改一下
+          </button>
+          {!receipt.correction && receipt.status !== 'moved' && CONFIG_REASONS.has(receipt.reason ?? '') && onOpen ? (
             <button
               type="button"
               className="primary"
@@ -180,6 +192,7 @@ export function ReceiptView({
           ) : null}
         </div>
       ) : null}
+      {correcting && <SaveCorrection receiptId={receipt.id} onClose={() => setCorrecting(false)} />}
     </div>
   );
 }

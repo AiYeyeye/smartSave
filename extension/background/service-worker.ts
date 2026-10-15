@@ -31,6 +31,7 @@ import { OrganizeMemoryStore } from '../persistence/organize-memory';
 import { OrganizeTaskAuthority } from './organize-task-authority';
 import { actionBadges } from './action-badge';
 import { OrganizeTaskBadge } from './organize-task-badge';
+import { SaveCorrectionOwner, startSaveCorrectionService } from './save-correction';
 
 const workerDiagnostics = startWorkerDiagnostics();
 const badges = actionBadges();
@@ -137,16 +138,19 @@ const coordinator = startMutationService(
   writer,
   organizeTaskAuthority,
 );
+const saveReceipts = new SaveReceiptLog(chrome.storage.local);
+const siteRules = new SiteRulesStore(chrome.storage.local);
 const nativeSaves = startNativeBookmarkIngress({
   projection,
   settings,
   aiServices,
   writer,
   guard: ownWrites,
-  receipts: new SaveReceiptLog(chrome.storage.local),
-  rules: new SiteRulesStore(chrome.storage.local),
+  receipts: saveReceipts,
+  rules: siteRules,
   badge: nativeSaveBadge,
 });
+startSaveCorrectionService(new SaveCorrectionOwner(projection, coordinator, saveReceipts, siteRules));
 
 startOrganizeTaskService(organizeTasks, organizeBadge);
 

@@ -1063,6 +1063,18 @@ dialog::backdrop {
   display: grid;
   gap: 2px;
 }
+.save-correction {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding-top: 12px;
+  overflow-wrap: anywhere;
+}
+.save-correction p,
+.save-correction h3 {
+  margin: 0;
+}
 .receipt-title {
   font-weight: 600;
   color: var(--text);
