@@ -37,5 +37,9 @@ export function modelSystemPrompt(task: ModelTask, policy: ClassificationPolicy)
     task === 'organize'
       ? ' The stage field is a trusted workflow constraint. stage=folders: propose folder-only changes using the folder tree and folderSummaries (counts and a few truncated title examples, NOT a full content inventory). Do not move individual bookmarks; propose a coherent reusable taxonomy for user review. unchangedIds may be omitted or list existing folders with no direct move, merge-source, rename or removal action; it need not cover every folder and does not prohibit receiving children. stage=bookmarks: folderTree is the user-approved destination taxonomy. currentFolderId is each bookmark placement AFTER the approved folder changes; path is its original path for context. Return only moves and unchangedIds; newFolders/merges/renames/removeFolders must be empty. Account for EVERY input item exactly once, either in moves or unchangedIds (keep currentFolderId). Do not alter the approved taxonomy; reference only items in this batch. Each batch is independent; no conversation history is required. Keep JSON compact and action reasons brief without repeating paths or titles.'
       : '';
-  return `${SHARED} ${TASKS[task]}${preference}${policies}${compact}`;
+  const sparse =
+    task === 'organize'
+      ? ' When stage=bookmarks and omittedItemsUnchanged=true, return only needed moves, omitting unchangedIds; omitted items stay in currentFolderId. This is a trusted input contract, not missing work. Use brief reasons, preferably no more than eight characters. Other stage and ID/conflict constraints still apply.'
+      : '';
+  return `${SHARED} ${TASKS[task]}${preference}${policies}${compact}${sparse}`;
 }

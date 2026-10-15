@@ -2,7 +2,8 @@ import type { ModelAuthority } from '../adapters/model-authority';
 import { MODEL_BYTE_LIMITS } from '../adapters/model-byte-limits';
 import { createDebugLog, type DebugDetail } from '../domain/debug-log';
 import { cancellable } from '../domain/cancellable';
-import { modelRequestBody, type ModelTransport } from '../adapters/model-transport';
+import { modelRequestBody, type ModelTransport, type ModelResult } from '../adapters/model-transport';
+import { OrganizeBatchExecutor } from './organize-batch-executor';
 import { serializeAiPayload, serializedItemRequestSize } from '../domain/ai-payload';
 import { parseModelOutput } from '../schemas/model-output';
 import {
@@ -44,6 +45,8 @@ export interface OrganizeState {
     batchSize: number;
     folderCount: number;
     completed: number;
+    analyzed?: number;
+    concurrency?: number;
     batchCount: number;
     finished: { count: number; actionIds: string[] }[];
     lockedActionIds: string[];
@@ -92,6 +95,8 @@ type StagedRun = {
   request: OrganizeRequest;
   bookmarkIds: string[];
   queue: string[][];
+  acceptedBatches?: Map<string[], ModelResult>;
+  concurrency?: number;
   approved?: ReturnType<typeof approvedOrganizeFolders>;
   folderReview?: { proposal: OrganizeProposal; selected: string[]; targets: Record<string, string> };
 };
@@ -183,7 +188,7 @@ export class OrganizeController {
   constructor(
     private emit: (state: OrganizeState) => void,
     private authority?: ModelAuthority,
-    private model?: Pick<ModelTransport, 'run' | 'cancel' | 'dispose'>,
+    private model?: Pick<ModelTransport, 'run' | 'cancel' | 'dispose'> & Partial<Pick<ModelTransport, 'fork'>>,
     private open: OpenOrganizerLease = openOrganizerLease,
     private send: SendMutation = sendMutation,
   ) {
@@ -600,6 +605,7 @@ export class OrganizeController {
       run.request = {
         ...run.request,
         stage: 'bookmarks',
+        omittedItemsUnchanged: true,
         destinations: run.approved.destinations,
         placements: Object.fromEntries(run.bookmarkIds.map(id => [id, run.approved!.placements.get(id)!])),
         sampleLimit: undefined,
@@ -613,6 +619,8 @@ export class OrganizeController {
         run.options.batchSize,
         MODEL_BYTE_LIMITS.requestBytes,
       );
+      run.acceptedBatches = new Map();
+      run.concurrency = this.model?.fork ? 2 : 1;
       this.state.proposal = run.approved.proposal;
       this.state.targets = {};
       this.state.selected = run.approved.proposal.actions.map(a => a.id);
@@ -668,6 +676,7 @@ export class OrganizeController {
     const review = this.staged.folderReview;
     this.staged.approved = undefined;
     this.staged.queue = [];
+    this.staged.acceptedBatches?.clear();
     this.state.proposal = review.proposal;
     this.state.selected = [...review.selected];
     this.state.targets = { ...review.targets };
@@ -678,6 +687,7 @@ export class OrganizeController {
       status: 'review',
       finished: [],
       completed: 0,
+      analyzed: 0,
       batchCount: 0,
       lockedActionIds: [],
     };
@@ -699,6 +709,7 @@ export class OrganizeController {
     let generation = this.generation;
     const startedAt = Date.now();
     let phase: NonNullable<OrganizeState['failure']>['phase'] = '准备整理';
+    let executor: OrganizeBatchExecutor | undefined;
     try {
       const pending = this.begin();
       generation = this.generation;
@@ -716,7 +727,73 @@ export class OrganizeController {
       };
       await checkContext();
       if (generation !== this.generation) return;
-      this.state.pipeline = { ...this.state.pipeline!, status: 'running' };
+      run.acceptedBatches ??= new Map();
+      run.concurrency ??= this.model.fork ? 2 : 1;
+      this.state.pipeline = { ...this.state.pipeline!, status: 'running', concurrency: run.concurrency };
+      executor = new OrganizeBatchExecutor(
+        run.acceptedBatches,
+        async (ids, signal) => {
+          const request: OrganizeRequest = { ...run.request, itemIds: ids };
+          if (this.requestSize(run, request) > MODEL_BYTE_LIMITS.requestBytes)
+            throw Error('bookmark-context-too-large');
+          const timeoutMs = Math.max(run.context.config.timeoutMs, MODEL_WAIT_MS);
+          const model = this.model!.fork?.() ?? this.model!;
+          try {
+            const result = await cancellable(
+              model.run({
+                diagnosticRunId: this.runId,
+                ...run.context,
+                request,
+                signal,
+                timeoutMs,
+                policy: { ...DEFAULT_CLASSIFICATION_POLICY, allowRename: run.options.allowRename ?? true },
+                onProgress: update => {
+                  if (generation !== this.generation || operation.controller.signal.aborted) return;
+                  this.state.progress = {
+                    phase: update.phase,
+                    streaming: update.streaming,
+                    receivedChars: update.receivedChars,
+                    preview: [],
+                    timeoutSeconds: Math.ceil(timeoutMs / 1000),
+                    bookmarkCount: ids.length,
+                    outputTokenLimit: modelOutputTokenLimit(run.context.config),
+                  };
+                  if (update.retry) {
+                    if (update.retry.httpStatus === 429) {
+                      run.concurrency = 1;
+                      executor?.reduceConcurrency();
+                      this.state.pipeline = { ...this.state.pipeline!, concurrency: 1 };
+                    }
+                    this.state.message = `服务繁忙，${update.retry.delaySeconds} 秒后重试（${update.retry.attempt}/3），可随时暂停。`;
+                  }
+                  this.publish();
+                },
+              }),
+              signal,
+            );
+            if (result.status !== 'completed') return result;
+            const output = parseModelOutput(result.output, {
+              ...JSON.parse(serializeAiPayload(run.context.tree, run.context.privacy, request)),
+              rootId: request.rootId,
+            });
+            return { status: 'completed', output };
+          } finally {
+            if (model !== this.model) model.dispose();
+          }
+        },
+        run.concurrency,
+        operation.controller.signal,
+        () => {
+          if (generation !== this.generation || operation.controller.signal.aborted) return;
+          this.state.pipeline = {
+            ...this.state.pipeline!,
+            analyzed:
+              this.state.pipeline!.completed +
+              run.queue.filter(ids => run.acceptedBatches!.has(ids)).reduce((total, ids) => total + ids.length, 0),
+          };
+          this.publish();
+        },
+      );
       while (run.queue.length) {
         const ids = run.queue[0]!;
         const request: OrganizeRequest = { ...run.request, itemIds: ids };
@@ -736,33 +813,8 @@ export class OrganizeController {
           outputTokenLimit: modelOutputTokenLimit(run.context.config),
         };
         this.publish();
-        const result = await cancellable(
-          this.model.run({
-            diagnosticRunId: this.runId,
-            ...run.context,
-            request,
-            signal: operation.controller.signal,
-            timeoutMs,
-            policy: { ...DEFAULT_CLASSIFICATION_POLICY, allowRename: run.options.allowRename ?? true },
-            onProgress: update => {
-              if (generation !== this.generation || operation.controller.signal.aborted) return;
-              // Earlier validated batches stay visible; the current stream is never an executable proposal.
-              this.state.progress = {
-                phase: update.phase,
-                streaming: update.streaming,
-                receivedChars: update.receivedChars,
-                preview: [],
-                timeoutSeconds: Math.ceil(timeoutMs / 1000),
-                bookmarkCount: ids.length,
-                outputTokenLimit: modelOutputTokenLimit(run.context.config),
-              };
-              if (update.retry)
-                this.state.message = `服务繁忙，${update.retry.delaySeconds} 秒后重试（${update.retry.attempt}/3），可随时暂停。`;
-              this.publish();
-            },
-          }),
-          operation.controller.signal,
-        );
+        const result = await executor.next(run.queue);
+        executor.consume(ids);
         if (generation !== this.generation || operation.controller.signal.aborted) return;
         if (result.status !== 'completed') {
           if (
@@ -865,6 +917,7 @@ export class OrganizeController {
       this.state.message = `${failureMessage(reason)} 已保留 ${this.state.pipeline.finished.length} 批结果，可继续未完成批次。未修改书签。`;
       this.retainReview();
     } finally {
+      executor?.stop();
       this.finish(generation);
     }
   }

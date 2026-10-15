@@ -23,9 +23,10 @@ with sync_playwright() as p:
         page.on('pageerror', lambda e: errors.append(str(e)))
         page.route('https://**/*', lambda route: route.abort())
         def count(): return page.evaluate('globalThis.__visualSearchRequests.length')
-        def finish(value='false'):
+        def finish(value='false', request_index=None):
             previous = count()
-            page.evaluate(f'globalThis.__visualFinishOrganize({value})')
+            suffix = '' if request_index is None else f', {request_index}'
+            page.evaluate(f'globalThis.__visualFinishOrganize({value}{suffix})')
             return previous
         def await_request(n): page.wait_for_function('(n) => globalThis.__visualSearchRequests.length === n', arg=n)
         for width in [320, 340, 480, 1024]:
@@ -63,41 +64,41 @@ with sync_playwright() as p:
             checks.append(f'{width}px: distinct adjustment section; compact rejection action to the right of reason, >=44px target')
             page.screenshot(path=str(out / f'folder-review-{width}.png'), full_page=True, animations='disabled')
             confirm.click()
-            await_request(2)
-            finish()
             await_request(3)
             progress = page.get_by_role('region', name='分阶段整理进度', exact=True)
-            expect(progress).to_contain_text('已完成 1 / 3 批，已分析 10 / 23 条书签')
-            expect(page.get_by_label('选择 move:figma', exact=True)).to_be_visible()
-            expect(page.get_by_label('选择 move:figma', exact=True)).to_be_disabled()
+            # Two independent requests; finish the later batch first, without merging it out of order.
+            finish(request_index=2)
+            expect(progress).to_contain_text('已完成 0 / 3 批，已分析 10 / 23 条书签')
+            expect(page.get_by_label('选择 move:figma', exact=True)).to_have_count(0)
             expect(page.get_by_role('button', name='下一步：确认操作', exact=True)).to_be_disabled()
-            page.get_by_text('第 1 批已完成 · 10 条书签 · 9 条变更建议', exact=True).click()
             assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
             page.screenshot(path=str(out / f'first-batch-{width}.png'), full_page=True, animations='disabled')
-            # Pause an in-flight second batch; earlier results and taxonomy remain available.
+            # Completed out-of-order results survive pause. Resume a + c, without asking b again.
             page.get_by_role('button', name='暂停后续批次', exact=True).click()
             expect(page.get_by_role('button', name='继续未完成批次', exact=True)).to_be_enabled()
             before = count()
             page.get_by_role('button', name='继续未完成批次', exact=True).click()
-            await_request(before + 1)
-            requests = page.evaluate('globalThis.__visualSearchRequests.map(r => JSON.parse(r.input))')
-            assert requests[-1]['items'] == requests[-2]['items']
-            # Truncation splits only this unfinished batch; each successful half becomes visible.
-            finish('"output-limit"')
             await_request(before + 2)
-            assert page.evaluate('JSON.parse(globalThis.__visualSearchRequests.at(-1).input).items.length') == 5
-            finish()
+            requests = page.evaluate('globalThis.__visualSearchRequests.map(r => JSON.parse(r.input))')
+            assert requests[before]['items'] == requests[1]['items']
+            assert requests[before + 1]['items'] != requests[2]['items']
+            assert all(r.get('omittedItemsUnchanged') is True for r in requests[1:])
+            # a truncates into two halves while c remains in flight; cached b is retained.
+            finish('"output-limit"', before)
             await_request(before + 3)
-            expect(progress).to_contain_text('已完成 2 / 4 批，已分析 15 / 23 条书签')
-            finish('true')
-            expect(page.get_by_role('alert', name='整理未完成', exact=True)).to_contain_text('已保留 2 批结果')
+            assert page.evaluate('JSON.parse(globalThis.__visualSearchRequests.at(-1).input).items.length') == 5
+            finish(request_index=before + 2)
+            await_request(before + 4)
+            expect(progress).to_contain_text('已完成 1 / 4 批，已分析 15 / 23 条书签')
+            finish(request_index=before + 3)
+            expect(progress).to_contain_text('已完成 3 / 4 批，已分析 20 / 23 条书签')
+            finish('true', before + 1)
+            expect(page.get_by_role('alert', name='整理未完成', exact=True)).to_contain_text('已保留 3 批结果')
             expect(page.get_by_role('button', name='继续未完成批次', exact=True)).to_be_enabled()
             page.screenshot(path=str(out / f'resumable-error-{width}.png'), full_page=True, animations='disabled')
             before = count()
             page.get_by_role('button', name='继续未完成批次', exact=True).click()
             await_request(before + 1)
-            finish()
-            await_request(before + 2)
             finish()
             expect(page.get_by_role('button', name='下一步：确认操作', exact=True)).to_be_enabled()
             expect(progress).to_contain_text('已完成 4 / 4 批，已分析 23 / 23 条书签')
@@ -115,7 +116,7 @@ with sync_playwright() as p:
             assert page.evaluate('globalThis.__visualSubmitted.length') == 0
             assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
             page.screenshot(path=str(out / f'complete-{width}.png'), full_page=True, animations='disabled')
-            checks.append(f'{width}px: folder review gate; fixed taxonomy; incremental 10/23 then 15/23 preview; pause/resume only pending IDs; adaptive half-batches; retained results after error; final cleanup dependencies and before/after; no overflow or writes')
+            checks.append(f'{width}px: two parallel requests; out-of-order completion retained across pause; ordered sparse-output merge; adaptive half-batches with other work in flight; retained results after error; final cleanup dependencies and before/after; no overflow or writes')
             # Changing the folder plan discards dependent batch results, without another model call.
             page.get_by_role('button', name='上一步', exact=True).click()
             page.get_by_role('button', name='更改文件夹方案并重新分析书签', exact=True).click()
@@ -128,9 +129,11 @@ with sync_playwright() as p:
         expect(page.locator('.organize-footer')).not_to_contain_text('超过 10 分钟')
         before = count()
         page.get_by_role('button', name='确认分类，开始分批整理书签', exact=True).click()
-        for offset in [1, 2, 3]:
-            await_request(before + offset)
-            finish()
+        await_request(before + 2)
+        finish(request_index=before)
+        await_request(before + 3)
+        finish(request_index=before + 1)
+        finish(request_index=before + 2)
         expect(page.get_by_role('button', name='下一步：确认操作', exact=True)).to_be_enabled()
         page.clock.run_for(1_800_000)
         page.get_by_role('button', name='下一步：确认操作', exact=True).click()

@@ -541,7 +541,7 @@ export function OrganizeWorkbench({
               <>
                 <p role="status" aria-live="polite">
                   已完成 {state.pipeline.finished.length} / {state.pipeline.batchCount} 批，已分析{' '}
-                  {state.pipeline.completed} / {state.pipeline.total} 条书签。
+                  {state.pipeline.analyzed ?? state.pipeline.completed} / {state.pipeline.total} 条书签。
                 </p>
                 <p className="hint">分类结构已固定。下方显示已完成批次的预览；全部批次完成并由你确认后才修改书签。</p>
                 <ol>

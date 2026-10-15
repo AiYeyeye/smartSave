@@ -19,7 +19,7 @@ export type SaveTiming = {
 type Sample = { status: string; model?: string; ms?: number; timing?: SaveTiming };
 const valid = (value: number | undefined): value is number =>
   typeof value === 'number' && Number.isFinite(value) && value >= 0;
-function distribution(values: (number | undefined)[]) {
+export function latencyDistribution(values: (number | undefined)[]) {
   const sorted = values.filter(valid).sort((a, b) => a - b);
   const middle = Math.floor(sorted.length / 2);
   return sorted.length
@@ -46,11 +46,11 @@ export function summarizeSaveTimings(receipts: Sample[]) {
       model,
       completed: completed.length,
       failed: samples.length - completed.length,
-      total: distribution(completed.map(s => s.timing?.totalMs)),
-      legacy: distribution(completed.filter(s => !s.timing).map(s => s.ms)),
-      firstToken: distribution(completed.map(s => s.timing?.model?.firstTokenMs)),
-      generation: distribution(completed.map(s => s.timing?.model?.generationMs)),
-      validationApply: distribution(
+      total: latencyDistribution(completed.map(s => s.timing?.totalMs)),
+      legacy: latencyDistribution(completed.filter(s => !s.timing).map(s => s.ms)),
+      firstToken: latencyDistribution(completed.map(s => s.timing?.model?.firstTokenMs)),
+      generation: latencyDistribution(completed.map(s => s.timing?.model?.generationMs)),
+      validationApply: latencyDistribution(
         completed.map(s =>
           s.timing?.model?.validationMs === undefined || s.timing.applyMs === undefined
             ? undefined

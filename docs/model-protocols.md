@@ -1,5 +1,7 @@
 # 四种接口协议对照（智栏 AI 连接）
 
+2026-10-14补充：连接支持“优先快速响应”，仅对已核实的官方模型关闭或降低思考量；不支持的明确参数可去掉后重发一次。429/5xx最多按2/4/8秒重试三次，网络断流仍手动继续。输出默认128000及自定义值保留。整理书签批次采用两个独立请求并发、按顺序合并，遇429降低后续并发；明确启用的新协议只需返回移动项。真实评测入口见[模型评测](model-evaluation.md)。
+
 更新：2026-10-13。请求由 `model-transport.ts` 构建，地址由 `model-route.ts` 生成，JSON 解析在 `model-replies.ts`，流式读取在 `model-stream.ts`，模型发现在 `model-discovery.ts`。协议回归见 `model-protocols.test.ts`、`model-stream.test.ts`。
 
 ## 请求侧

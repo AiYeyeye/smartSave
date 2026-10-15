@@ -21,5 +21,6 @@ coverage/
 __pycache__/
 *.pyc
 *.log
+.local-evaluation/
 .DS_Store
 Thumbs.db

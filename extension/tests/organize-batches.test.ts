@@ -61,6 +61,95 @@ function setup() {
   return { controller, context, model, close, active, send, state: () => state, start };
 }
 
+it('prefetches independent batches, retains an out-of-order completed batch on pause and merges in order on resume', async () => {
+  const h = setup();
+  const dispose = vi.fn();
+  Object.assign(h.model, { fork: () => ({ run: h.model.run, cancel: vi.fn(), dispose }) });
+  await h.start(1);
+  const completions = new Map<string, (result: ModelResult) => void>();
+  h.model.run.mockImplementation(
+    input =>
+      new Promise(resolve => {
+        completions.set('itemIds' in input.request ? input.request.itemIds[0]! : '', resolve);
+      }),
+  );
+  const pending = h.controller.confirmFolders();
+  await vi.waitFor(() => expect([...completions.keys()]).toEqual(['a', 'b']));
+  completions.get('b')!({ status: 'completed', output: { ...noChanges, moves: [{ itemId: 'b', folderId: 'new' }] } });
+  await vi.waitFor(() => expect(h.state().pipeline?.analyzed).toBe(1));
+  expect(h.state().pipeline?.completed).toBe(0);
+  expect(h.state().proposal?.actions.some(action => action.id === 'move:b')).toBe(false);
+  h.controller.pauseBatches();
+  await pending;
+  expect(h.state().pipeline?.status).toBe('paused');
+  expect(h.send).not.toHaveBeenCalled();
+  const callsBeforeResume = h.model.run.mock.calls.length;
+  h.model.run.mockResolvedValue({
+    status: 'completed',
+    output: { ...noChanges, moves: [{ itemId: 'a', folderId: 'new' }] },
+  });
+  await h.controller.resumeBatches();
+  expect(
+    h.model.run.mock.calls
+      .slice(callsBeforeResume)
+      .map(([input]) => ('itemIds' in input.request ? input.request.itemIds : [])),
+  ).toEqual([['a']]);
+  expect(h.state().pipeline).toMatchObject({ stage: 'complete', completed: 2 });
+  expect(
+    h
+      .state()
+      .proposal?.actions.filter(action => action.kind === 'move')
+      .map(action => action.sourceId),
+  ).toEqual(['a', 'b']);
+  completions.get('a')!({
+    status: 'completed',
+    output: { ...noChanges, moves: [{ itemId: 'a', folderId: 'missing' }] },
+  });
+  await Promise.resolve();
+  expect(h.state().pipeline?.stage).toBe('complete');
+  expect(h.send).not.toHaveBeenCalled();
+  expect(dispose).toHaveBeenCalledTimes(3);
+  h.controller.dispose();
+});
+
+it('reduces further dispatch to one request after 429 without cancelling already valid parallel work', async () => {
+  const h = setup();
+  const a = h.context.tree.nodes.find(node => node.ref.nativeId === 'a')!;
+  h.context.tree.nodes.push({ ...a, ref: { ...a.ref, nativeId: 'd' } });
+  h.context.tree.nodes.find(node => node.ref.nativeId === 'left')!.childrenIds.push('d');
+  h.controller.setTree({ status: 'ready', snapshot: h.context.tree });
+  Object.assign(h.model, { fork: () => ({ run: h.model.run, cancel: vi.fn(), dispose: vi.fn() }) });
+  await h.start(1);
+  const completions = new Map<string, (result: ModelResult) => void>();
+  h.model.run.mockImplementation(input => {
+    const id = 'itemIds' in input.request ? input.request.itemIds[0]! : '';
+    if (id === 'a')
+      input.onProgress?.({
+        phase: 'waiting',
+        streaming: true,
+        text: '',
+        receivedChars: 0,
+        retry: { httpStatus: 429, attempt: 1, delaySeconds: 2 },
+      });
+    return new Promise(resolve => {
+      completions.set(id, resolve);
+    });
+  });
+  const pending = h.controller.confirmFolders();
+  await vi.waitFor(() => expect([...completions.keys()]).toEqual(['a', 'b']));
+  expect(h.state().pipeline?.concurrency).toBe(1);
+  completions.get('a')!({ status: 'completed', output: noChanges });
+  await vi.waitFor(() => expect(h.state().pipeline?.completed).toBe(1));
+  expect(completions.has('d')).toBe(false);
+  completions.get('b')!({ status: 'completed', output: noChanges });
+  await vi.waitFor(() => expect(completions.has('d')).toBe(true));
+  completions.get('d')!({ status: 'completed', output: noChanges });
+  await pending;
+  expect(h.state().pipeline).toMatchObject({ stage: 'complete', completed: 3, concurrency: 1 });
+  expect(h.send).not.toHaveBeenCalled();
+  h.controller.dispose();
+});
+
 it('retains folder review, failed batches and final confirmation across long waits without rerunning accepted work', async () => {
   vi.useFakeTimers();
   const h = setup();

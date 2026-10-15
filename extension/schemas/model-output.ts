@@ -17,7 +17,7 @@ const organize = z.strictObject({
     .array(id)
     .optional()
     .describe(
-      'In the folders stage, optional existing folder IDs with no direct move, merge-source, rename or removal action; not exhaustive. In the bookmarks stage, every input item must occur exactly once in moves or unchangedIds.',
+      'In the folders stage, optional existing folder IDs with no direct action; not exhaustive. In the bookmarks stage, every input item must occur exactly once in moves or unchangedIds, unless input.omittedItemsUnchanged=true: then omitted items are kept locally and unchangedIds may be omitted.',
     ),
   moves: z.array(z.strictObject({ itemId: id, folderId: id, reason: z.string().max(500).optional() })),
   newFolders: z.array(folder.extend({ reason: z.string().max(500).optional() })),
@@ -41,6 +41,7 @@ export interface ModelOutputContext {
   policy?: { maxNewDepth: number; allowRename: boolean };
   rootId?: string;
   stage?: 'folders' | 'bookmarks';
+  omittedItemsUnchanged?: boolean;
 }
 export function outputSchema(task: string) {
   return task === 'import-classify'
@@ -165,7 +166,10 @@ export function parseModelOutput(value: unknown, context: ModelOutputContext) {
         const accounted = [...result.moves.map(m => m.itemId), ...(result.unchangedIds ?? [])];
         unique(accounted, 'moves+unchangedIds');
         if (accounted.some(id => !items.has(id))) reject('unknown-item', 'unchangedIds');
-        if (accounted.length !== items.size) reject('missing-items', 'moves+unchangedIds');
+        if (context.omittedItemsUnchanged === true) {
+          const mentioned = new Set(accounted);
+          result.unchangedIds = [...(result.unchangedIds ?? []), ...[...items].filter(id => !mentioned.has(id))];
+        } else if (accounted.length !== items.size) reject('missing-items', 'moves+unchangedIds');
       }
       if (context.stage === 'folders') {
         // Informational no-ops are allowed by the shared output schema. Check

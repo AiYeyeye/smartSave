@@ -96,6 +96,7 @@ export type AiRequest =
       destinations?: OrganizeDestination[];
       placements?: Record<string, string>;
       sampleLimit?: number;
+      omittedItemsUnchanged?: boolean;
     }
   | { task: 'save'; targetId: string; item: AiItem; folderIds: string[]; snippet?: string }
   | { task: 'import-map'; targetId: string; fields: { path: string[]; samples: AiSample[] }[]; folderIds: string[] }
@@ -210,6 +211,9 @@ export function serializeAiPayload(tree: TreeSnapshot, privacy: AiPrivacy, reque
     return JSON.stringify({
       task: request.task,
       ...(request.task === 'organize' && request.stage ? { stage: request.stage, folderSummaries } : {}),
+      ...(request.task === 'organize' && request.stage === 'bookmarks' && request.omittedItemsUnchanged
+        ? { omittedItemsUnchanged: true }
+        : {}),
       ...(request.task === 'search' ? { query: request.query } : {}),
       ...(request.task === 'organize' && request.preference
         ? { preference: organizePreference(request.preference) }

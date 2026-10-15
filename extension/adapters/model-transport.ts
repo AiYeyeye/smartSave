@@ -223,6 +223,10 @@ export class ModelTransport {
     this.cancel('disposed');
     this.unsubscribe();
   }
+  /** Independent cancellation/stream owner sharing the same permission and freshness authority. */
+  fork() {
+    return new ModelTransport(this.boundary, this.authority, this.limits);
+  }
   cancel(source: 'caller' | 'disposed' | 'superseded' | 'permissions-changed' | 'settings-changed' = 'caller') {
     if (this.active && !this.active.signal.aborted) this.cancelTrace?.(source);
     this.generation++;

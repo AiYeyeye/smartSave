@@ -89,6 +89,28 @@ const success = () =>
     JSON.stringify({ choices: [{ message: { content: '{"rankedIds":["test-bookmark"]}' }, finish_reason: 'stop' }] }),
   );
 
+it('forked requests have independent cancellation while sharing the original authority', async () => {
+  const responses: ((value: Response) => void)[] = [];
+  const fetcher = vi.fn<typeof fetch>(
+    () =>
+      new Promise(resolve => {
+        responses.push(resolve);
+      }),
+  );
+  const h = setup(fetcher);
+  const fork = h.transport.fork();
+  const first = h.transport.run(h.input);
+  const second = fork.run(h.input);
+  await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
+  h.transport.cancel();
+  expect(await first).toMatchObject({ status: 'cancelled' });
+  responses[1]!(success());
+  expect(await second).toMatchObject({ status: 'completed' });
+  responses[0]!(success());
+  fork.dispose();
+  h.transport.dispose();
+});
+
 it('retries only 429/5xx at 2/4/8 seconds with a shared three-retry allowance', async () => {
   vi.useFakeTimers();
   const times: number[] = [];

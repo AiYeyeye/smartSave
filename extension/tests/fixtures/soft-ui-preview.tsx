@@ -114,6 +114,13 @@ const submitted: ConfirmMutation[] = [];
 Object.assign(globalThis, { __visualSubmitted: submitted });
 if (interactionPreview) globalThis.fetch = () => new Promise<Response>(() => {});
 if (organizeStreamPreview) {
+  const pendingOrganize = new Map<number, (failed: boolean | 'output-limit') => void>();
+  Object.assign(globalThis, {
+    __visualFinishOrganize: (failed: boolean | 'output-limit' = false, requestIndex?: number) => {
+      const id = requestIndex ?? pendingOrganize.keys().next().value;
+      if (id !== undefined) pendingOrganize.get(id)?.(failed);
+    },
+  });
   if (location.search.includes('organize-batches')) {
     const sample = snapshot.nodes.find(n => n.ref.nativeId === 'figma')!;
     const parent = snapshot.nodes.find(n => n.ref.nativeId === 'design')!;
@@ -131,7 +138,12 @@ if (organizeStreamPreview) {
   globalThis.fetch = async (_url, init) => {
     const body = JSON.parse(String(init?.body));
     requests.push(body);
-    const input = JSON.parse(body.input) as { stage?: string; items: { id: string }[] };
+    const requestIndex = requests.length - 1;
+    const input = JSON.parse(body.input) as {
+      stage?: string;
+      omittedItemsUnchanged?: boolean;
+      items: { id: string }[];
+    };
     const folderOutput = taxonomyPreview
       ? {
           newFolders: [
@@ -157,7 +169,11 @@ if (organizeStreamPreview) {
             newFolders: [],
             merges: [],
             moves,
-            unchangedIds: input.items.filter(item => !moves.some(m => m.itemId === item.id)).map(item => item.id),
+            ...(input.omittedItemsUnchanged
+              ? {}
+              : {
+                  unchangedIds: input.items.filter(item => !moves.some(m => m.itemId === item.id)).map(item => item.id),
+                }),
           },
     );
     const split = answer.indexOf('],') + 2;
@@ -182,31 +198,30 @@ if (organizeStreamPreview) {
           const stop = () => {
             if (!closed) {
               closed = true;
+              pendingOrganize.delete(requestIndex);
               clearTimeout(timer);
               c.close();
             }
           };
           init?.signal?.addEventListener('abort', stop, { once: true });
-          Object.assign(globalThis, {
-            __visualFinishOrganize: (failed: boolean | 'output-limit' = false) => {
-              if (closed) return;
-              if (failed === 'output-limit')
-                send({
-                  type: 'response.completed',
-                  response: { status: 'incomplete', incomplete_details: { reason: 'max_output_tokens' } },
-                });
-              else if (failed)
-                send({
-                  type: 'response.failed',
-                  response: { status: 'failed', error: { message: 'synthetic failure' } },
-                });
-              else {
-                send({ type: 'response.output_text.done', output_index: 0, content_index: 0, text: answer });
-                send({ type: 'response.completed', response: { status: 'completed' } });
-              }
-              init?.signal?.removeEventListener('abort', stop);
-              stop();
-            },
+          pendingOrganize.set(requestIndex, (failed: boolean | 'output-limit' = false) => {
+            if (closed) return;
+            if (failed === 'output-limit')
+              send({
+                type: 'response.completed',
+                response: { status: 'incomplete', incomplete_details: { reason: 'max_output_tokens' } },
+              });
+            else if (failed)
+              send({
+                type: 'response.failed',
+                response: { status: 'failed', error: { message: 'synthetic failure' } },
+              });
+            else {
+              send({ type: 'response.output_text.done', output_index: 0, content_index: 0, text: answer });
+              send({ type: 'response.completed', response: { status: 'completed' } });
+            }
+            init?.signal?.removeEventListener('abort', stop);
+            stop();
           });
         },
       }),
