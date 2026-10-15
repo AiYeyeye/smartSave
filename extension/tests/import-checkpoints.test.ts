@@ -183,13 +183,13 @@ it('keeps issued request identity and never permits restart to reset unknown wor
 });
 it('rejects future database versions without deleting or upgrading their records', async () => {
   const factory = new IDBFactory();
-  const db = await rawDatabase(factory, 4);
+  const db = await rawDatabase(factory, 5);
   db.close();
   await expect(openOperationsDatabase(factory)).rejects.toThrow('unsupported-journal');
   await expect(new OperationsStore(factory).all()).rejects.toThrow('unsupported-journal');
   await expect(new ImportCheckpointStore(factory).all()).rejects.toThrow('unsupported-journal');
-  const unchanged = await rawDatabase(factory, 4);
-  expect(unchanged.version).toBe(4);
+  const unchanged = await rawDatabase(factory, 5);
+  expect(unchanged.version).toBe(5);
   expect([...unchanged.objectStoreNames]).toEqual(['operations']);
   unchanged.close();
 });

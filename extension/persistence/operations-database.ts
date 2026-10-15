@@ -1,6 +1,6 @@
-export const OPERATIONS_DATABASE_VERSION = 3;
+export const OPERATIONS_DATABASE_VERSION = 4;
 
-/** One additive migration owner for mutation evidence and import progress and file output. Never delete stores. */
+/** One additive migration owner for mutation evidence, import/organize progress and file output. Never delete stores. */
 export function openOperationsDatabase(factory: IDBFactory, name = 'zhilan-operations'): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -16,6 +16,8 @@ export function openOperationsDatabase(factory: IDBFactory, name = 'zhilan-opera
       if (event.oldVersion < 2 && !db.objectStoreNames.contains('importCheckpoints'))
         db.createObjectStore('importCheckpoints', { keyPath: 'id' });
       if (event.oldVersion < 3 && !db.objectStoreNames.contains('fileOutput')) db.createObjectStore('fileOutput');
+      if (event.oldVersion < 4 && !db.objectStoreNames.contains('organizeCheckpoints'))
+        db.createObjectStore('organizeCheckpoints', { keyPath: 'id' });
     };
     request.onerror = () =>
       fail(request.error?.name === 'VersionError' ? 'unsupported-journal' : 'journal-unavailable');
@@ -29,7 +31,8 @@ export function openOperationsDatabase(factory: IDBFactory, name = 'zhilan-opera
       if (
         !db.objectStoreNames.contains('operations') ||
         !db.objectStoreNames.contains('importCheckpoints') ||
-        !db.objectStoreNames.contains('fileOutput')
+        !db.objectStoreNames.contains('fileOutput') ||
+        !db.objectStoreNames.contains('organizeCheckpoints')
       ) {
         db.close();
         fail('unsupported-journal');

@@ -14,6 +14,7 @@ export class OrganizeBatchExecutor {
     private concurrency: number,
     private readonly signal: AbortSignal,
     private readonly onReady: () => void,
+    private readonly beforeReady?: () => Promise<void>,
   ) {
     signal.addEventListener('abort', this.abort, { once: true });
     if (signal.aborted) this.stop();
@@ -39,21 +40,30 @@ export class OrganizeBatchExecutor {
               ? error.message
               : 'unknown-error',
         }))
-        .then(result => {
-          this.active.delete(ids);
+        .then(async result => {
           if (!this.stopped) {
-            this.settled.set(ids, result);
             if (result.status === 'completed') {
               this.accepted.set(ids, result);
-              this.onReady();
+              try {
+                await this.beforeReady?.();
+              } catch {
+                this.accepted.delete(ids);
+                result = { status: 'failed', reason: 'checkpoint-unavailable' };
+              }
+            }
+            if (!this.stopped) {
+              this.settled.set(ids, result);
+              if (result.status === 'completed') this.onReady();
             }
           }
+          this.active.delete(ids);
           return result;
         });
       this.active.set(ids, pending);
     }
     const ids = queue[0]!;
-    const value = this.accepted.get(ids) ?? this.settled.get(ids) ?? this.active.get(ids);
+    // A validated result awaiting durable storage is not yet ready for ordered consumption.
+    const value = this.active.get(ids) ?? this.accepted.get(ids) ?? this.settled.get(ids);
     if (!value) throw Error('unavailable');
     return cancellable(Promise.resolve(value), this.controller.signal);
   }

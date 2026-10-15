@@ -49,3 +49,60 @@ it('cancels immediately even if a synthetic boundary ignores abort and never ret
   expect(accepted.size).toBe(0);
   expect(ready).not.toHaveBeenCalled();
 });
+
+it('does not publish or consume a validated result before its durable checkpoint completes', async () => {
+  const ids = ['a'],
+    accepted = new Map<string[], ModelResult>();
+  let commit!: () => void;
+  const ready = vi.fn();
+  const persist = vi.fn(
+    () =>
+      new Promise<void>(resolve => {
+        commit = resolve;
+      }),
+  );
+  const executor = new OrganizeBatchExecutor(
+    accepted,
+    async () => ({ status: 'completed', output: { rankedIds: [] } }),
+    2,
+    new AbortController().signal,
+    ready,
+    persist,
+  );
+  let settled = false;
+  const pending = executor.next([ids]).then(result => {
+    settled = true;
+    return result;
+  });
+  await vi.waitFor(() => expect(persist).toHaveBeenCalledOnce());
+  expect(accepted.has(ids)).toBe(true); // A checkpoint can include every validated in-flight success.
+  const again = executor.next([ids]);
+  await Promise.resolve();
+  expect(settled).toBe(false);
+  expect(ready).not.toHaveBeenCalled();
+  commit();
+  expect((await pending).status).toBe('completed');
+  expect((await again).status).toBe('completed');
+  expect(ready).toHaveBeenCalledOnce();
+  executor.stop();
+});
+
+it('turns checkpoint failure into a retained failed queue without claiming a completed batch', async () => {
+  const ids = ['a'],
+    accepted = new Map<string[], ModelResult>(),
+    ready = vi.fn();
+  const executor = new OrganizeBatchExecutor(
+    accepted,
+    async () => ({ status: 'completed', output: { rankedIds: [] } }),
+    1,
+    new AbortController().signal,
+    ready,
+    async () => {
+      throw Error('quota');
+    },
+  );
+  expect(await executor.next([ids])).toEqual({ status: 'failed', reason: 'checkpoint-unavailable' });
+  expect(accepted.size).toBe(0);
+  expect(ready).not.toHaveBeenCalled();
+  executor.stop();
+});

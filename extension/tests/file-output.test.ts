@@ -282,7 +282,7 @@ it('storage failure pauses and dispose fences pending permission', async () => {
   expect(h.a.file.createWritable).not.toHaveBeenCalled();
   h.tree.stop();
 });
-it('additive v3 migration preserves raw operation/import evidence and future versions fail closed', async () => {
+it('additive migrations preserve raw operation/import evidence and future versions fail closed', async () => {
   const factory = new IDBFactory();
   await new Promise<void>((resolve, reject) => {
     const request = factory.open('legacy', 2);
@@ -298,7 +298,7 @@ it('additive v3 migration preserves raw operation/import evidence and future ver
     };
   });
   const db = await openOperationsDatabase(factory, 'legacy');
-  expect(db.version).toBe(3);
+  expect(db.version).toBe(4);
   for (const [store, evidence] of [
     ['operations', 'operation'],
     ['importCheckpoints', 'import'],
@@ -311,7 +311,7 @@ it('additive v3 migration preserves raw operation/import evidence and future ver
   }
   db.close();
   await new Promise<void>(resolve => {
-    const request = factory.open('future', 4);
+    const request = factory.open('future', 5);
     request.onsuccess = () => {
       request.result.close();
       resolve();

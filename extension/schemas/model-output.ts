@@ -37,6 +37,8 @@ const organize = z.strictObject({
     .optional(),
   removeFolders: z.array(z.strictObject({ folderId: id, reason: z.string().max(500).optional() })).optional(),
 });
+export { organize as organizeOutputSchema };
+export type OrganizeOutput = z.infer<typeof organize>;
 export interface ModelOutputContext {
   task: string;
   items: { id: string; title: string; url?: string }[];
