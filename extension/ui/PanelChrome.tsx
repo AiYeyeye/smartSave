@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useI18n } from './i18n';
 import {
   ArrowLeft,
   Download,
@@ -25,6 +26,7 @@ export function SearchBox({
   autoFocus?: boolean;
   focusRequest?: number;
 }) {
+  const { t } = useI18n();
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => {
     if (autoFocus || focusRequest > 0) input.current?.focus();
@@ -35,8 +37,8 @@ export function SearchBox({
       <input
         ref={input}
         type="search"
-        aria-label="搜索书签"
-        placeholder="搜索书签，或描述你要找的网站"
+        aria-label={t('搜索书签')}
+        placeholder={t('搜索书签，或描述你要找的网站')}
         value={value}
         onChange={event => onChange(event.target.value)}
         onKeyDown={event => {
@@ -48,7 +50,7 @@ export function SearchBox({
         }}
       />
       {value ? (
-        <button type="button" className="search-dismiss" aria-label="清空搜索" onClick={() => onChange('')}>
+        <button type="button" className="search-dismiss" aria-label={t('清空搜索')} onClick={() => onChange('')}>
           <X aria-hidden="true" />
         </button>
       ) : null}
@@ -74,6 +76,7 @@ export function PanelChrome({
   onClose?: () => void;
   focusRequest?: number;
 }) {
+  const { t } = useI18n();
   const browse = view === 'browse';
   return (
     <>
@@ -81,18 +84,30 @@ export function PanelChrome({
         {browse ? (
           <span className="zh-logo" aria-hidden="true" />
         ) : (
-          <button type="button" className="header-back" aria-label="返回书签" onClick={onBack}>
+          <button type="button" className="header-back" aria-label={t('返回书签')} onClick={onBack}>
             <ArrowLeft aria-hidden="true" />
           </button>
         )}
-        <h1>{browse ? '智栏' : '快速设置'}</h1>
+        <h1>{browse ? t('智栏') : t('快速设置')}</h1>
         {browse ? (
-          <button type="button" className="chrome-icon zh-gear" aria-label="设置" title="设置" onClick={onSettings}>
+          <button
+            type="button"
+            className="chrome-icon zh-gear"
+            aria-label={t('设置')}
+            title={t('设置')}
+            onClick={onSettings}
+          >
             <Settings aria-hidden="true" />
           </button>
         ) : null}
         {onClose ? (
-          <button type="button" className="chrome-icon" aria-label="收起侧栏" title="收起（Esc）" onClick={onClose}>
+          <button
+            type="button"
+            className="chrome-icon"
+            aria-label={t('收起侧栏')}
+            title={t('收起（Esc）')}
+            onClick={onClose}
+          >
             <PanelLeftClose aria-hidden="true" />
           </button>
         ) : null}
@@ -113,23 +128,24 @@ export function PanelFooter({
   onExport: () => void;
   onBatch: () => void;
 }) {
+  const { t } = useI18n();
   return (
-    <footer className="zh-footer" aria-label="书签工具">
-      <button type="button" title="在设置页中用 AI 整理选定目录" onClick={onOrganize}>
+    <footer className="zh-footer" aria-label={t('书签工具')}>
+      <button type="button" title={t('在设置页中用 AI 整理选定目录')} onClick={onOrganize}>
         <FolderKanban aria-hidden="true" />
-        整理
+        {t('整理')}
       </button>
-      <button type="button" title="在设置页中导入书签文件" onClick={onImport}>
+      <button type="button" title={t('在设置页中导入书签文件')} onClick={onImport}>
         <Upload aria-hidden="true" />
-        导入
+        {t('导入')}
       </button>
-      <button type="button" title="在设置页中导出与备份" onClick={onExport}>
+      <button type="button" title={t('在设置页中导出与备份')} onClick={onExport}>
         <Download aria-hidden="true" />
-        导出
+        {t('导出')}
       </button>
-      <button type="button" title="批量选择书签" onClick={onBatch}>
+      <button type="button" title={t('批量选择书签')} onClick={onBatch}>
         <ListChecks aria-hidden="true" />
-        批量
+        {t('批量')}
       </button>
     </footer>
   );

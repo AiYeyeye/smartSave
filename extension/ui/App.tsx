@@ -14,6 +14,7 @@ import { OptionsNav, parseOptionsHash, ROUTE_META, type OptionsRoute } from './O
 import { PopupSettings } from './PopupSettings';
 import { PanelModePicker } from './PanelModePicker';
 import { useSearchKey, useSearchLaunch } from './search-entry';
+import { LocaleProvider, LanguagePicker, useI18n } from './i18n';
 import { ModelSettings } from '../options/ModelSettings';
 import { SiteRulesSettings } from '../options/SiteRulesSettings';
 import { RecoveryWorkbench } from '../options/RecoveryWorkbench';
@@ -69,7 +70,11 @@ function useShared() {
 }
 
 export function App({ page, overlay = false }: { page: Page; overlay?: boolean }) {
-  return <ThemeProvider>{page === 'panel' ? <PopupApp overlay={overlay} /> : <OptionsApp />}</ThemeProvider>;
+  return (
+    <LocaleProvider>
+      <ThemeProvider>{page === 'panel' ? <PopupApp overlay={overlay} /> : <OptionsApp />}</ThemeProvider>
+    </LocaleProvider>
+  );
 }
 
 /** Overlay sidebar: ask the injected host (our content script) to slide the sidebar away. */
@@ -82,6 +87,7 @@ function closeOverlay() {
 }
 
 function PopupApp({ overlay = false }: { overlay?: boolean }) {
+  const { t } = useI18n();
   const { settingsStore, ai } = useShared();
   const [view, setView] = useState<PopupView>('browse');
   const [query, setQuery] = useState('');
@@ -111,7 +117,7 @@ function PopupApp({ overlay = false }: { overlay?: boolean }) {
   return (
     <div className="shell panel">
       <a className="skip-link" href="#main">
-        跳到主要内容
+        {t('跳到主要内容')}
       </a>
       <PanelChrome
         focusRequest={focusRequest}
@@ -135,7 +141,7 @@ function PopupApp({ overlay = false }: { overlay?: boolean }) {
             services={ai.store}
             onOrganize={() => open('organize')}
           />
-          <section className="directory" aria-label="书签目录" hidden={query.trim().length > 0}>
+          <section className="directory" aria-label={t('书签目录')} hidden={query.trim().length > 0}>
             <BookmarkTree batchNonce={batchNonce} />
           </section>
         </div>
@@ -169,6 +175,7 @@ function PopupApp({ overlay = false }: { overlay?: boolean }) {
 }
 
 function OptionsApp() {
+  const { t, message } = useI18n();
   const { settingsStore, ai, aiController } = useShared();
   const [initial] = useState(() => initialRoute('options', typeof location === 'undefined' ? '' : location.hash));
   const [route, setRouteState] = useState<OptionsRoute>(initial.route);
@@ -208,7 +215,7 @@ function OptionsApp() {
   }
 
   const saveFeature = ai.features.find(feature => feature.id === 'save');
-  const attention = saveFeature?.connId && saveFeature.modelId ? undefined : { 'ai-services': '未配置' };
+  const attention = saveFeature?.connId && saveFeature.modelId ? undefined : { 'ai-services': t('未配置') };
   const meta = ROUTE_META[route];
   // Heavy pages mount on first visit and then stay mounted so drafts and in-flight work survive navigation.
   const mounted = (id: OptionsRoute) => visited.has(id);
@@ -216,19 +223,19 @@ function OptionsApp() {
   return (
     <div className="shell options">
       <a className="skip-link" href="#main">
-        跳到主要内容
+        {t('跳到主要内容')}
       </a>
       <OptionsNav route={route} onRoute={next => go(next)} attention={attention} />
       <div className="content">
         <header className={`page-head${meta.wide ? ' is-wide' : ''}`}>
           <div>
-            <h1>{meta.title}</h1>
-            <p>{meta.desc}</p>
+            <h1>{message(meta.title)}</h1>
+            <p>{message(meta.desc)}</p>
           </div>
           {route === 'browse' ? (
             <button type="button" onClick={() => setBatchNonce(value => value + 1)}>
               <ListChecks aria-hidden="true" />
-              批量管理
+              {t('批量管理')}
             </button>
           ) : null}
         </header>
@@ -240,21 +247,22 @@ function OptionsApp() {
               focusRequest={focusRequest}
               autoFocus={searchLaunch.requested}
             />
-            {searchLaunch.status && <p role="status">{searchLaunch.status}</p>}
+            {searchLaunch.status && <p role="status">{message(searchLaunch.status)}</p>}
             <details>
-              <summary>快速搜索入口</summary>
+              <summary>{t('快速搜索入口')}</summary>
               <p>
-                按 Alt+Shift+K 打开搜索。也可在地址栏输入 sb，按 Tab 或空格后输入关键词。智栏内按
-                Ctrl+K（Mac：⌘K）聚焦搜索。
+                {t(
+                  '按 Alt+Shift+K 打开搜索。也可在地址栏输入 zl，按 Tab 或空格后输入关键词。智栏内按 Ctrl+K（Mac：⌘K）聚焦搜索。',
+                )}
               </p>
-              <p>若快捷键被其他扩展占用，可在浏览器中重新设置。</p>
+              <p>{t('若快捷键被其他扩展占用，可在浏览器中重新设置。')}</p>
               <button
                 type="button"
                 onClick={() => {
                   void chrome.tabs.create({ url: 'chrome://extensions/shortcuts' }).catch(() => {});
                 }}
               >
-                设置浏览器搜索快捷键
+                {t('设置浏览器搜索快捷键')}
               </button>
             </details>
             <SearchResults
@@ -263,7 +271,7 @@ function OptionsApp() {
               services={ai.store}
               onOrganize={() => go('organize')}
             />
-            <section className="directory" aria-label="书签目录" hidden={query.trim().length > 0}>
+            <section className="directory" aria-label={t('书签目录')} hidden={query.trim().length > 0}>
               <BookmarkTree batchNonce={batchNonce} />
             </section>
           </div>
@@ -280,7 +288,7 @@ function OptionsApp() {
                 className="surface workflow-help"
                 onToggle={event => setExportRecoveryOpen(event.currentTarget.open)}
               >
-                <summary>备份与恢复记录</summary>
+                <summary>{t('备份与恢复记录')}</summary>
                 <RecoveryWorkbench visible={route === 'export' && exportRecoveryOpen} />
               </details>
             </div>
@@ -296,7 +304,8 @@ function OptionsApp() {
             )}
           </div>
           <div className="view" hidden={route !== 'appearance'}>
-            <section className="surface" aria-label="外观设置">
+            <section className="surface" aria-label={t('外观设置')}>
+              <LanguagePicker />
               <ThemePicker extra={<PanelModePicker />} />
             </section>
           </div>
@@ -311,10 +320,11 @@ function OptionsApp() {
               <SaveHistory onOpen={hash => go(parseOptionsHash(hash), parseAiServicesHash(hash) ?? undefined)} />
               <DebugLogPanel />
               <details className="surface settings-help">
-                <summary>旧版单连接模型配置（兼容）</summary>
+                <summary>{t('旧版单连接模型配置（兼容）')}</summary>
                 <p>
-                  新版请在「AI 服务」里连接并按功能分配模型；这里保留旧的单连接配置，供尚未迁移的搜索 / 整理 /
-                  导入路径使用。
+                  {t(
+                    '新版请在「AI 服务」里连接并按功能分配模型；这里保留旧的单连接配置，供尚未迁移的搜索 / 整理 / 导入路径使用。',
+                  )}
                 </p>
                 <ModelSettings showHeading={false} store={settingsStore} fields="model" />
               </details>

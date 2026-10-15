@@ -8,6 +8,7 @@ import { App } from '../ui/App';
 import { searchTree } from './fixtures/search-tree';
 import type { TreeState } from '../domain/node-reference';
 import { APPEARANCES } from './appearance';
+import { LANGUAGE_KEY } from '../ui/i18n';
 let snapshot = searchTree();
 const listeners = new Set<(state: TreeState) => void>();
 vi.mock('../panel/tree-client', () => ({
@@ -52,6 +53,21 @@ it('production App input reaches search without model calls or writes', () => {
   expect(row).not.toHaveTextContent('https://');
   expect(row).not.toHaveTextContent('学习资料');
   expect(fetcher).not.toHaveBeenCalled();
+});
+it('English search translates interface text but preserves native bookmark titles and query', () => {
+  chromeStub();
+  localStorage.setItem(LANGUAGE_KEY, 'en');
+  snapshot.nodes[1]!.title = '搜索书签';
+  render(createElement(App, { page: 'panel' }));
+  fireEvent.change(screen.getByRole('searchbox', { name: 'Search bookmarks' }), { target: { value: '搜索书签' } });
+  expect(screen.getByRole('region', { name: 'Search results' })).toBeVisible();
+  expect(screen.getByRole('button', { name: /^搜索书签$/ })).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Find with AI' })).toBeVisible();
+  const search = screen.getByRole('searchbox');
+  act(() => window.dispatchEvent(new StorageEvent('storage', { key: LANGUAGE_KEY, newValue: 'zh-CN' })));
+  expect(screen.getByRole('searchbox', { name: '搜索书签' })).toBe(search);
+  expect(search).toHaveValue('搜索书签');
+  expect(screen.getByRole('button', { name: /^搜索书签$/ })).toBeVisible();
 });
 it('Ctrl+K returns from settings and focuses the existing search; composition is ignored', () => {
   chromeStub();

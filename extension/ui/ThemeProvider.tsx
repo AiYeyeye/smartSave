@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import type { PropsWithChildren, ReactNode } from 'react';
 import { Monitor, Moon, Sun } from 'lucide-react';
+import { useI18n } from './i18n';
 
 export type ThemeMode = 'system' | 'light' | 'dark';
 export type Accent = 'indigo' | 'blue' | 'teal' | 'amber' | 'rose' | 'graphite';
@@ -129,20 +130,21 @@ export function useTheme() {
 }
 
 export function ModeSwitch({ compact = false }: { compact?: boolean }) {
+  const { t, message } = useI18n();
   const { appearance, setMode } = useTheme();
   return (
-    <div className="segmented" role="radiogroup" aria-label="颜色模式">
+    <div className="segmented" role="radiogroup" aria-label={t('颜色模式')}>
       {modes.map(({ id, name, icon: Icon }) => (
-        <label key={id} title={name}>
+        <label key={id} title={message(name)}>
           <input
             type="radio"
             name={compact ? 'appearance-mode-compact' : 'appearance-mode'}
             checked={appearance.mode === id}
             onChange={() => setMode(id)}
-            aria-label={compact ? `快速切换为${name}` : name}
+            aria-label={compact ? t('快速切换为{mode}', { mode: message(name) }) : message(name)}
           />
           <Icon aria-hidden="true" />
-          {compact ? null : name}
+          {compact ? null : message(name)}
         </label>
       ))}
     </div>
@@ -150,20 +152,21 @@ export function ModeSwitch({ compact = false }: { compact?: boolean }) {
 }
 
 export function AccentPicker({ compact = false }: { compact?: boolean }) {
+  const { t, message } = useI18n();
   const { appearance, setAccent } = useTheme();
   return (
-    <div className="swatches" role="radiogroup" aria-label="主题色">
+    <div className="swatches" role="radiogroup" aria-label={t('主题色')}>
       {accents.map(({ id, name, swatch }) => (
-        <label key={id} className="swatch" title={name} style={{ ['--swatch' as string]: swatch }}>
+        <label key={id} className="swatch" title={message(name)} style={{ ['--swatch' as string]: swatch }}>
           <input
             type="radio"
             name={compact ? 'appearance-accent-compact' : 'appearance-accent'}
             checked={appearance.accent === id}
             onChange={() => setAccent(id)}
-            aria-label={name}
+            aria-label={message(name)}
           />
           <i aria-hidden="true" />
-          {name}
+          {message(name)}
         </label>
       ))}
     </div>
@@ -171,15 +174,16 @@ export function AccentPicker({ compact = false }: { compact?: boolean }) {
 }
 
 export function ThemePicker({ extra }: { extra?: ReactNode } = {}) {
+  const { t } = useI18n();
   return (
     <div className="appearance">
       {extra}
       <fieldset>
-        <legend>颜色模式</legend>
+        <legend>{t('颜色模式')}</legend>
         <ModeSwitch />
       </fieldset>
       <fieldset>
-        <legend>主题色</legend>
+        <legend>{t('主题色')}</legend>
         <AccentPicker />
       </fieldset>
       <div className="theme-preview" aria-hidden="true">
@@ -196,7 +200,7 @@ export function ThemePicker({ extra }: { extra?: ReactNode } = {}) {
           <b />
         </div>
       </div>
-      <p className="hint">外观保存在本机浏览器，工具栏弹窗与设置页同步生效。</p>
+      <p className="hint">{t('外观保存在本机浏览器，工具栏弹窗与设置页同步生效。')}</p>
     </div>
   );
 }

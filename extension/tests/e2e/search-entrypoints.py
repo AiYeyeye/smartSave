@@ -42,6 +42,7 @@ with sync_playwright() as playwright:
         context.route('https://search-fixture.test/**', lambda route: route.fulfill(body='<h1>Search fixture</h1>', content_type='text/html'))
         worker = context.service_workers[0] if context.service_workers else context.wait_for_event('serviceworker')
         extension_id = worker.url.split('/')[2]
+        assert worker.evaluate('()=>chrome.runtime.getManifest().omnibox.keyword') == 'zl'
         item = worker.evaluate("""async () => {
           const bar=(await chrome.bookmarks.getTree())[0].children[0].id;
           return chrome.bookmarks.create({parentId:bar,title:'重庆大学 & <课程>',url:'https://search-fixture.test/course'});

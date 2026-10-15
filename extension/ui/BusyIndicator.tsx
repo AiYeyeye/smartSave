@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { LoaderCircle } from 'lucide-react';
 import './busy-indicator.css';
+import { useI18n } from './i18n';
 
 export function BusyIndicator({ label }: { label: string }) {
+  const { t, message } = useI18n();
   const [seconds, setSeconds] = useState(0);
   useEffect(() => {
     const start = Date.now();
@@ -12,8 +14,8 @@ export function BusyIndicator({ label }: { label: string }) {
   return (
     <div className="busy-indicator" role="status" aria-live="polite">
       <LoaderCircle className="busy-spinner" aria-hidden="true" />
-      <span>{label}</span>
-      <small aria-hidden="true">已等待 {seconds} 秒</small>
+      <span>{message(label)}</span>
+      <small aria-hidden="true">{t('已等待 {seconds} 秒', { seconds })}</small>
     </div>
   );
 }

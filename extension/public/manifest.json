@@ -46,7 +46,7 @@
       "description": "Save current page with Zhilan"
     }
   },
-  "omnibox": { "keyword": "sb" },
+  "omnibox": { "keyword": "zl" },
   "web_accessible_resources": [
     {
       "resources": [

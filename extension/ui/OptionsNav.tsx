@@ -10,6 +10,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { ModeSwitch } from './ThemeProvider';
+import { useI18n } from './i18n';
 
 export type OptionsRoute =
   'browse' | 'organize' | 'import' | 'export' | 'ai-services' | 'appearance' | 'privacy' | 'debug';
@@ -58,19 +59,20 @@ export function OptionsNav({
   /** Short badge per route, e.g. AI 服务 → 未配置. */
   attention?: Partial<Record<OptionsRoute, string>>;
 }) {
+  const { t, message } = useI18n();
   return (
-    <nav className="side-nav" aria-label="设置导航">
+    <nav className="side-nav" aria-label={t('设置导航')}>
       <div className="side-brand">
         <span className="zh-logo" aria-hidden="true" />
         <div>
-          <strong>智栏</strong>
-          <small>原生书签 · AI 助手</small>
+          <strong>{t('智栏')}</strong>
+          <small>{t('原生书签 · AI 助手')}</small>
         </div>
       </div>
       {GROUPS.map(group => (
-        <div key={group.label} role="group" aria-label={group.label}>
+        <div key={group.label} role="group" aria-label={message(group.label)}>
           <div className="side-group" aria-hidden="true">
-            {group.label}
+            {message(group.label)}
           </div>
           {group.routes.map(id => {
             const meta = ROUTE_META[id];
@@ -84,7 +86,7 @@ export function OptionsNav({
                 onClick={() => onRoute(id)}
               >
                 <Icon aria-hidden="true" />
-                {meta.title}
+                {message(meta.title)}
                 {attention?.[id] ? <span className="side-badge">{attention[id]}</span> : null}
               </button>
             );
