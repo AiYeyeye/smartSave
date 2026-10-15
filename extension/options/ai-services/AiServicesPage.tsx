@@ -1,3 +1,4 @@
+import { useI18n } from '../../ui/i18n';
 import { useEffect, useState } from 'react';
 import { Download, Plus, Sparkles, Star } from 'lucide-react';
 import type { AiServicesTab, ConnectedService, FeatureAssignment } from './mock-data';
@@ -39,6 +40,7 @@ function AiServicesPageInner({
   controller: AiServicesController;
   settings?: SettingsStore;
 }) {
+  const { t, message } = useI18n();
   const { toast } = useToast();
   const { services, features } = controller;
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -87,7 +89,7 @@ function AiServicesPageInner({
   return (
     <div className="ai-svc ai-svc-page">
       <div className="ai-svc-shell">
-        <nav className="ai-svc-tabs" aria-label="管理分区">
+        <nav className="ai-svc-tabs" aria-label={t('管理分区')}>
           {NAV.map(item => {
             const Icon = item.icon;
             const on = tab === item.id;
@@ -103,7 +105,7 @@ function AiServicesPageInner({
                 }}
               >
                 <Icon aria-hidden="true" />
-                {item.label}
+                {message(item.label)}
               </button>
             );
           })}

@@ -35,7 +35,7 @@ The sidebar overlays the left edge of a webpage by default. Appearance settings 
 - Type **`zl`** in the address bar, press Tab or Space, then enter keywords. Select a suggestion to open a bookmark, or press Enter on the default item to open full search.
 - Within the extension, **Ctrl+K** (Mac: ⌘K) returns to search and focuses its input.
 
-The language selector is in quick settings and Appearance. English localization is in progress: navigation, appearance and search are available; other workspaces are still being migrated. Switching languages preserves bookmark titles, folder names and user input.
+The language selector is in quick settings and Appearance. English localization is in progress: navigation, appearance, search, AI service settings and onboarding are available; other workspaces are still being migrated. Switching languages preserves bookmark titles, folder names, model IDs and unsaved input.
 
 ## Validation and release status
 

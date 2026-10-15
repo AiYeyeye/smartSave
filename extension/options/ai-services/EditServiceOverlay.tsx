@@ -1,3 +1,4 @@
+import { useI18n } from '../../ui/i18n';
 import { useEffect, useRef, useState } from 'react';
 import { Search, X } from 'lucide-react';
 import type { ApiMode, ConnectedService, ModelMeta } from './mock-data';
@@ -40,6 +41,7 @@ export function EditServiceOverlay({
   onSave: (next: ConnectedService, key: string, remember: boolean) => Promise<void> | void;
   onChangeService: () => void;
 }) {
+  const { t, message } = useI18n();
   const { toast } = useToast();
   const [draft, setDraft] = useState<Draft>(() => ({
     name: service.name,
@@ -281,10 +283,10 @@ export function EditServiceOverlay({
         <header className="ai-svc-dialog-head">
           <Avatar letter={draft.letter} avatarClass={draft.avatarClass} size="lg" />
           <div>
-            <h2 id="ai-edit-title">编辑 AI 服务</h2>
+            <h2 id="ai-edit-title">{t('编辑 AI 服务')}</h2>
             <p>
-              {draft.serviceType} · {draft.kind === 'sub' ? '订阅登录' : 'API Key'} · 已启用 {draft.enabled.length}{' '}
-              个模型
+              {message(draft.serviceType)} · {draft.kind === 'sub' ? t('订阅登录') : 'API Key'} ·{' '}
+              {t('已启用 {count} 个模型', { count: draft.enabled.length })}
             </p>
           </div>
           <button
@@ -295,9 +297,9 @@ export function EditServiceOverlay({
               onChangeService();
             }}
           >
-            更换服务
+            {t('更换服务')}
           </button>
-          <button type="button" className="ai-svc-dialog-close" aria-label="关闭" onClick={close}>
+          <button type="button" className="ai-svc-dialog-close" aria-label={t('关闭')} onClick={close}>
             <X aria-hidden="true" />
           </button>
         </header>
@@ -305,7 +307,7 @@ export function EditServiceOverlay({
           <div className="ai-svc-edit-fields">
             <div className="ai-svc-edit-row two">
               <div className="ai-svc-field">
-                <label htmlFor="ai-edit-name">名称</label>
+                <label htmlFor="ai-edit-name">{t('名称')}</label>
                 <input
                   id="ai-edit-name"
                   type="text"
@@ -315,7 +317,7 @@ export function EditServiceOverlay({
                 />
               </div>
               <div className="ai-svc-field">
-                <label htmlFor="ai-edit-base">接口地址</label>
+                <label htmlFor="ai-edit-base">{t('接口地址')}</label>
                 <input
                   id="ai-edit-base"
                   type="url"
@@ -327,18 +329,18 @@ export function EditServiceOverlay({
             </div>
             <div className="ai-svc-edit-row two">
               <div className="ai-svc-field">
-                <label htmlFor="ai-edit-key">API 密钥</label>
+                <label htmlFor="ai-edit-key">{t('API 密钥')}</label>
                 <input
                   id="ai-edit-key"
                   type="password"
                   value={keyValue}
                   onChange={e => setKeyValue(e.target.value)}
                   autoComplete="off"
-                  placeholder={initialKey ? undefined : '输入 API Key'}
+                  placeholder={initialKey ? undefined : t('输入 API Key')}
                 />
               </div>
               <div className="ai-svc-field">
-                <label htmlFor="ai-edit-mode">接口模式</label>
+                <label htmlFor="ai-edit-mode">{t('接口模式')}</label>
                 <select
                   id="ai-edit-mode"
                   value={draft.mode}
@@ -353,8 +355,10 @@ export function EditServiceOverlay({
               </div>
             </div>
             <div className="ai-svc-field">
-              <label htmlFor="ai-edit-timeout">请求超时（毫秒）</label>
-              <small>流式响应按连续无事件或心跳的时间计时；持续收到数据会继续等待。非流式响应按总时间计时。</small>
+              <label htmlFor="ai-edit-timeout">{t('请求超时（毫秒）')}</label>
+              <small>
+                {t('流式响应按连续无事件或心跳的时间计时；持续收到数据会继续等待。非流式响应按总时间计时。')}
+              </small>
               <input
                 id="ai-edit-timeout"
                 type="number"
@@ -366,7 +370,7 @@ export function EditServiceOverlay({
             </div>
             {
               <div className="ai-svc-field">
-                <label htmlFor="ai-edit-output-limit">最大输出 tokens</label>
+                <label htmlFor="ai-edit-output-limit">{t('最大输出 tokens')}</label>
                 <input
                   id="ai-edit-output-limit"
                   type="number"
@@ -379,13 +383,13 @@ export function EditServiceOverlay({
                   onChange={e => setDraft(d => ({ ...d, maxOutputTokens: e.target.value }))}
                 />
                 <p id="ai-edit-output-limit-help" className="hint">
-                  默认 128,000，包含推理和正文。请填写所选模型支持的输出额度。
+                  {t('默认 128,000，包含推理和正文。请填写所选模型支持的输出额度。')}
                 </p>
-                {!outputLimitValid && <p role="alert">输出上限请输入大于或等于 1 的有效整数。</p>}
+                {!outputLimitValid && <p role="alert">{t('输出上限请输入大于或等于 1 的有效整数。')}</p>}
               </div>
             }
             <div className="ai-svc-field">
-              <label htmlFor="ai-test-model">测试模型</label>
+              <label htmlFor="ai-test-model">{t('测试模型')}</label>
               <select
                 id="ai-test-model"
                 value={
@@ -404,8 +408,8 @@ export function EditServiceOverlay({
             </div>
             <label className="ai-svc-toggle-row">
               <span>
-                <strong>流式响应</strong>
-                <small>使用所选协议的原生流式接口；关闭后使用 JSON 响应。</small>
+                <strong>{t('流式响应')}</strong>
+                <small>{t('使用所选协议的原生流式接口；关闭后使用 JSON 响应。')}</small>
               </span>
               <span className="switch">
                 <input
@@ -419,8 +423,8 @@ export function EditServiceOverlay({
             </label>
             <label className="ai-svc-toggle-row">
               <span>
-                <strong>记住密钥</strong>
-                <small>后台自动归类收藏需要它；保存在本机扩展存储，不上传。</small>
+                <strong>{t('记住密钥')}</strong>
+                <small>{t('后台自动归类收藏需要它；保存在本机扩展存储，不上传。')}</small>
               </span>
               <span className="switch">
                 <input type="checkbox" role="switch" checked={remember} onChange={e => setRemember(e.target.checked)} />
@@ -429,8 +433,8 @@ export function EditServiceOverlay({
             </label>
             <label className="ai-svc-toggle-row">
               <span>
-                <strong>优先快速响应</strong>
-                <small>对已支持的模型关闭或降低思考量；未知模型保持原行为。</small>
+                <strong>{t('优先快速响应')}</strong>
+                <small>{t('对已支持的模型关闭或降低思考量；未知模型保持原行为。')}</small>
               </span>
               <span className="switch">
                 <input
@@ -449,21 +453,21 @@ export function EditServiceOverlay({
           <div className="ai-svc-models-split">
             <div className="ai-svc-models-pane">
               <div className="ai-svc-models-head">
-                <h3>该服务的模型</h3>
+                <h3>{t('该服务的模型')}</h3>
                 <button
                   type="button"
                   className="ai-svc-act ai-svc-act-ghost ai-svc-act-sm"
                   disabled={listing}
                   onClick={() => void refreshList()}
                 >
-                  {listing ? '获取中…' : '获取列表'}
+                  {listing ? t('获取中…') : t('获取列表')}
                 </button>
                 <div className="ai-svc-mini-search">
                   <Search aria-hidden="true" />
                   <input
                     type="search"
-                    placeholder="搜索模型 ID..."
-                    aria-label="搜索模型 ID"
+                    placeholder={t('搜索模型 ID...')}
+                    aria-label={t('搜索模型 ID')}
                     value={catalogQ}
                     onChange={e => setCatalogQ(e.target.value)}
                   />
@@ -471,7 +475,7 @@ export function EditServiceOverlay({
               </div>
               <div className="ai-svc-models-body">
                 {catalogFiltered.length === 0 ? (
-                  <div className="ai-svc-picker-empty">没有匹配的模型</div>
+                  <div className="ai-svc-picker-empty">{t('没有匹配的模型')}</div>
                 ) : (
                   catalogFiltered.map(m => (
                     <div key={m.id} className="ai-svc-catalog-item">
@@ -483,7 +487,7 @@ export function EditServiceOverlay({
                         />
                         <span className="ai-svc-mid">{m.id}</span>
                       </label>
-                      <span className="ai-svc-ctx">{m.ctx}</span>
+                      <span className="ai-svc-ctx">{message(m.ctx)}</span>
                     </div>
                   ))
                 )}
@@ -491,14 +495,14 @@ export function EditServiceOverlay({
             </div>
             <div className="ai-svc-models-pane">
               <div className="ai-svc-models-head">
-                <h3>模型设置</h3>
+                <h3>{t('模型设置')}</h3>
                 <span className="count">{draft.enabled.length}</span>
                 <div className="ai-svc-mini-search">
                   <Search aria-hidden="true" />
                   <input
                     type="search"
-                    placeholder="搜索已添加模型..."
-                    aria-label="搜索已添加模型"
+                    placeholder={t('搜索已添加模型...')}
+                    aria-label={t('搜索已添加模型')}
                     value={addedQ}
                     onChange={e => setAddedQ(e.target.value)}
                   />
@@ -506,7 +510,7 @@ export function EditServiceOverlay({
               </div>
               <div className="ai-svc-models-body">
                 {enabledFiltered.length === 0 ? (
-                  <div className="ai-svc-picker-empty">尚未添加模型，可在左侧勾选或自定义添加</div>
+                  <div className="ai-svc-picker-empty">{t('尚未添加模型，可在左侧勾选或自定义添加')}</div>
                 ) : (
                   enabledFiltered.map(id => {
                     const meta = draft.catalog.find(m => m.id === id);
@@ -516,11 +520,11 @@ export function EditServiceOverlay({
                           ⠿
                         </span>
                         <span className="ai-svc-mid">{id}</span>
-                        <span className="ai-svc-ctx">{meta?.ctx ?? '自定义'}</span>
+                        <span className="ai-svc-ctx">{meta?.ctx ? message(meta.ctx) : t('自定义')}</span>
                         <button
                           type="button"
                           className="ai-svc-icon-x"
-                          aria-label="移除"
+                          aria-label={t('移除')}
                           onClick={() => toggleModel(id, false)}
                         >
                           ×
@@ -533,13 +537,13 @@ export function EditServiceOverlay({
               <div className="ai-svc-custom-add">
                 <input
                   type="text"
-                  placeholder="输入模型 ID，如 my-model-v2"
+                  placeholder={t('输入模型 ID，如 my-model-v2')}
                   value={customId}
                   onChange={e => setCustomId(e.target.value)}
                   autoComplete="off"
                 />
                 <button type="button" className="ai-svc-act ai-svc-act-ghost ai-svc-act-sm" onClick={addCustom}>
-                  + 添加自定义模型
+                  {t('+ 添加自定义模型')}
                 </button>
               </div>
             </div>
@@ -555,15 +559,15 @@ export function EditServiceOverlay({
             {testing ? (
               <>
                 <span className="ai-svc-spinner" />
-                测试中…
+                {t('测试中…')}
               </>
             ) : (
-              '测试连接'
+              t('测试连接')
             )}
           </button>
           <span className="ai-svc-dialog-hint" />
           <button type="button" className="ai-svc-act ai-svc-act-ghost" onClick={close}>
-            取消
+            {t('取消')}
           </button>
           <button
             type="button"
@@ -571,7 +575,7 @@ export function EditServiceOverlay({
             disabled={saving || !outputLimitValid}
             onClick={() => void save()}
           >
-            {saving ? '保存中…' : '保存服务'}
+            {saving ? t('保存中…') : t('保存服务')}
           </button>
         </footer>
       </div>

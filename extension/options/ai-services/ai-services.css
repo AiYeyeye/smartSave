@@ -1359,6 +1359,8 @@
 }
 .ai-svc-tabs {
   display: inline-flex;
+  flex-wrap: wrap;
+  max-width: 100%;
   gap: 2px;
   padding: 3px;
   margin: 0 0 20px;
@@ -1738,6 +1740,9 @@
   align-content: stretch;
   animation: zh-fade-up 200ms var(--ease-out) backwards;
 }
+.ai-svc-wizard-body.is-features {
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+}
 .ai-svc-wizard.is-compact {
   height: auto;
   max-height: calc(100dvh - 48px);
@@ -1747,6 +1752,33 @@
   align-content: start;
 }
 @media (max-width: 480px) {
+  .ai-svc-dialog.is-large .ai-svc-dialog-head {
+    display: grid;
+    grid-template-columns: 40px minmax(0, 1fr) 32px;
+    gap: 10px;
+    padding: 16px;
+  }
+  .ai-svc-dialog.is-large .ai-svc-dialog-head > .ai-svc-act {
+    grid-column: 2 / 4;
+    justify-self: start;
+    min-height: 44px;
+  }
+  .ai-svc-dialog.is-large .ai-svc-dialog-close {
+    grid-column: 3;
+    grid-row: 1;
+  }
+  .ai-svc-tabs .ai-svc-nav-item {
+    min-height: 44px;
+  }
+  .ai-svc-dialog-foot {
+    flex-wrap: wrap;
+  }
+  .ai-svc-dialog-hint {
+    flex-basis: 100%;
+  }
+  .ai-svc-dialog-foot .ai-svc-act {
+    min-height: 44px;
+  }
   .ai-svc-steps {
     flex-wrap: wrap;
     padding-inline: 16px;
@@ -1775,7 +1807,7 @@
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
   background: var(--surface);
-  min-height: 160px;
+  min-height: 0;
 }
 .ai-svc-wizard-models label {
   display: flex;
@@ -1901,6 +1933,32 @@
   flex: 1;
 }
 @media (max-width: 560px) {
+  .ai-svc-wizard-tools {
+    flex-wrap: wrap;
+  }
+  .ai-svc-wizard-tools .ai-svc-mini-search {
+    flex-basis: 100%;
+  }
+  .ai-svc-wizard-models label {
+    display: grid;
+    grid-template-columns: 16px minmax(0, 1fr);
+    gap: 4px 10px;
+    padding-block: 8px;
+  }
+  .ai-svc-wizard-models .tag,
+  .ai-svc-wizard-models .ai-svc-ctx {
+    grid-column: 2;
+    justify-self: start;
+  }
+  .ai-svc-wizard-all {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+  }
+  .ai-svc-wizard-all select {
+    min-width: 0;
+    width: 100%;
+  }
   .ai-svc-wizard-features li {
     flex-direction: column;
     align-items: stretch;

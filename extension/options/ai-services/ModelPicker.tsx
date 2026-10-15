@@ -1,3 +1,4 @@
+import { useI18n } from '../../ui/i18n';
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, Search } from 'lucide-react';
 import type { ConnectedService, FeatureAssignment } from './mock-data';
@@ -19,6 +20,7 @@ export function ModelPicker({
   /** Sidebar summary uses slightly denser trigger. */
   compact?: boolean;
 }) {
+  const { t, message } = useI18n();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const rootRef = useRef<HTMLDivElement>(null);
@@ -26,8 +28,8 @@ export function ModelPicker({
 
   const conn = services.find(c => c.id === feature.connId);
   const ctx = modelCtx(services, feature.connId, feature.modelId);
-  const main = feature.modelId ? `${feature.modelId}${ctx ? ` · ${ctx}` : ''}` : '选择模型';
-  const sub = conn ? conn.name : '未绑定连接';
+  const main = feature.modelId ? `${feature.modelId}${ctx ? ` · ${message(ctx)}` : ''}` : t('选择模型');
+  const sub = conn ? conn.name : t('未绑定连接');
 
   useEffect(() => {
     if (!open) return;
@@ -82,8 +84,8 @@ export function ModelPicker({
             <Search aria-hidden="true" />
             <input
               type="search"
-              placeholder="搜索模型"
-              aria-label="搜索模型"
+              placeholder={t('搜索模型')}
+              aria-label={t('搜索模型')}
               value={query}
               autoFocus
               onChange={e => setQuery(e.target.value)}
@@ -92,9 +94,9 @@ export function ModelPicker({
           <div className="ai-svc-picker-list">
             {groups.length === 0 ? (
               <div className="ai-svc-picker-empty">
-                {services.length === 0 ? '请先连接 AI 服务' : '没有匹配的模型'}
+                {services.length === 0 ? t('请先连接 AI 服务') : t('没有匹配的模型')}
                 <br />
-                <span style={{ fontSize: 11 }}>请先在「编辑 AI 服务」中启用模型</span>
+                <span style={{ fontSize: 11 }}>{t('请先在「编辑 AI 服务」中启用模型')}</span>
               </div>
             ) : (
               groups.map(g => (
@@ -115,7 +117,7 @@ export function ModelPicker({
                         }}
                       >
                         <span className="name">{m.id}</span>
-                        <span className="ctx">{m.ctx || ''}</span>
+                        <span className="ctx">{message(m.ctx || '')}</span>
                       </button>
                     );
                   })}

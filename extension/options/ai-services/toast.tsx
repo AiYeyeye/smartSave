@@ -1,10 +1,13 @@
 import { createContext, useCallback, useContext, useState, type PropsWithChildren } from 'react';
+import { useI18n } from '../../ui/i18n';
+import { serviceStatusText } from './status-text';
 
 type ToastApi = { toast: (msg: string) => void };
 
 const ToastContext = createContext<ToastApi | null>(null);
 
 export function ToastProvider({ children }: PropsWithChildren) {
+  const { language } = useI18n();
   const [items, setItems] = useState<{ id: number; msg: string }[]>([]);
   const toast = useCallback((msg: string) => {
     const id = Date.now() + Math.random();
@@ -17,7 +20,7 @@ export function ToastProvider({ children }: PropsWithChildren) {
       <div className="ai-svc-toast-host" aria-live="polite">
         {items.map(t => (
           <div key={t.id} className="ai-svc-toast">
-            {t.msg}
+            {serviceStatusText(language, t.msg)}
           </div>
         ))}
       </div>

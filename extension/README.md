@@ -41,7 +41,7 @@ AI routes support OpenAI Chat Completions and Responses, Anthropic Messages and 
 - `tests/`: unit/component and real-build integration tests. `tests/e2e/` contains explicitly invoked isolated browser fixtures.
 - `scripts/`, `checks/`: build validation and release inventories.
 
-Language and appearance preferences are stored locally and synchronize across open extension documents. Language switching must not remount task owners, trigger model calls or translate native bookmark content. English coverage is still being expanded beyond navigation, appearance and search.
+Language and appearance preferences are stored locally and synchronize across open extension documents. Language switching must not remount task owners, trigger model calls or translate native bookmark content. English covers navigation, appearance, search and AI service configuration/onboarding; other workspaces are still being migrated. Opt-in `tests/e2e/ai-services-localization.py --run` checks the quick setup path; add `--advanced` for model selection and feature assignment.
 
 ## Isolated browser acceptance
 

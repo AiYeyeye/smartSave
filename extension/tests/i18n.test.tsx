@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { LANGUAGE_KEY, LanguagePicker, LocaleProvider, translate, translateKnown, useI18n } from '../ui/i18n';
 import { english } from '../ui/i18n/catalog';
 import { searchStatusText } from '../panel/search-status-text';
+import { serviceStatusText } from '../options/ai-services/status-text';
 
 it('every translation preserves its parameters and interpolates values as literal text', () => {
   const placeholders = (value: string) => [...value.matchAll(/\{(\w+)\}/g)].map(match => match[1]).sort();
@@ -78,4 +79,14 @@ it('search status adapts numeric progress and known errors without translating a
   );
   expect(searchStatusText('en', '书签服务不可用。 仍可搜索上次读取的数据。')).toContain('previously loaded data');
   expect(searchStatusText('en', '书签用户标题 80')).toBe('书签用户标题 80');
+});
+it('service notifications translate status while preserving embedded model identifiers verbatim', () => {
+  expect(serviceStatusText('en', '已导入 3 个服务（不含密钥，请重新填写）')).toContain('Imported 3 services');
+  expect(serviceStatusText('en', '合成分类测试通过：已连接<&>')).toBe(
+    'Synthetic classification test passed: 已连接<&>',
+  );
+  expect(serviceStatusText('en', '未能获取模型列表：permission。仍可手填模型 ID。')).toContain(
+    'permission. You can still enter a model ID',
+  );
+  expect(serviceStatusText('en', '配置完成：收藏会用 保存服务 自动归类')).toContain('保存服务');
 });

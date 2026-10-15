@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { EditServiceOverlay } from '../options/ai-services/EditServiceOverlay';
 import type { ConnectedService } from '../options/ai-services/mock-data';
+import { LANGUAGE_KEY, LanguagePicker, LocaleProvider } from '../ui/i18n';
 
 const { toast } = vi.hoisted(() => ({ toast: vi.fn() }));
 vi.mock('../options/ai-services/toast', () => ({ useToast: () => ({ toast }) }));
@@ -59,6 +60,44 @@ beforeEach(() => {
   });
 });
 afterEach(() => vi.unstubAllGlobals());
+
+it('language switching preserves an edited service and the in-flight real transport request', async () => {
+  localStorage.setItem(LANGUAGE_KEY, 'en');
+  const pending = deferred<Response>();
+  const fetcher = vi.fn<typeof fetch>(() => pending.promise);
+  vi.stubGlobal('fetch', fetcher);
+  const save = vi.fn();
+  render(
+    createElement(
+      LocaleProvider,
+      null,
+      createElement(LanguagePicker),
+      createElement(EditServiceOverlay, {
+        service,
+        initialKey: 'key',
+        onClose: vi.fn(),
+        onSave: save,
+        onChangeService: vi.fn(),
+      }),
+    ),
+  );
+  const name = screen.getByLabelText('Name');
+  fireEvent.change(name, { target: { value: '已连接' } });
+  fireEvent.change(screen.getByLabelText('Maximum output tokens'), { target: { value: '64000' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Test connection' }));
+  await waitFor(() => expect(fetcher).toHaveBeenCalledOnce());
+  fireEvent.change(screen.getByLabelText('Language'), { target: { value: 'zh-CN' } });
+  expect(screen.getByLabelText('名称')).toBe(name);
+  expect(name).toHaveValue('已连接');
+  expect(screen.getByLabelText('最大输出 tokens')).toHaveValue(64000);
+  expect(screen.getByLabelText('API 密钥')).toHaveValue('key');
+  expect(fetcher.mock.calls[0]![1]?.signal?.aborted).toBe(false);
+  expect(screen.getByRole('button', { name: '测试中…' })).toBeDisabled();
+  await act(async () => pending.resolve(answer()));
+  await waitFor(() => expect(toast).toHaveBeenCalledWith('合成分类测试通过：first'));
+  expect(fetcher).toHaveBeenCalledOnce();
+  expect(save).not.toHaveBeenCalled();
+});
 
 it('uses the explicit model and restored JSON mode, and saves the transport choice', async () => {
   const fetcher = vi.fn<typeof fetch>(async () => answer());

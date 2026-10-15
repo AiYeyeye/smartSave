@@ -1,3 +1,4 @@
+import { useI18n } from '../../ui/i18n';
 import { useMemo, useState } from 'react';
 import { Check, Search, Sparkles, X, Zap } from 'lucide-react';
 import type { ConnectedService, FeatureAssignment } from './mock-data';
@@ -74,6 +75,7 @@ export function SetupWizard({
   onAssign: (changes: { featureId: string; connId: string; modelId: string }[]) => Promise<void>;
   onClose: (summary?: string) => void;
 }) {
+  const { t, message } = useI18n();
   const [step, setStep] = useState<Step>(onboarding ? 'quick' : initialStep);
   const [catalog, setCatalog] = useState(service.catalog);
   const [enabled, setEnabled] = useState<string[]>(() =>
@@ -184,7 +186,7 @@ export function SetupWizard({
 
   const keepLabel = (feature: FeatureAssignment) => {
     const other = services.find(s => s.id === feature.connId);
-    return `保持现有：${feature.modelId}${other ? ` · ${other.name}` : ''}`;
+    return t('保持现有：{model}', { model: `${feature.modelId}${other ? ` · ${other.name}` : ''}` });
   };
 
   return (
@@ -199,17 +201,17 @@ export function SetupWizard({
         <header className="ai-svc-dialog-head">
           <Avatar letter={service.letter} avatarClass={service.avatarClass} size="lg" />
           <div>
-            <h2 id="ai-wizard-title">设置 {service.name}</h2>
+            <h2 id="ai-wizard-title">{t('设置 {service}', { service: service.name })}</h2>
             <p>
               {onboarding
-                ? '连接已有服务，选择模型，再用当前网页试分类。也可以稍后继续。'
-                : '选择模型，再决定每个功能用哪个。可以跳过，之后在「AI 服务」里改。'}
+                ? t('连接已有服务，选择模型，再用当前网页试分类。也可以稍后继续。')
+                : t('选择模型，再决定每个功能用哪个。可以跳过，之后在「AI 服务」里改。')}
             </p>
           </div>
           <button
             type="button"
             className="ai-svc-dialog-close"
-            aria-label="关闭"
+            aria-label={t('关闭')}
             disabled={busy}
             onClick={() => onClose()}
           >
@@ -218,53 +220,55 @@ export function SetupWizard({
         </header>
 
         {onboarding ? (
-          <ol className="ai-svc-steps" aria-label="设置步骤">
+          <ol className="ai-svc-steps" aria-label={t('设置步骤')}>
             <li className="is-done">
               <span>
                 <Check aria-hidden="true" />
               </span>
-              选择已有服务
+              {t('选择已有服务')}
             </li>
             <li
               className={step === 'trial' ? 'is-done' : 'is-current'}
               aria-current={step !== 'trial' ? 'step' : undefined}
             >
-              <span>2</span>连接与模型
+              <span>2</span>
+              {t('连接与模型')}
             </li>
             <li className={step === 'trial' ? 'is-current' : ''} aria-current={step === 'trial' ? 'step' : undefined}>
-              <span>3</span>试分类网页
+              <span>3</span>
+              {t('试分类网页')}
             </li>
           </ol>
         ) : (
-          <ol className="ai-svc-steps" aria-label="设置步骤">
+          <ol className="ai-svc-steps" aria-label={t('设置步骤')}>
             <li className="is-done">
               <span>
                 <Check aria-hidden="true" />
               </span>
-              已连接
+              {t('已连接')}
             </li>
             <li
               className={step === 'models' ? 'is-current' : 'is-done'}
               aria-current={step === 'models' ? 'step' : undefined}
             >
               <span>{step === 'models' ? '2' : <Check aria-hidden="true" />}</span>
-              选择模型
+              {t('选择模型')}
             </li>
             <li
               className={step === 'features' ? 'is-current' : ''}
               aria-current={step === 'features' ? 'step' : undefined}
             >
               <span>3</span>
-              分配给功能
+              {t('分配给功能')}
             </li>
           </ol>
         )}
-        {error && <p role="alert">{error}</p>}
+        {error && <p role="alert">{message(error)}</p>}
 
         {step === 'quick' ? (
           <div className="ai-svc-dialog-body ai-svc-wizard-body">
             <div className="ai-svc-field">
-              <label htmlFor="ai-setup-model">使用哪个模型</label>
+              <label htmlFor="ai-setup-model">{t('使用哪个模型')}</label>
               <input
                 id="ai-setup-model"
                 list="ai-setup-models"
@@ -281,22 +285,22 @@ export function SetupWizard({
                   ))}
               </datalist>
             </div>
-            <p>可选择列表中的模型，或填写你已有服务提供的模型 ID。将用于尚未配置的功能，保留现有分配。</p>
+            <p>{t('可选择列表中的模型，或填写你已有服务提供的模型 ID。将用于尚未配置的功能，保留现有分配。')}</p>
             <details>
-              <summary>高级：多模型与功能分配</summary>
-              <p>需要不同功能使用不同模型时，可逐项设置。名称提示仅作参考，尚未进行准确率和速度排名。</p>
+              <summary>{t('高级：多模型与功能分配')}</summary>
+              <p>{t('需要不同功能使用不同模型时，可逐项设置。名称提示仅作参考，尚未进行准确率和速度排名。')}</p>
               <button
                 type="button"
                 className="ai-svc-act ai-svc-act-ghost"
                 disabled={busy}
                 onClick={() => setStep('models')}
               >
-                打开高级配置
+                {t('打开高级配置')}
               </button>
             </details>
             <footer className="ai-svc-dialog-foot">
               <button type="button" className="ai-svc-act ai-svc-act-ghost" disabled={busy} onClick={() => onClose()}>
-                稍后配置
+                {t('稍后配置')}
               </button>
               <button
                 type="button"
@@ -304,27 +308,29 @@ export function SetupWizard({
                 disabled={busy || !quickModel.trim() || NOT_CHAT.test(quickModel)}
                 onClick={() => void finishQuick()}
               >
-                {busy ? '保存中…' : '保存并继续'}
+                {busy ? t('保存中…') : t('保存并继续')}
               </button>
             </footer>
           </div>
         ) : step === 'trial' ? (
           <div className="ai-svc-dialog-body ai-svc-wizard-body">
-            <h3>在网页侧栏试一次</h3>
+            <h3>{t('在网页侧栏试一次')}</h3>
             <ol>
-              <li>回到你想分类的网页，点击智栏图标打开侧栏。</li>
-              <li>打开侧栏设置，选择「试分类当前网页」。</li>
-              <li>检查网页标题和网址，再点击「发送并试分类」。</li>
+              <li>{t('回到你想分类的网页，点击智栏图标打开侧栏。')}</li>
+              <li>{t('打开侧栏设置，选择「试分类当前网页」。')}</li>
+              <li>{t('检查网页标题和网址，再点击「发送并试分类」。')}</li>
             </ol>
-            <p>使用「智能收藏」分配的模型，遵循现有隐私设置，不读取正文。试分类只显示建议，不会创建或移动书签。</p>
-            <p>若密钥只保留在当前设置页，请先在服务设置中启用「记住密钥」，才能在侧栏或后台使用。</p>
+            <p>
+              {t('使用「智能收藏」分配的模型，遵循现有隐私设置，不读取正文。试分类只显示建议，不会创建或移动书签。')}
+            </p>
+            <p>{t('若密钥只保留在当前设置页，请先在服务设置中启用「记住密钥」，才能在侧栏或后台使用。')}</p>
             <footer className="ai-svc-dialog-foot">
               <button
                 type="button"
                 className="ai-svc-act ai-svc-act-primary"
                 onClick={() => onClose('配置已保存，可随时从侧栏设置试分类')}
               >
-                完成，稍后试分类
+                {t('完成，稍后试分类')}
               </button>
             </footer>
           </div>
@@ -335,8 +341,8 @@ export function SetupWizard({
                 <Search aria-hidden="true" />
                 <input
                   type="search"
-                  placeholder={`在 ${catalog.length} 个模型中搜索…`}
-                  aria-label="搜索模型"
+                  placeholder={t('在 {count} 个模型中搜索…', { count: catalog.length })}
+                  aria-label={t('搜索模型')}
                   value={query}
                   onChange={e => setQuery(e.target.value)}
                 />
@@ -347,20 +353,20 @@ export function SetupWizard({
                 onClick={() => setEnabled(rec.picked)}
               >
                 <Sparkles aria-hidden="true" />
-                推荐
+                {t('推荐')}
               </button>
               <button
                 type="button"
                 className="ai-svc-act ai-svc-act-ghost ai-svc-act-sm"
                 onClick={() => setEnabled([])}
               >
-                清空
+                {t('清空')}
               </button>
             </div>
             {catalog.length === 0 ? (
-              <p className="ai-svc-empty-hint">没有拿到模型列表。可以在下方手动输入模型 ID。</p>
+              <p className="ai-svc-empty-hint">{t('没有拿到模型列表。可以在下方手动输入模型 ID。')}</p>
             ) : (
-              <ul className="ai-svc-wizard-models" aria-label="可选模型">
+              <ul className="ai-svc-wizard-models" aria-label={t('可选模型')}>
                 {visible.map(m => {
                   const on = enabled.includes(m.id);
                   return (
@@ -371,14 +377,14 @@ export function SetupWizard({
                         {m.id === rec.fast ? (
                           <em className="tag is-fast">
                             <Zap aria-hidden="true" />
-                            轻量候选
+                            {t('轻量候选')}
                           </em>
                         ) : m.id === rec.strong ? (
-                          <em className="tag">通用候选</em>
+                          <em className="tag">{t('通用候选')}</em>
                         ) : NOT_CHAT.test(m.id) ? (
-                          <em className="tag is-muted">非对话</em>
+                          <em className="tag is-muted">{t('非对话')}</em>
                         ) : null}
-                        <span className="ai-svc-ctx">{m.ctx}</span>
+                        <span className="ai-svc-ctx">{message(m.ctx)}</span>
                       </label>
                     </li>
                   );
@@ -388,7 +394,7 @@ export function SetupWizard({
             <div className="ai-svc-custom-add">
               <input
                 type="text"
-                placeholder="不在列表里？输入模型 ID 添加"
+                placeholder={t('不在列表里？输入模型 ID 添加')}
                 value={customId}
                 onChange={e => setCustomId(e.target.value)}
                 onKeyDown={e => {
@@ -401,13 +407,13 @@ export function SetupWizard({
                 spellCheck={false}
               />
               <button type="button" className="ai-svc-act ai-svc-act-ghost ai-svc-act-sm" onClick={addCustom}>
-                添加
+                {t('添加')}
               </button>
             </div>
             <footer className="ai-svc-dialog-foot">
-              <span className="ai-svc-dialog-hint">已选 {enabled.length} 个</span>
+              <span className="ai-svc-dialog-hint">{t('已选 {count} 个', { count: enabled.length })}</span>
               <button type="button" className="ai-svc-act ai-svc-act-ghost" onClick={() => onClose()} disabled={busy}>
-                跳过，稍后配置
+                {t('跳过，稍后配置')}
               </button>
               <button
                 type="button"
@@ -415,19 +421,19 @@ export function SetupWizard({
                 onClick={() => void nextFromModels()}
                 disabled={busy || !enabled.length}
               >
-                下一步
+                {t('下一步')}
               </button>
             </footer>
           </div>
         ) : (
-          <div className="ai-svc-dialog-body ai-svc-wizard-body" key="features">
+          <div className="ai-svc-dialog-body ai-svc-wizard-body is-features" key="features">
             <p className="ai-svc-wizard-intro">
-              以下分配仅按模型名称初选，尚未评测速度、价格与准确率。请按已有服务的能力调整。
+              {t('以下分配仅按模型名称初选，尚未评测速度、价格与准确率。请按已有服务的能力调整。')}
             </p>
             <div className="ai-svc-wizard-all">
-              <span>全部使用</span>
-              <select aria-label="全部功能使用" value="" onChange={e => e.target.value && setAll(e.target.value)}>
-                <option value="">选择一个模型…</option>
+              <span>{t('全部使用')}</span>
+              <select aria-label={t('全部功能使用')} value="" onChange={e => e.target.value && setAll(e.target.value)}>
+                <option value="">{t('选择一个模型…')}</option>
                 {ordered.map(id => (
                   <option key={id} value={id}>
                     {id}
@@ -439,11 +445,11 @@ export function SetupWizard({
               {features.map(f => (
                 <li key={f.id}>
                   <div>
-                    <strong>{f.name}</strong>
-                    <small>{f.desc}</small>
+                    <strong>{message(f.name)}</strong>
+                    <small>{message(f.desc)}</small>
                   </div>
                   <select
-                    aria-label={`${f.name}使用的模型`}
+                    aria-label={t('{feature}使用的模型', { feature: message(f.name) })}
                     value={choice[f.id] ?? NONE}
                     onChange={e => setChoice(previous => ({ ...previous, [f.id]: e.target.value }))}
                   >
@@ -453,11 +459,11 @@ export function SetupWizard({
                     {ordered.map(id => (
                       <option key={id} value={id}>
                         {id}
-                        {id === rec.fast && FAST_FEATURES.has(f.id) ? '（推荐）' : ''}
-                        {id === rec.strong && !FAST_FEATURES.has(f.id) ? '（推荐）' : ''}
+                        {id === rec.fast && FAST_FEATURES.has(f.id) ? t('（推荐）') : ''}
+                        {id === rec.strong && !FAST_FEATURES.has(f.id) ? t('（推荐）') : ''}
                       </option>
                     ))}
-                    <option value={NONE}>暂不使用 AI</option>
+                    <option value={NONE}>{t('暂不使用 AI')}</option>
                   </select>
                 </li>
               ))}
@@ -470,11 +476,11 @@ export function SetupWizard({
                 disabled={busy}
                 hidden={initialStep === 'features'}
               >
-                上一步
+                {t('上一步')}
               </button>
               <span className="ai-svc-dialog-hint" />
               <button type="button" className="ai-svc-act ai-svc-act-ghost" onClick={() => onClose()} disabled={busy}>
-                跳过
+                {t('跳过')}
               </button>
               <button
                 type="button"
@@ -482,7 +488,7 @@ export function SetupWizard({
                 onClick={() => void finish()}
                 disabled={busy}
               >
-                完成
+                {t('完成')}
               </button>
             </footer>
           </div>

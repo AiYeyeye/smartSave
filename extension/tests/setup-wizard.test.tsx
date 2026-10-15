@@ -1,9 +1,10 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { expect, it, vi } from 'vitest';
 import { recommendAssignments, recommendModels, SetupWizard } from '../options/ai-services/SetupWizard';
 import { DEFAULT_FEATURES } from '../persistence/ai-services';
 import type { ConnectedService } from '../options/ai-services';
+import { LANGUAGE_KEY, LanguagePicker, LocaleProvider } from '../ui/i18n';
 
 const ids = ['gpt-4.1', 'gpt-4.1-mini', 'gpt-4o', 'text-embedding-3-small', 'tts-1'];
 const service: ConnectedService = {
@@ -20,6 +21,46 @@ const service: ConnectedService = {
   catalog: ids.map(id => ({ id, ctx: '' })),
   enabled: [],
 };
+
+it('English onboarding retains model input and existing assignments across language changes and a failed save', async () => {
+  localStorage.setItem(LANGUAGE_KEY, 'en');
+  const saved = vi.fn(async () => {});
+  const assigned = vi.fn().mockRejectedValueOnce(Error('quota')).mockResolvedValue(undefined);
+  const features = DEFAULT_FEATURES.map(feature =>
+    feature.id === 'search' ? { ...feature, connId: 'existing', modelId: 'existing-model' } : feature,
+  );
+  render(
+    <LocaleProvider>
+      <LanguagePicker />
+      <SetupWizard
+        service={{ ...service, name: '已连接' }}
+        services={[service]}
+        features={features}
+        onboarding
+        onSaveModels={saved}
+        onAssign={assigned}
+        onClose={vi.fn()}
+      />
+    </LocaleProvider>,
+  );
+  expect(screen.getByRole('heading', { name: 'Set up 已连接' })).toBeVisible();
+  const model = screen.getByLabelText('Model to use');
+  fireEvent.change(model, { target: { value: 'my-custom-model' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save and continue' }));
+  await screen.findByRole('alert');
+  expect(screen.getByRole('alert')).toHaveTextContent('your saved service is retained');
+  fireEvent.change(screen.getByLabelText('Language'), { target: { value: 'zh-CN' } });
+  expect(screen.getByLabelText('使用哪个模型')).toBe(model);
+  expect(model).toHaveValue('my-custom-model');
+  expect(screen.getByRole('alert')).toHaveTextContent('已保存的服务会保留');
+  fireEvent.click(screen.getByRole('button', { name: '保存并继续' }));
+  await screen.findByRole('heading', { name: '在网页侧栏试一次' });
+  expect(assigned.mock.calls[1]![0]).not.toEqual(
+    expect.arrayContaining([expect.objectContaining({ featureId: 'search' })]),
+  );
+  expect(assigned.mock.calls[1]![0]).toHaveLength(4);
+  expect(saved.mock.calls).toHaveLength(2);
+});
 
 it('recommends a fast model for per-bookmark work and a stronger one for whole-tree work, never embeddings', () => {
   expect(recommendModels(ids)).toMatchObject({ fast: 'gpt-4.1-mini', strong: 'gpt-4.1' });
