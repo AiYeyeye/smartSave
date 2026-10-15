@@ -1,4 +1,22 @@
 export const aiServicesEnglish = {
+  '用 Claude Pro/Max 登录': 'Sign in with Claude Pro/Max',
+  '用 GitHub 账号登录': 'Sign in with GitHub',
+  '用 Kimi 订阅登录': 'Sign in with a Kimi subscription',
+  '用 Meta AI 订阅登录': 'Sign in with a Meta AI subscription',
+  '用 ChatGPT 订阅登录': 'Sign in with a ChatGPT subscription',
+  '用 Grok/X 订阅登录': 'Sign in with a Grok/X subscription',
+  'Anthropic 自 2026 年 2 月起明确禁止第三方工具使用 Claude Pro/Max 订阅登录。请改用 Anthropic API Key（console.anthropic.com）。':
+    'Since February 2026, Anthropic explicitly prohibits third-party tools from using Claude Pro/Max subscription sign-in. Use an Anthropic API key instead (console.anthropic.com).',
+  'GitHub Copilot 没有向第三方扩展开放模型调用授权。非官方的设备码方案违反其条款，智栏不接入。':
+    'GitHub Copilot does not offer model access authorization for third-party extensions. Unofficial device-code methods violate its terms and are not supported by Zhilan.',
+  'Kimi 目前没有面向第三方扩展的官方订阅登录。请使用「月之暗面」API Key 连接。':
+    'Kimi does not currently offer official subscription sign-in for third-party extensions. Connect with a Moonshot API key.',
+  'Meta AI 订阅暂无面向浏览器扩展的公开 OAuth/API 接入。':
+    'Meta AI subscriptions currently have no public OAuth/API integration for browser extensions.',
+  'OpenAI 没有向第三方扩展开放 ChatGPT 订阅登录。请改用 OpenAI API Key（platform.openai.com）。':
+    'OpenAI does not offer ChatGPT subscription sign-in for third-party extensions. Use an OpenAI API key instead (platform.openai.com).',
+  'xAI 目前没有面向第三方扩展的官方订阅登录。请使用 xAI API Key。':
+    'xAI does not currently offer official subscription sign-in for third-party extensions. Use an xAI API key.',
   已连接: 'Connected',
   添加服务: 'Add service',
   功能用模: 'Feature models',

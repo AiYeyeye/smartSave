@@ -8,6 +8,14 @@ import { serviceStatusText } from '../options/ai-services/status-text';
 import { saveStatusText } from '../panel/save-status-text';
 import { organizeStatusText, organizePreviewText } from '../panel/organize-status-text';
 import { OverlayStatus } from '../panel/OverlayStatus';
+import { SUB_VENDORS } from '../domain/ai-providers';
+
+it('subscription alternatives and blocked sign-in explanations are localized even outside the happy path', () => {
+  for (const vendor of SUB_VENDORS) {
+    for (const text of [vendor.subtitle, vendor.oauthNote].filter((value): value is string => !!value))
+      expect(translateKnown('en', text), vendor.id).not.toMatch(/[\u4e00-\u9fff]/);
+  }
+});
 
 it('localizes the pre-authorization overlay status and preserves its explicit close-only action', () => {
   localStorage.setItem(LANGUAGE_KEY, 'en');

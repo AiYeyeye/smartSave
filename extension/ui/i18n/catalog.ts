@@ -11,6 +11,16 @@ import { importEnglish } from './import';
 import { preferencesEnglish } from './preferences';
 /** UI-owned messages only. Native bookmark content and provider output never enter this catalog. */
 export const english = {
+  'AI 服务配置不可用': 'AI service settings are unavailable',
+  '当前页面资料不可用；仅支持 http(s) 网页，请切换到网页标签后重试。':
+    'Page details are unavailable. Only HTTP(S) pages are supported. Switch to a webpage tab and try again.',
+  '无法确定当前标签页；请在浏览器窗口中重新打开智栏。':
+    'Could not identify the current tab. Reopen Zhilan in a browser window.',
+  '无法读取书签或安装身份，请重试。': 'Could not read bookmarks or the installation identity. Try again.',
+  本地网站规则: 'Local website rule',
+  本地同站点归类: 'Local same-site classification',
+  'Ollama（本地）': 'Ollama (local)',
+  'LM Studio（本地）': 'LM Studio (local)',
   '外观立即保存在本机；浏览器启用同步时，也会同步明暗模式和主题色。':
     'Appearance is saved locally immediately. Light/dark mode and accent color also sync when browser sync is enabled.',
   '语言立即保存在本机，并尝试通过浏览器同步。浏览器菜单和工具栏提示使用浏览器语言。':

@@ -55,6 +55,22 @@ afterEach(() => {
   resetDebugLogForTests();
 });
 
+it.each([
+  ['rule', 'Local website rule'],
+  ['domain', 'Local same-site classification'],
+  ['ai', '本地网站规则'],
+] as const)('localizes owned receipt provenance but preserves AI model labels: %s', (source, expected) => {
+  localStorage.setItem(LANGUAGE_KEY, 'en');
+  render(
+    createElement(
+      LocaleProvider,
+      null,
+      createElement(ReceiptView, { receipt: { ...base, source, model: '本地网站规则' } }),
+    ),
+  );
+  expect(screen.getByText(new RegExp(expected), { selector: '.receipt-meta' })).toBeVisible();
+});
+
 it('English receipt preserves native titles, paths and a pending undo across language switches', () => {
   localStorage.setItem(LANGUAGE_KEY, 'en');
   let complete!: (reply: unknown) => void;

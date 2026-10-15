@@ -133,15 +133,13 @@ it('uses only the final reconciled bookmark checkpoint and rejects uncertain or 
 it('bounds actual UTF-8 size and retains recent matching records', async () => {
   const tree = searchTree(1000);
   for (const node of tree.nodes) if (node.url) node.url += 'x'.repeat(4000);
-  const records = tree.nodes
-    .slice(1)
-    .map(node => ({
-      installationId: tree.installationId,
-      nativeId: node.ref.nativeId,
-      title: node.title,
-      url: node.url!,
-      keywords: ['流程图'],
-    }));
+  const records = tree.nodes.slice(1).map(node => ({
+    installationId: tree.installationId,
+    nativeId: node.ref.nativeId,
+    title: node.title,
+    url: node.url!,
+    keywords: ['流程图'],
+  }));
   let stored: unknown = records;
   const store = new BookmarkKeywordsStore(
     {

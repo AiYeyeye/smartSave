@@ -155,7 +155,9 @@ export function ReceiptView({
         <span className="receipt-meta">
           {receipt.status === 'classifying' ? null : `${receipt.title} · `}
           {ago(receipt.at, language)}
-          {receipt.model ? ` · ${receipt.model}` : ''}
+          {receipt.model
+            ? ` · ${receipt.source === 'rule' ? t('本地网站规则') : receipt.source === 'domain' ? t('本地同站点归类') : receipt.model}`
+            : ''}
           {receipt.ms && receipt.status !== 'skipped' ? ` · ${(receipt.ms / 1000).toFixed(1)}s` : ''}
         </span>
         {undoState !== 'idle' && undoState !== 'busy' ? (
