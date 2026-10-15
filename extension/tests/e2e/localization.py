@@ -41,8 +41,20 @@ with sync_playwright() as playwright:
         expect(page.locator('.search-hit-list button')).to_have_text(['搜索书签'])
         page.locator('summary', has_text='Search shortcuts').click()
         expect(page.get_by_text('Press Alt+Shift+K to open search.', exact=False)).to_contain_text('zl')
+        # Exercise the real storage.sync boundary without signing in or sending fixture data to a cloud account.
+        preferences.get_by_role('radio', name='Dark', exact=True).check()
+        preferences.wait_for_function("async()=> (await chrome.storage.sync.get('zhilan.preference.mode.v1'))['zhilan.preference.mode.v1']?.value==='dark'")
+        assert worker.evaluate("async()=>Object.keys(await chrome.storage.sync.get(null)).every(key=>['zhilan.preference.language.v1','zhilan.preference.mode.v1','zhilan.preference.accent.v1'].includes(key))")
+        worker.evaluate("()=>chrome.storage.sync.set({'zhilan.preference.accent.v1':{version:1,value:'teal'}})")
+        expect(page.locator('.theme-root')).to_have_attribute('data-accent', 'teal')
+        expect(preferences.locator('.theme-root')).to_have_attribute('data-accent', 'teal')
+        expect(page.get_by_role('searchbox')).to_have_value('搜索书签')
+        worker.evaluate("()=>chrome.storage.sync.set({'zhilan.preference.language.v1':{version:1,value:'zh-CN'}})")
+        expect(page.get_by_role('searchbox', name='搜索书签')).to_have_value('搜索书签')
+        worker.evaluate("()=>chrome.storage.sync.set({'zhilan.preference.language.v1':{version:1,value:'en'}})")
+        expect(preferences.get_by_role('heading', name='Appearance', exact=True)).to_be_visible()
         geometry = []
-        for width in [340, 480, 1024]:
+        for width in [320, 340, 480, 1024]:
             for target, name in [(page, 'search'), (preferences, 'appearance')]:
                 target.set_viewport_size({'width': width, 'height': 960})
                 measured = target.evaluate('({width:innerWidth,scroll:document.documentElement.scrollWidth})')
@@ -76,7 +88,7 @@ with sync_playwright() as playwright:
         assert worker.evaluate('()=>chrome.runtime.getManifest().omnibox.keyword') == 'zl'
         result = {'status': 'PASS', 'browser': context.browser.version, 'evidence': str(root), 'geometry': geometry,
                   'nativeBookmarksUnchanged': True, 'workerSHA256': hashlib.sha256((extension / 'service-worker.js').read_bytes()).hexdigest(),
-                  'scope': 'Unmodified production build; local preference persistence, cross-document switching, native-title preservation and English search/appearance at 340/480/1024. Forged embedded panel shows localized startup failure and sends close only. Other workspaces have separate acceptance fixtures.'}
+                  'scope': 'Unmodified production build; local preference persistence and actual storage.sync get/set/change propagation for the three allowlisted preferences. No signed-in account or cross-device cloud delivery claim. Cross-document switching retains query/native title; English search/appearance at320/340/480/1024. Forged embedded panel shows localized startup failure and sends close only. Other workspaces have separate acceptance fixtures.'}
         (root / 'results.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
         print(json.dumps(result), flush=True)
     except Exception:

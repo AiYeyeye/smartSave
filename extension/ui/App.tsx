@@ -15,6 +15,7 @@ import { PopupSettings } from './PopupSettings';
 import { PanelModePicker } from './PanelModePicker';
 import { useSearchKey, useSearchLaunch } from './search-entry';
 import { LocaleProvider, LanguagePicker, useI18n } from './i18n';
+import { startPreferenceSync } from './preferences-sync';
 import { ModelSettings } from '../options/ModelSettings';
 import { SiteRulesSettings } from '../options/SiteRulesSettings';
 import { RecoveryWorkbench } from '../options/RecoveryWorkbench';
@@ -70,6 +71,7 @@ function useShared() {
 }
 
 export function App({ page, overlay = false }: { page: Page; overlay?: boolean }) {
+  useEffect(startPreferenceSync, []);
   return (
     <LocaleProvider>
       <ThemeProvider>{page === 'panel' ? <PopupApp overlay={overlay} /> : <OptionsApp />}</ThemeProvider>

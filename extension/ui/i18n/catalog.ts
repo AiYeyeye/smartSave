@@ -11,6 +11,12 @@ import { importEnglish } from './import';
 import { preferencesEnglish } from './preferences';
 /** UI-owned messages only. Native bookmark content and provider output never enter this catalog. */
 export const english = {
+  '外观立即保存在本机；浏览器启用同步时，也会同步明暗模式和主题色。':
+    'Appearance is saved locally immediately. Light/dark mode and accent color also sync when browser sync is enabled.',
+  '语言立即保存在本机，并尝试通过浏览器同步。浏览器菜单和工具栏提示使用浏览器语言。':
+    'Language is saved locally immediately and synced through your browser when available. Browser menus and toolbar hints use the browser language.',
+  '仅同步语言、明暗模式和主题色；服务密钥、网址、目录规则和书签关键词保留在本机。同步不可用时仍可正常使用。':
+    'Only language, light/dark mode and accent color sync. Provider keys, URLs, folder rules and bookmark keywords stay local. You can keep using Zhilan when sync is unavailable.',
   '正在连接智栏…': 'Connecting to Zhilan…',
   关闭侧栏: 'Close sidebar',
   侧栏启动验证未通过: 'Could not start the sidebar',

@@ -1,8 +1,10 @@
 import { createContext, useContext, useEffect, useMemo, useState, type PropsWithChildren } from 'react';
 import { english, type MessageKey } from './catalog';
+import { LANGUAGE_KEY, type Language } from '../preferences';
+import { synchronizePreference } from '../preferences-sync';
 export type { MessageKey } from './catalog';
-export type Language = 'zh-CN' | 'en';
-export const LANGUAGE_KEY = 'zhilan.language';
+export type { Language } from '../preferences';
+export { LANGUAGE_KEY } from '../preferences';
 type Values = Record<string, string | number>;
 export function translate(language: Language, key: MessageKey, values: Values = {}): string {
   const template = language === 'en' ? english[key] : key;
@@ -52,6 +54,7 @@ export function LocaleProvider({ children }: PropsWithChildren) {
         setLanguage(next);
         try {
           localStorage.setItem(LANGUAGE_KEY, next);
+          synchronizePreference('language', next);
           setSaved(true);
         } catch {
           setSaved(false);
@@ -86,7 +89,10 @@ export function LanguagePicker() {
           English
         </option>
       </select>
-      <p className="hint">{t('语言保存在本机，已打开的智栏页面会同步切换。浏览器菜单和工具栏提示使用浏览器语言。')}</p>
+      <p className="hint">{t('语言立即保存在本机，并尝试通过浏览器同步。浏览器菜单和工具栏提示使用浏览器语言。')}</p>
+      <p className="hint">
+        {t('仅同步语言、明暗模式和主题色；服务密钥、网址、目录规则和书签关键词保留在本机。同步不可用时仍可正常使用。')}
+      </p>
       {!saved && <p role="status">{t('语言已切换，但无法保存。重新打开后可能恢复默认语言。')}</p>}
     </fieldset>
   );

@@ -1,11 +1,11 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { PropsWithChildren, ReactNode } from 'react';
 import { Monitor, Moon, Sun } from 'lucide-react';
 import { useI18n } from './i18n';
-
-export type ThemeMode = 'system' | 'light' | 'dark';
-export type Accent = 'indigo' | 'blue' | 'teal' | 'amber' | 'rose' | 'graphite';
-export type Appearance = { mode: ThemeMode; accent: Accent };
+import { APPEARANCE_KEY, readAppearance, type ThemeMode, type Accent, type Appearance } from './preferences';
+import { synchronizePreference } from './preferences-sync';
+export type { ThemeMode, Accent, Appearance } from './preferences';
+export { APPEARANCE_KEY } from './preferences';
 
 export const modes: { id: ThemeMode; name: string; icon: typeof Sun }[] = [
   { id: 'system', name: '跟随系统', icon: Monitor },
@@ -21,27 +21,11 @@ export const accents: { id: Accent; name: string; swatch: string }[] = [
   { id: 'graphite', name: '石墨', swatch: '#3a3f4a' },
 ];
 
-/** Popup and options share one extension origin, so localStorage carries the choice to both pages. */
-export const APPEARANCE_KEY = 'zhilan.appearance';
-const DEFAULT_APPEARANCE: Appearance = { mode: 'system', accent: 'indigo' };
-
-function readAppearance(): Appearance {
-  try {
-    const raw = globalThis.localStorage?.getItem(APPEARANCE_KEY);
-    if (!raw) return DEFAULT_APPEARANCE;
-    const parsed = JSON.parse(raw) as Partial<Appearance>;
-    return {
-      mode: modes.some(m => m.id === parsed.mode) ? (parsed.mode as ThemeMode) : DEFAULT_APPEARANCE.mode,
-      accent: accents.some(a => a.id === parsed.accent) ? (parsed.accent as Accent) : DEFAULT_APPEARANCE.accent,
-    };
-  } catch {
-    return DEFAULT_APPEARANCE;
-  }
-}
-
-function writeAppearance(value: Appearance) {
+function writeAppearance(value: Appearance, field: 'mode' | 'accent') {
   try {
     globalThis.localStorage?.setItem(APPEARANCE_KEY, JSON.stringify(value));
+    if (field === 'mode') synchronizePreference(field, value.mode);
+    else synchronizePreference(field, value.accent);
   } catch {
     /* private mode / blocked storage: keep the in-memory choice */
   }
@@ -62,6 +46,7 @@ export const THEME_OVERLAY_ID = 'theme-overlay';
 
 export function ThemeProvider({ children }: PropsWithChildren) {
   const [appearance, setAppearance] = useState<Appearance>(readAppearance);
+  const currentAppearance = useRef(appearance);
   const [dark, setDark] = useState(systemDark);
 
   useEffect(() => {
@@ -75,7 +60,10 @@ export function ThemeProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     // Another extension page changed the appearance.
     const onStorage = (event: StorageEvent) => {
-      if (event.key === APPEARANCE_KEY) setAppearance(readAppearance());
+      if (event.key === APPEARANCE_KEY) {
+        currentAppearance.current = readAppearance();
+        setAppearance(currentAppearance.current);
+      }
     };
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
@@ -93,18 +81,18 @@ export function ThemeProvider({ children }: PropsWithChildren) {
     () => ({
       appearance,
       resolved,
-      setMode: mode =>
-        setAppearance(previous => {
-          const next = { ...previous, mode };
-          writeAppearance(next);
-          return next;
-        }),
-      setAccent: accent =>
-        setAppearance(previous => {
-          const next = { ...previous, accent };
-          writeAppearance(next);
-          return next;
-        }),
+      setMode: mode => {
+        const next = { ...currentAppearance.current, mode };
+        currentAppearance.current = next;
+        setAppearance(next);
+        writeAppearance(next, 'mode');
+      },
+      setAccent: accent => {
+        const next = { ...currentAppearance.current, accent };
+        currentAppearance.current = next;
+        setAppearance(next);
+        writeAppearance(next, 'accent');
+      },
     }),
     [appearance, resolved],
   );
@@ -200,7 +188,7 @@ export function ThemePicker({ extra }: { extra?: ReactNode } = {}) {
           <b />
         </div>
       </div>
-      <p className="hint">{t('外观保存在本机浏览器，工具栏弹窗与设置页同步生效。')}</p>
+      <p className="hint">{t('外观立即保存在本机；浏览器启用同步时，也会同步明暗模式和主题色。')}</p>
     </div>
   );
 }
