@@ -62,8 +62,8 @@ export function AiSidebarSummary({
         <div className="ai-svc-block">
           <div className="ai-svc-feat-summary">
             {features.map(f => (
-              <div key={f.id} className="ai-svc-sb-feat-row">
-                <span className="ai-svc-sb-feat-label">{message(f.name)}</span>
+              <div key={f.id} className="ai-svc-sidebar-feat-row">
+                <span className="ai-svc-sidebar-feat-label">{message(f.name)}</span>
                 {onAssign ? (
                   <ModelPicker
                     feature={f}
