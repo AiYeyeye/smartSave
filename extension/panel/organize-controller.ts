@@ -16,7 +16,7 @@ import {
 import { modelOutputTokenLimit, modelStreaming } from '../domain/model-route';
 import { organizeProgressPreview } from '../domain/organize-progress';
 import { organizePreference, type OrganizePreference } from '../domain/organize-preferences';
-import { organizeRejectionKey } from '../domain/organize-review';
+import { defaultOrganizeScope, organizeRejectionKey } from '../domain/organize-review';
 import { DEFAULT_CLASSIFICATION_POLICY } from '../domain/classification-policy';
 import { dependencyDigest, settingsIdentity } from '../domain/context-dependencies';
 import type { TreeSnapshot, TreeState } from '../domain/node-reference';
@@ -162,6 +162,7 @@ export class OrganizeController {
     message: '请选择整理范围；扫描与提案都不会自动写入。',
   };
   private generation = 0;
+  private scopeInitialized = false;
   private lease?: OrganizerLease;
   private stop?: () => void;
   private applying = false;
@@ -238,6 +239,10 @@ export class OrganizeController {
   }
   setTree(tree: TreeState) {
     this.state.tree = structuredClone(tree);
+    if (tree.status === 'ready' && !this.scopeInitialized) {
+      this.scopeInitialized = true;
+      this.state.scopeId = defaultOrganizeScope(tree.snapshot);
+    }
     // Only a change inside the retained scope invalidates; loading/error carry no scope evidence and wait for ready.
     if (
       tree.status === 'ready' &&
@@ -250,24 +255,32 @@ export class OrganizeController {
     this.publish();
   }
   selectScope(id: string) {
-    if (this.state.busy || id === this.state.scopeId) return;
+    if (this.state.busy) return;
+    this.scopeInitialized = true;
+    if (id === this.state.scopeId) return;
     this.invalidate(undefined, 'scope-selected');
     this.state.scopeId = id;
     this.publish();
   }
   toggle(id: string, selected: boolean) {
+    this.toggleMany([id], selected);
+  }
+  toggleMany(ids: string[], selected: boolean) {
     if (this.state.busy || this.state.invalid || !this.state.proposal) return;
-    if (this.state.pipeline?.lockedActionIds.includes(id)) return;
     const proposal = this.state.proposal;
-    const chosen = new Set(this.state.selected.filter(v => v !== id));
+    const locked = new Set(this.state.pipeline?.lockedActionIds);
+    const actions = new Map(proposal.actions.map(action => [action.id, action]));
+    const changed = new Set(ids.filter(id => actions.has(id) && !locked.has(id)));
+    if (!changed.size) return;
+    const chosen = new Set(this.state.selected.filter(id => !changed.has(id)));
     const add = (value: string) => {
       if (chosen.has(value)) return;
-      const action = proposal.actions.find(a => a.id === value);
+      const action = actions.get(value);
       if (!action) return;
       chosen.add(value);
       actionDependencies(proposal, action, this.state.targets).forEach(add);
     };
-    if (selected) add(id);
+    if (selected) changed.forEach(add);
     this.state.selected = reconcileOrganizeSelection(proposal, [...chosen], this.state.targets);
     this.publish();
   }

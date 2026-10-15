@@ -1,6 +1,23 @@
 import type { TreeSnapshot } from './node-reference';
 import { organizeCompilation, type OrganizeAction, type OrganizeProposal } from './organize-proposal';
 
+/** Prefer the first writable native root in browser order, without matching localized titles. */
+export function defaultOrganizeScope(tree: TreeSnapshot): string {
+  const nodes = new Map(tree.nodes.map(node => [node.ref.nativeId, node]));
+  const pending = [...tree.roots];
+  const seen = new Set<string>();
+  while (pending.length) {
+    const id = pending.shift()!;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const node = nodes.get(id);
+    if (node?.ref.kind !== 'folder') continue;
+    if (node.childrenWritable) return id;
+    pending.push(...node.childrenIds);
+  }
+  return '';
+}
+
 export function organizePaths(tree?: TreeSnapshot) {
   const nodes = new Map(tree?.nodes.map(n => [n.ref.nativeId, n]));
   const paths = new Map<string, string>();

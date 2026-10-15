@@ -247,6 +247,12 @@
 .organize-flow-details article { padding-block: 12px; border-bottom: 1px solid var(--divider); }
 .organize-flow-details summary { min-height: 44px; padding-block: 10px; cursor: pointer; }
 .organize-flow-details ul { padding-left: 20px; }
+.organize-target-review { display: grid; gap: 12px; min-width: 0; overflow-wrap: anywhere; }
+.organize-target-review article { padding-block: 12px; border-bottom: 1px solid var(--divider); }
+.organize-group-choice { display: flex; align-items: center; gap: 10px; min-height: 44px; font-weight: 600; }
+.organize-target-review summary, .organize-advanced > summary { min-height: 44px; padding-block: 10px; cursor: pointer; }
+.organize-target-review .workflow-review-row { margin-block: 12px; }
+.organize-advanced[open] { display: grid; gap: 14px; }
 .workflow-file-input {
   padding: 12px;
   background: var(--sunken);

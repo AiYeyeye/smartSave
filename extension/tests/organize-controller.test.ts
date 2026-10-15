@@ -76,6 +76,34 @@ function setup() {
     invalidate: () => listeners.forEach(cb => cb()),
   };
 }
+it('defaults to the first writable native root and preserves an explicit scope across tree refreshes', () => {
+  let state!: OrganizeState;
+  const controller = new OrganizeController(value => {
+    state = value;
+  });
+  const tree = organizerTree();
+  tree.nodes.reverse(); // Browser child order, rather than flat projection order or localized title.
+  controller.setTree({ status: 'ready', snapshot: tree });
+  expect(state.scopeId).toBe('bar');
+  controller.selectScope('right');
+  controller.setTree({ status: 'ready', snapshot: tree });
+  expect(state.scopeId).toBe('right');
+  controller.selectScope('');
+  controller.setTree({ status: 'ready', snapshot: tree });
+  expect(state.scopeId).toBe('');
+  controller.dispose();
+});
+it('selects or cancels a target group in one update and ignores foreign action IDs', async () => {
+  const h = setup();
+  await h.controller.generate();
+  expect(h.state().selected).toEqual(expect.arrayContaining(['move:a', 'move:b']));
+  h.controller.toggleMany(['move:a', 'move:b', 'foreign'], false);
+  expect(h.state().selected).toEqual([]);
+  h.controller.toggleMany(['move:a', 'move:b', 'foreign'], true);
+  expect(h.state().selected).toEqual(['move:a', 'move:b']);
+  expect(h.send).not.toHaveBeenCalled();
+  h.controller.dispose();
+});
 it('retains actionable failure context, no partial proposal, and clears it on retry', async () => {
   const h = setup();
   h.model.run.mockResolvedValueOnce({ status: 'failed', reason: 'incomplete', detail: 'output-limit' });

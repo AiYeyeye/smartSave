@@ -16,6 +16,7 @@ import {
 } from '../domain/organize-proposal';
 import { OrganizeTreePreview } from './OrganizeTreePreview';
 import { OrganizeFlowDetails } from './OrganizeFlowDetails';
+import { OrganizeTargetReview } from './OrganizeTargetReview';
 import { cancellable } from '../domain/cancellable';
 import { OrganizeMemoryStore, emptyOrganizeMemory, type OrganizeMemory } from '../persistence/organize-memory';
 import type { DuplicateChoice } from '../domain/exact-duplicates';
@@ -238,17 +239,38 @@ export function OrganizeWorkbench({
   const folderReview = state.pipeline?.stage === 'folders';
   const batchIncomplete = !!state.pipeline && state.pipeline.stage !== 'complete';
   const locked = (id: string) => state.pipeline?.lockedActionIds.includes(id) ?? false;
+  const bookmarkMoves = useMemo(() => {
+    const nodes = new Map(proposal?.tree.nodes.map(node => [node.ref.nativeId, node]));
+    return (
+      proposal?.actions.filter(
+        action =>
+          action.kind === 'move' &&
+          nodes.get(action.sourceId)?.ref.kind === 'bookmark' &&
+          !ignoredActions.includes(action),
+      ) ?? []
+    );
+  }, [proposal, ignoredActions]);
+  const targetLabels = useMemo(
+    () =>
+      new Map(
+        proposal?.targetIds.map(id => [
+          id,
+          (!folderReview && (projectedPaths.get(id) ?? projectedPaths.get(`$batch:create:${id}:$created`))) ||
+            proposalPaths.get(id) ||
+            proposal.actions.find(a => a.kind === 'create' && a.sourceId === id)?.title ||
+            id,
+        ]),
+      ),
+    [proposal, proposalPaths, projectedPaths, folderReview],
+  );
   const targetOptions = useMemo(
     () =>
       proposal?.targetIds.map(id => (
         <option key={id} value={id}>
-          {(!folderReview && (projectedPaths.get(id) ?? projectedPaths.get(`$batch:create:${id}:$created`))) ||
-            proposalPaths.get(id) ||
-            proposal.actions.find(a => a.kind === 'create' && a.sourceId === id)?.title ||
-            id}
+          {targetLabels.get(id)}
         </option>
       )),
-    [proposal, proposalPaths, projectedPaths, folderReview],
+    [proposal, targetLabels],
   );
   return (
     <section
@@ -318,49 +340,48 @@ export function OrganizeWorkbench({
           </label>
         </div>
         {method === 'ai' && (
-          <div className="organize-preferences">
-            <label>
-              分类方式
-              <Select
-                aria-label="分类方式"
-                value={style}
-                disabled={state.busy}
-                onChange={e => {
-                  owner.current?.cancel();
-                  setStyle(e.target.value as OrganizeStyle);
-                }}
-              >
-                {ORGANIZE_STYLES.map(option => (
-                  <option key={option.id} value={option.id}>
-                    {option.label}
-                  </option>
-                ))}
-              </Select>
-            </label>
-            <p className="hint">{ORGANIZE_STYLES.find(option => option.id === style)?.hint}</p>
-            <label>
-              {style === 'custom' ? '你的分类要求（必填）' : '补充要求（选填）'}
-              <textarea
-                aria-label="分类要求"
-                rows={3}
-                maxLength={ORGANIZE_INSTRUCTIONS_LIMIT}
-                value={instructions}
-                disabled={state.busy}
-                placeholder="例如：分成写作、画图、编程，目录用中文；拿不准的保持原位。"
-                onChange={e => {
-                  owner.current?.cancel();
-                  setInstructions(e.target.value);
-                }}
-              />
-            </label>
-            <p className="hint">
-              仅用于本次整理；要求会与所选范围的书签信息一起发送给 AI。{instructions.length}/
-              {ORGANIZE_INSTRUCTIONS_LIMIT}
-            </p>
-          </div>
-        )}
-        {method === 'ai' && (
-          <>
+          <details className="workflow-help organize-advanced">
+            <summary>高级选项</summary>
+            <div className="organize-preferences">
+              <label>
+                分类方式
+                <Select
+                  aria-label="分类方式"
+                  value={style}
+                  disabled={state.busy}
+                  onChange={e => {
+                    owner.current?.cancel();
+                    setStyle(e.target.value as OrganizeStyle);
+                  }}
+                >
+                  {ORGANIZE_STYLES.map(option => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </Select>
+              </label>
+              <p className="hint">{ORGANIZE_STYLES.find(option => option.id === style)?.hint}</p>
+              <label>
+                {style === 'custom' ? '你的分类要求（必填）' : '补充要求（选填）'}
+                <textarea
+                  aria-label="分类要求"
+                  rows={3}
+                  maxLength={ORGANIZE_INSTRUCTIONS_LIMIT}
+                  value={instructions}
+                  disabled={state.busy}
+                  placeholder="例如：分成写作、画图、编程，目录用中文；拿不准的保持原位。"
+                  onChange={e => {
+                    owner.current?.cancel();
+                    setInstructions(e.target.value);
+                  }}
+                />
+              </label>
+              <p className="hint">
+                仅用于本次整理；要求会与所选范围的书签信息一起发送给 AI。{instructions.length}/
+                {ORGANIZE_INSTRUCTIONS_LIMIT}
+              </p>
+            </div>
             <label>
               每批最多书签
               <input
@@ -384,10 +405,7 @@ export function OrganizeWorkbench({
                 请输入大于或等于 1 的有效整数。
               </p>
             )}
-            <p className="hint">
-              默认每批最多 100
-              条，可自定义数量。同时按内容长度自动拆分，每批完成就能查看。请保持本页面打开；切换页内栏目不影响生成，关闭或刷新页面会丢失本次进度。
-            </p>
+            <p className="hint">默认每批最多 100 条，可自定义数量。同时按内容长度自动拆分，每批完成就能查看。</p>
             <label className="organize-option">
               <input
                 type="checkbox"
@@ -464,7 +482,7 @@ export function OrganizeWorkbench({
                 </button>
               )}
             </details>
-          </>
+          </details>
         )}
         {memoryError && (
           <p role="alert">
@@ -476,6 +494,11 @@ export function OrganizeWorkbench({
         )}
         {memoryBusy && !state.busy && <p role="status">正在读取或保存整理偏好…</p>}
         {method === 'ai' && scopeProtected && <p role="status">该范围位于受保护分类中，请取消保护或选择其他范围。</p>}
+        {method === 'ai' && (
+          <p className="hint">
+            默认按主题整理。请保持本页面打开；切换页内栏目不影响生成，关闭或刷新页面会丢失本次进度。
+          </p>
+        )}
         <p className="hint">这一步只生成建议，不会修改书签。</p>
         <div className="workflow-footer">
           <button
@@ -680,116 +703,149 @@ export function OrganizeWorkbench({
             <article>
               <h3>本次整理：{proposalPaths.get(proposal.scope.nativeId)}</h3>
               {!state.invalid && review?.tree && (
-                <>
+                <details className="workflow-help">
+                  <summary>完整分类树与内容去向</summary>
                   <OrganizeTreePreview proposal={proposal} after={review.tree} selected={state.selected} />
                   <OrganizeFlowDetails proposal={proposal} after={review.tree} />
-                </>
+                </details>
               )}
               {review?.error && <p role="alert">{review.error}</p>}
               {state.invalid && <p role="alert">此方案已失效，请重新生成；下方仅保留旧建议供核对。</p>}
-              <section className="organize-adjustments" aria-label="详细调整方案">
-                <header className="organize-adjustments-heading">
-                  <h3>详细调整方案</h3>
-                  <p className="hint">逐条决定是否采用，下方选择会同步更新上方分类预览。</p>
-                </header>
-                {!!ignoredActions.length && (
-                  <details className="workflow-help">
-                    <summary>已按你的记录忽略 {ignoredActions.length} 条建议（含关联操作）</summary>
-                    {ignoredActions.map(action => (
-                      <p key={action.id}>
-                        {action.title}
-                        {memory.rejected.some(r => r.signature === rejectionKeys.get(action.id)) ? (
-                          <button
-                            disabled={state.busy || memoryBusy}
-                            onClick={() =>
-                              void changeMemory(value => ({
-                                ...value,
-                                rejected: value.rejected.filter(r => r.signature !== rejectionKeys.get(action.id)),
-                              }))
-                            }
-                          >
-                            恢复此建议
-                          </button>
-                        ) : (
-                          <small>随前置建议一同忽略；恢复前置建议后可重新选择。</small>
+              <p className="workflow-summary">
+                已选 {state.selected.length} / {proposal.actions.length} 项建议
+              </p>
+              {method === 'ai' && (
+                <OrganizeTargetReview
+                  proposal={proposal}
+                  actions={bookmarkMoves}
+                  selected={state.selected}
+                  targets={state.targets}
+                  targetLabels={targetLabels}
+                  targetOptions={targetOptions}
+                  disabled={state.busy || state.invalid || !!state.result}
+                  rejectDisabled={memoryBusy}
+                  reject={rememberRejection}
+                  toggle={(id, value) => owner.current?.toggle(id, value)}
+                  toggleMany={(ids, value) => owner.current?.toggleMany(ids, value)}
+                  target={(id, value) => owner.current?.target(id, value)}
+                />
+              )}
+              <details className="workflow-help" open={folderReview}>
+                <summary>
+                  目录变更与其他操作 ·{' '}
+                  {
+                    proposal.actions.filter(
+                      action => !bookmarkMoves.includes(action) && !ignoredActions.includes(action),
+                    ).length
+                  }{' '}
+                  项
+                </summary>
+                <section className="organize-adjustments" aria-label="详细调整方案">
+                  <header className="organize-adjustments-heading">
+                    <h3>详细调整方案</h3>
+                    <p className="hint">逐条决定是否采用，下方选择会同步更新上方分类预览。</p>
+                  </header>
+                  {!!ignoredActions.length && (
+                    <details className="workflow-help">
+                      <summary>已按你的记录忽略 {ignoredActions.length} 条建议（含关联操作）</summary>
+                      {ignoredActions.map(action => (
+                        <p key={action.id}>
+                          {action.title}
+                          {memory.rejected.some(r => r.signature === rejectionKeys.get(action.id)) ? (
+                            <button
+                              disabled={state.busy || memoryBusy}
+                              onClick={() =>
+                                void changeMemory(value => ({
+                                  ...value,
+                                  rejected: value.rejected.filter(r => r.signature !== rejectionKeys.get(action.id)),
+                                }))
+                              }
+                            >
+                              恢复此建议
+                            </button>
+                          ) : (
+                            <small>随前置建议一同忽略；恢复前置建议后可重新选择。</small>
+                          )}
+                        </p>
+                      ))}
+                    </details>
+                  )}
+                  <p className="hint">
+                    先核对整体分类，再查看每条建议。取消勾选会同步取消依赖操作；勾选时会同时选中必要的前置操作。
+                  </p>
+                  {proposal.actions
+                    .filter(action => !ignoredActions.includes(action) && !bookmarkMoves.includes(action))
+                    .map(action => (
+                      <div className="workflow-review-row" key={action.id}>
+                        <label>
+                          <input
+                            type="checkbox"
+                            aria-label={`选择 ${action.id}`}
+                            checked={state.selected.includes(action.id)}
+                            disabled={state.busy || state.invalid || !!state.result || locked(action.id)}
+                            onChange={e => owner.current?.toggle(action.id, e.target.checked)}
+                          />
+                          {actionNames[action.kind]}：{action.title}
+                        </label>
+                        <p>当前路径：{action.kind === 'create' ? '新建目录' : proposalPaths.get(action.sourceId)}</p>
+                        <div className="organize-reason">
+                          <p>建议理由：{action.reason ?? '清理链接完全相同的重复书签，保留已明确指定的副本。'}</p>
+                          {method === 'ai' && (
+                            <button
+                              className="organize-reject"
+                              title="记住此选择，以后不再建议这个操作；仅本次不采用请取消勾选"
+                              disabled={
+                                state.busy || state.invalid || !!state.result || memoryBusy || locked(action.id)
+                              }
+                              onClick={() => rememberRejection(action)}
+                            >
+                              不再建议
+                            </button>
+                          )}
+                        </div>
+                        {action.newTitle && (
+                          <p>
+                            名称：{action.title} → <strong>{action.newTitle}</strong>
+                          </p>
                         )}
-                      </p>
-                    ))}
-                  </details>
-                )}
-                <p className="hint">
-                  先核对整体分类，再查看每条建议。取消勾选会同步取消依赖操作；勾选时会同时选中必要的前置操作。
-                </p>
-                {proposal.actions
-                  .filter(action => !ignoredActions.includes(action))
-                  .map(action => (
-                    <div className="workflow-review-row" key={action.id}>
-                      <label>
-                        <input
-                          type="checkbox"
-                          aria-label={`选择 ${action.id}`}
-                          checked={state.selected.includes(action.id)}
-                          disabled={state.busy || state.invalid || !!state.result || locked(action.id)}
-                          onChange={e => owner.current?.toggle(action.id, e.target.checked)}
-                        />
-                        {actionNames[action.kind]}：{action.title}
-                      </label>
-                      <p>当前路径：{action.kind === 'create' ? '新建目录' : proposalPaths.get(action.sourceId)}</p>
-                      <div className="organize-reason">
-                        <p>建议理由：{action.reason ?? '清理链接完全相同的重复书签，保留已明确指定的副本。'}</p>
-                        {method === 'ai' && (
-                          <button
-                            className="organize-reject"
-                            title="记住此选择，以后不再建议这个操作；仅本次不采用请取消勾选"
-                            disabled={state.busy || state.invalid || !!state.result || memoryBusy || locked(action.id)}
-                            onClick={() => rememberRejection(action)}
-                          >
-                            不再建议
-                          </button>
+                        {!!actionDependencies(proposal, action, state.targets).length && (
+                          <p className="hint">
+                            需要同时选择：
+                            {actionDependencies(proposal, action, state.targets)
+                              .map(id => proposal.actions.find(a => a.id === id)?.title ?? id)
+                              .join('、')}
+                          </p>
+                        )}
+                        {action.targetId && (
+                          <label>
+                            建议目标
+                            <Select
+                              aria-label={`${action.id} 目标`}
+                              disabled={state.busy || state.invalid || !!state.result || locked(action.id)}
+                              value={state.targets[action.id] ?? action.targetId}
+                              onChange={e => owner.current?.target(action.id, e.target.value)}
+                            >
+                              {targetOptions}
+                            </Select>
+                          </label>
+                        )}
+                        {action.kind === 'merge' && (
+                          <>
+                            <p>
+                              先迁移下列直接子项（包含其内容），然后仅移除空目录：{action.title}
+                              。任何新增子项都将导致停止。
+                            </p>
+                            <ul>
+                              {action.children.map(id => (
+                                <li key={id}>{proposalPaths.get(id)}</li>
+                              ))}
+                            </ul>
+                          </>
                         )}
                       </div>
-                      {action.newTitle && (
-                        <p>
-                          名称：{action.title} → <strong>{action.newTitle}</strong>
-                        </p>
-                      )}
-                      {!!actionDependencies(proposal, action, state.targets).length && (
-                        <p className="hint">
-                          需要同时选择：
-                          {actionDependencies(proposal, action, state.targets)
-                            .map(id => proposal.actions.find(a => a.id === id)?.title ?? id)
-                            .join('、')}
-                        </p>
-                      )}
-                      {action.targetId && (
-                        <label>
-                          建议目标
-                          <Select
-                            aria-label={`${action.id} 目标`}
-                            disabled={state.busy || state.invalid || !!state.result || locked(action.id)}
-                            value={state.targets[action.id] ?? action.targetId}
-                            onChange={e => owner.current?.target(action.id, e.target.value)}
-                          >
-                            {targetOptions}
-                          </Select>
-                        </label>
-                      )}
-                      {action.kind === 'merge' && (
-                        <>
-                          <p>
-                            先迁移下列直接子项（包含其内容），然后仅移除空目录：{action.title}
-                            。任何新增子项都将导致停止。
-                          </p>
-                          <ul>
-                            {action.children.map(id => (
-                              <li key={id}>{proposalPaths.get(id)}</li>
-                            ))}
-                          </ul>
-                        </>
-                      )}
-                    </div>
-                  ))}
-              </section>
+                    ))}
+                </section>
+              </details>
             </article>
           )}
         </div>

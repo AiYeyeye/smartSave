@@ -58,6 +58,9 @@ it('requires custom instructions, previews streaming suggestions read-only and e
     setAccessLevel: async () => {},
   });
   render(<OrganizeWorkbench visible settings={settings} createController={create} />);
+  expect(screen.getByLabelText('整理范围')).toHaveValue('bar');
+  expect(screen.getByLabelText('每批最多书签')).not.toBeVisible();
+  fireEvent.click(screen.getByText('高级选项'));
   expect(screen.getByLabelText('每批最多书签')).toHaveValue(100);
   fireEvent.change(screen.getByLabelText('整理范围'), { target: { value: 'bar' } });
   fireEvent.change(screen.getByLabelText('分类方式'), { target: { value: 'custom' } });
@@ -116,6 +119,12 @@ it('requires custom instructions, previews streaming suggestions read-only and e
   expect(screen.queryByRole('alert', { name: '整理未完成' })).toBeNull();
   const footer = screen.getByRole('button', { name: '下一步：确认操作' }).closest('.organize-footer')!;
   expect(footer).toHaveTextContent('全部 1 批已完成');
+  expect(screen.getByRole('region', { name: '按目标目录审核' })).toBeVisible();
+  expect(screen.getByRole('list', { name: '整理后分类树', hidden: true })).not.toBeVisible();
+  fireEvent.click(screen.getByRole('checkbox', { name: /^采纳 / }));
+  expect(screen.getByRole('button', { name: '下一步：确认操作' })).toBeDisabled();
+  fireEvent.click(screen.getByRole('checkbox', { name: /^采纳 / }));
+  expect(screen.getByRole('button', { name: '下一步：确认操作' })).toBeEnabled();
   fireEvent.click(screen.getByLabelText('选择 move:a'));
   expect(footer).toHaveTextContent('请至少勾选一项建议');
   expect(screen.getByRole('button', { name: '下一步：确认操作' })).toBeDisabled();
@@ -232,7 +241,7 @@ it('requires an explicit kept duplicate and a separate final confirmation before
   };
   const apply = vi.spyOn(OrganizeController.prototype, 'apply').mockResolvedValue(undefined);
   render(<OrganizeWorkbench visible createController={create} />);
-  expect(screen.getByRole('button', { name: '下一步：查找重复书签' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: '下一步：查找重复书签' })).toBeEnabled();
   fireEvent.change(screen.getByLabelText('整理范围'), { target: { value: 'bar' } });
   fireEvent.click(screen.getByRole('button', { name: '下一步：查找重复书签' }));
   expect(screen.getByRole('button', { name: '生成去重预览' })).toBeDisabled();
