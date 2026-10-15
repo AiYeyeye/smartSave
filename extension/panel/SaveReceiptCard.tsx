@@ -1,3 +1,4 @@
+import { useI18n } from '../ui/i18n';
 import { useEffect, useState } from 'react';
 import { AlertTriangle, Check, CornerUpLeft, Loader, Minus, X } from 'lucide-react';
 import { readSaveReceipts, receiptReasonText, SAVE_RECEIPTS_KEY, type SaveReceipt } from '../persistence/save-receipts';
@@ -36,14 +37,16 @@ export function useSaveReceipts() {
   return receipts;
 }
 
-function ago(at: number) {
+function ago(at: number, language: 'zh-CN' | 'en') {
   const seconds = Math.max(0, Math.round((Date.now() - at) / 1000));
-  if (seconds < 60) return '刚刚';
+  if (seconds < 60) return language === 'en' ? 'Just now' : '刚刚';
   const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes} 分钟前`;
+  if (minutes < 60)
+    return language === 'en' ? new Intl.RelativeTimeFormat('en').format(-minutes, 'minute') : `${minutes} 分钟前`;
   const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours} 小时前`;
-  return new Date(at).toLocaleDateString();
+  if (hours < 24)
+    return language === 'en' ? new Intl.RelativeTimeFormat('en').format(-hours, 'hour') : `${hours} 小时前`;
+  return new Date(at).toLocaleDateString(language);
 }
 
 const CONFIG_REASONS = new Set(['save-feature-unconfigured', 'service-missing', 'no-key', 'http-401', 'http-403']);
@@ -59,6 +62,7 @@ export function ReceiptView({
   onOpen?: (route: string) => void;
   compact?: boolean;
 }) {
+  const { t, message: localize, language } = useI18n();
   const [undoState, setUndoState] = useState<'idle' | 'busy' | string>('idle');
   const [correcting, setCorrecting] = useState(false);
   const tone =
@@ -70,7 +74,7 @@ export function ReceiptView({
           ? 'neutral'
           : 'warn';
   const Icon = tone === 'ok' ? Check : tone === 'busy' ? Loader : tone === 'neutral' ? Minus : AlertTriangle;
-  const reason = receiptReasonText(receipt.reason);
+  const reason = localize(receiptReasonText(receipt.reason));
 
   function undo() {
     if (typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) return;
@@ -102,7 +106,7 @@ export function ReceiptView({
       title = receipt.source === 'rule' || receipt.source === 'domain' ? '已按本地规则归类' : '已自动归类';
       sub = (
         <>
-          收进 <span className="receipt-path">{receipt.toPath || '新目录'}</span>
+          {t('收进')} <span className="receipt-path">{receipt.toPath || t('新目录')}</span>
         </>
       );
       break;
@@ -110,7 +114,7 @@ export function ReceiptView({
       title = receipt.source === 'rule' || receipt.source === 'domain' ? '本地规则保留原位置' : 'AI 认为原位置合适';
       sub = (
         <>
-          保留在 <span className="receipt-path">{receipt.fromPath}</span>
+          {t('保留在')} <span className="receipt-path">{receipt.fromPath}</span>
         </>
       );
       break;
@@ -118,7 +122,7 @@ export function ReceiptView({
       title = '已撤销自动归类';
       sub = (
         <>
-          回到 <span className="receipt-path">{receipt.fromPath}</span>
+          {t('回到')} <span className="receipt-path">{receipt.fromPath}</span>
         </>
       );
       break;
@@ -135,8 +139,8 @@ export function ReceiptView({
     title = receipt.correction.status === 'completed' ? '已手动纠正目录' : '手动纠正记录';
     sub =
       receipt.correction.status === 'pending'
-        ? '结果待核实，请查看恢复记录'
-        : `操作编号：${receipt.correction.requestId}`;
+        ? t('结果待核实，请查看恢复记录')
+        : t('操作编号：{id}', { id: receipt.correction.requestId });
   }
   return (
     <div className={`receipt is-${tone}`} role="status" aria-live="polite">
@@ -144,20 +148,22 @@ export function ReceiptView({
         <Icon />
       </span>
       <div className="receipt-body">
-        <span className="receipt-title">{title}</span>
+        <span className="receipt-title">{localize(title)}</span>
         <span className="receipt-sub" title={receipt.title}>
           {sub}
         </span>
         <span className="receipt-meta">
           {receipt.status === 'classifying' ? null : `${receipt.title} · `}
-          {ago(receipt.at)}
+          {ago(receipt.at, language)}
           {receipt.model ? ` · ${receipt.model}` : ''}
           {receipt.ms && receipt.status !== 'skipped' ? ` · ${(receipt.ms / 1000).toFixed(1)}s` : ''}
         </span>
-        {undoState !== 'idle' && undoState !== 'busy' ? <span className="receipt-meta">{undoState}</span> : null}
+        {undoState !== 'idle' && undoState !== 'busy' ? (
+          <span className="receipt-meta">{localize(undoState)}</span>
+        ) : null}
       </div>
       {onDismiss ? (
-        <button type="button" className="receipt-close" aria-label="关闭提示" onClick={onDismiss}>
+        <button type="button" className="receipt-close" aria-label={t('关闭提示')} onClick={onDismiss}>
           <X />
         </button>
       ) : (
@@ -168,11 +174,11 @@ export function ReceiptView({
           {receipt.status === 'moved' && !receipt.correction ? (
             <button type="button" onClick={undo} disabled={undoState === 'busy'}>
               <CornerUpLeft aria-hidden="true" />
-              撤销
+              {t('撤销')}
             </button>
           ) : null}
           <button type="button" disabled={undoState === 'busy' || correcting} onClick={() => setCorrecting(true)}>
-            改一下
+            {t('改一下')}
           </button>
           {!receipt.correction && receipt.status !== 'moved' && CONFIG_REASONS.has(receipt.reason ?? '') && onOpen ? (
             <button
@@ -182,12 +188,12 @@ export function ReceiptView({
                 onOpen(receipt.reason === 'save-feature-unconfigured' ? 'ai-services/features' : 'ai-services')
               }
             >
-              {receipt.reason === 'save-feature-unconfigured' ? '给「智能收藏」选模型' : '检查 AI 连接'}
+              {receipt.reason === 'save-feature-unconfigured' ? t('给「智能收藏」选模型') : t('检查 AI 连接')}
             </button>
           ) : null}
           {receipt.status === 'failed' && onOpen ? (
             <button type="button" onClick={() => onOpen('debug')}>
-              查看调用日志
+              {t('查看调用日志')}
             </button>
           ) : null}
         </div>

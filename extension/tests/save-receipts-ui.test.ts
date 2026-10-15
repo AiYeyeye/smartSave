@@ -1,8 +1,9 @@
 import { createElement } from 'react';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, expect, it, vi } from 'vitest';
-import { SaveReceiptCard } from '../panel/SaveReceiptCard';
+import { ReceiptView, SaveReceiptCard } from '../panel/SaveReceiptCard';
+import { LANGUAGE_KEY, LanguagePicker, LocaleProvider } from '../ui/i18n';
 import { DebugLogPanel } from '../options/DebugLogPanel';
 import { SaveReceiptLog, SAVE_RECEIPTS_KEY, type SaveReceipt } from '../persistence/save-receipts';
 import {
@@ -52,6 +53,43 @@ const base: SaveReceipt = {
 afterEach(() => {
   vi.unstubAllGlobals();
   resetDebugLogForTests();
+});
+
+it('English receipt preserves native titles, paths and a pending undo across language switches', () => {
+  localStorage.setItem(LANGUAGE_KEY, 'en');
+  let complete!: (reply: unknown) => void;
+  const send = vi.fn((_message, callback) => {
+    complete = callback;
+  });
+  stubStorage({}, send);
+  render(
+    createElement(
+      LocaleProvider,
+      null,
+      createElement(LanguagePicker),
+      createElement(ReceiptView, {
+        receipt: {
+          ...base,
+          title: '改一下',
+          status: 'moved',
+          reason: undefined,
+          toPath: '已自动归类',
+          at: Date.now() - 120000,
+        },
+      }),
+    ),
+  );
+  expect(screen.getByText('Automatically classified')).toBeVisible();
+  expect(screen.getByText('已自动归类', { selector: '.receipt-path' })).toBeVisible();
+  expect(screen.getByText(/改一下 · 2 minutes ago/)).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+  fireEvent.change(screen.getByLabelText('Language'), { target: { value: 'zh-CN' } });
+  expect(screen.getByRole('button', { name: '撤销' })).toBeDisabled();
+  expect(send).toHaveBeenCalledOnce();
+  act(() => complete({ status: 'refused', reason: 'moved-since' }));
+  fireEvent.change(screen.getByLabelText('语言'), { target: { value: 'en' } });
+  expect(screen.getByText('The bookmark was moved again. Undo was not applied.')).toBeVisible();
+  expect(send).toHaveBeenCalledOnce();
 });
 
 it('shows recent successful speed percentiles while keeping failures and missing streaming phases honest', async () => {

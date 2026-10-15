@@ -4,8 +4,9 @@ import { SaveCorrection } from '../panel/SaveCorrection';
 import { syntheticConnectionTree } from '../adapters/ai-connection';
 import type { CorrectionResponse } from '../domain/save-correction';
 import { StrictMode } from 'react';
+import { LANGUAGE_KEY, LanguagePicker, LocaleProvider } from '../ui/i18n';
 
-function harness() {
+function harness(localized = false) {
   const tree = syntheticConnectionTree();
   const source = tree.nodes.find(node => node.ref.kind === 'bookmark')!;
   const target = tree.nodes.find(node => node.childrenWritable && node.ref.nativeId !== source.parentId)!;
@@ -29,9 +30,53 @@ function harness() {
     if (message.action === 'rule') return { status: 'rule-saved' };
     return { status: 'closed' };
   });
-  const view = render(<SaveCorrection receiptId="receipt" onClose={vi.fn()} send={send} />);
+  const card = <SaveCorrection receiptId="receipt" onClose={vi.fn()} send={send} />;
+  const view = render(
+    localized ? (
+      <LocaleProvider>
+        <LanguagePicker />
+        {card}
+      </LocaleProvider>
+    ) : (
+      card
+    ),
+  );
   return { view, send, target, moved, complete: (response: CorrectionResponse) => complete(response) };
 }
+
+it('language switches preserve destination, pending move and separate subdomain consent without reopening the session', async () => {
+  localStorage.setItem(LANGUAGE_KEY, 'en');
+  const h = harness(true);
+  await screen.findByLabelText('Move to folder');
+  const select = screen.getByLabelText('Move to folder');
+  fireEvent.change(select, { target: { value: h.target.ref.nativeId } });
+  fireEvent.change(screen.getByLabelText('Language'), { target: { value: 'zh-CN' } });
+  expect(screen.getByLabelText('改到目录')).toBe(select);
+  expect(select).toHaveValue(h.target.ref.nativeId);
+  fireEvent.click(screen.getByRole('button', { name: '改到这个目录' }));
+  fireEvent.change(screen.getByLabelText('语言'), { target: { value: 'en' } });
+  expect(screen.getByText('Moving and checking the result…')).toBeVisible();
+  expect(screen.queryByRole('button', { name: 'Always save here' })).not.toBeInTheDocument();
+  h.complete({ ...h.moved, targetTitle: '改一下' } as CorrectionResponse);
+  await screen.findByText('Moved to “改一下”. Save future bookmarks from example.test here too?');
+  fireEvent.click(screen.getByLabelText('Also include subdomains'));
+  fireEvent.change(screen.getByLabelText('Language'), { target: { value: 'zh-CN' } });
+  expect(screen.getByLabelText('也包含此域名的子域名')).toBeChecked();
+  expect(h.send.mock.calls.filter(([message]) => message.action === 'rule')).toHaveLength(0);
+  fireEvent.click(screen.getByRole('button', { name: '以后都放这里' }));
+  await screen.findByText('网站规则已保存，可在隐私与规则中修改。');
+  expect(h.send.mock.calls.filter(([message]) => message.action === 'begin')).toHaveLength(1);
+  expect(h.send.mock.calls.filter(([message]) => message.action === 'move')).toHaveLength(1);
+  expect(h.send).toHaveBeenLastCalledWith({
+    type: 'nativeSaveCorrection',
+    action: 'rule',
+    token: 'token',
+    includeSubdomains: true,
+    confirmed: true,
+  });
+  h.view.unmount();
+  expect(h.send).toHaveBeenLastCalledWith({ type: 'nativeSaveCorrection', action: 'close', token: 'token' });
+});
 
 it('asks about rules only after confirmed movement; default excludes subdomains and retries only rules', async () => {
   const h = harness();

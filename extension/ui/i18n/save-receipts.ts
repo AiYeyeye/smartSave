@@ -1,0 +1,97 @@
+export const saveReceiptsEnglish = {
+  '撤销失败，请重试': 'Could not undo. Try again.',
+  '书签之后又被移动过，未撤销': 'The bookmark was moved again. Undo was not applied.',
+  无法撤销: 'Cannot undo',
+  '正在按本地规则归类…': 'Applying local classification rules…',
+  'AI 正在选择目录…': 'AI is choosing a folder…',
+  已按本地规则归类: 'Classified by local rules',
+  已自动归类: 'Automatically classified',
+  收进: 'Saved to',
+  新目录: 'New folder',
+  本地规则保留原位置: 'Local rules kept the current folder',
+  'AI 认为原位置合适': 'AI kept the current folder',
+  保留在: 'Kept in',
+  已撤销自动归类: 'Automatic classification undone',
+  回到: 'Returned to',
+  书签已删除: 'Bookmark deleted',
+  '收藏成功，但没有调用 AI': 'Bookmark saved without calling AI',
+  自动归类已中断: 'Automatic classification interrupted',
+  'AI 归类未完成': 'AI classification did not complete',
+  已手动纠正目录: 'Folder corrected manually',
+  手动纠正记录: 'Manual correction record',
+  '结果待核实，请查看恢复记录': 'Outcome needs checking. Open recovery records.',
+  '操作编号：{id}': 'Operation ID: {id}',
+  关闭提示: 'Dismiss notice',
+  撤销: 'Undo',
+  改一下: 'Change folder',
+  '给「智能收藏」选模型': 'Choose a Smart save model',
+  '检查 AI 连接': 'Check AI connection',
+  查看调用日志: 'View request log',
+  纠正本条收藏: 'Correct this bookmark',
+  '正在核对书签当前位置…': 'Checking the bookmark’s current location…',
+  '当前目录：{path}': 'Current folder: {path}',
+  改到目录: 'Move to folder',
+  选择目标目录: 'Choose destination folder',
+  改到这个目录: 'Move to this folder',
+  '正在保存网站规则…': 'Saving website rule…',
+  '正在纠正并核对结果…': 'Moving and checking the result…',
+  '本次已改到「{folder}」。以后 {host} 都默认放到这里吗？':
+    'Moved to “{folder}”. Save future bookmarks from {host} here too?',
+  '将替换此网站已有规则（{folder}{scope}）。': 'This replaces the existing website rule ({folder}{scope}).',
+  原目录已不可用: 'Previous folder unavailable',
+  '，含子域名': ', including subdomains',
+  '，仅此域名': ', this domain only',
+  也包含此域名的子域名: 'Also include subdomains',
+  重试保存规则: 'Retry saving rule',
+  以后都放这里: 'Always save here',
+  '移动记录：{id}；撤销本次移动请使用恢复记录。': 'Move record: {id}. Use recovery records to undo this move.',
+  '本次纠正不重复执行。{error}': 'This move will not be repeated. {error}',
+  '网站规则已保存，可在隐私与规则中修改。': 'Website rule saved. You can change it in Privacy & rules.',
+  '仅这一次，关闭': 'Just this time, close',
+  关闭纠正: 'Close correction',
+  '这条旧记录缺少安装身份，请从书签目录手动移动。':
+    'This older record cannot be verified for this installation. Move the bookmark from the bookmark tree.',
+  '已在此目录，没有移动；如需设置网站规则，请打开隐私与规则。':
+    'Already in this folder. Nothing moved. Open Privacy & rules to set a website rule.',
+  '此网站规则已在别处修改，未覆盖。请到隐私与规则核对。':
+    'This website rule changed elsewhere and was not overwritten. Check Privacy & rules.',
+  '书签、目录或记录已变化，请关闭后重新核对。': 'The bookmark, folder or record changed. Close and check again.',
+  '纠正确认已失效，请重新打开。已提交的移动请从恢复记录核对。':
+    'This confirmation expired. Reopen it; check recovery records for any submitted move.',
+  '上次纠正尚未核实，请到恢复记录核对，暂不重复移动。':
+    'The previous correction is unverified. Check recovery records before moving again.',
+  '响应未能确认，请查看恢复记录；不会自动重复移动。':
+    'The response could not be confirmed. Check recovery records; the move will not repeat automatically.',
+  '操作未完成。若已移动，规则仍可单独重试；请核对恢复记录。':
+    'Operation incomplete. If the bookmark moved, retry only the rule. Check recovery records.',
+  '还没给「智能收藏」选择模型，未调用 AI': 'No Smart save model selected. AI was not called.',
+  '「智能收藏」绑定的连接已被删除': 'The connection assigned to Smart save was deleted.',
+  '后台拿不到 API Key（连接时没勾选“记住密钥”）':
+    'The background task has no API key. Enable Remember key in the service settings.',
+  没有访问模型主机的权限: 'Permission to access the model host is missing.',
+  模型响应超时: 'The model response timed out.',
+  'API Key 无效或无权限': 'The API key is invalid or lacks permission.',
+  '模型服务限流（429）': 'The model service is rate limiting requests (429).',
+  模型服务返回错误: 'The model service returned an error.',
+  '模型服务报告生成失败（HTTP 200 也可能包含错误），请查看 Debug 日志':
+    'The provider reported a generation failure. Check the request log; HTTP 200 can also carry an error.',
+  '模型返回的内容无法解析（打开 Debug 日志可看到原因）':
+    'The model output could not be parsed. Check the request log for details.',
+  '模型响应中没有可用文字；请在 Debug 日志检查返回正文和协议结束状态':
+    'No usable text in the model response. Check the response and completion status in the request log.',
+  '模型输出未完成，可能是额度用完或连接中断；此次没有执行归类':
+    'The model output was incomplete, possibly due to a limit or interrupted connection. Classification was not applied.',
+  模型拒绝回答或被安全策略拦截: 'The model refused the request or a safety policy blocked it.',
+  '分类过程中书签或设置发生变化，已停止后续操作':
+    'Bookmarks or settings changed during classification. Further operations stopped.',
+  '无法读取隐私或模型设置，未调用 AI': 'Could not read privacy or model settings. AI was not called.',
+  '书签操作结果未能确认，请检查当前目录；不会自动重复执行':
+    'The bookmark operation could not be confirmed. Check its current folder; it will not repeat automatically.',
+  '后台已重启，自动归类结果未能确认；请检查书签位置，不会自动重复执行':
+    'The background task restarted before the result was confirmed. Check the bookmark’s location; the operation will not repeat automatically.',
+  无法连接模型服务: 'Could not connect to the model service.',
+  '书签目录太大，超过单次请求上限': 'The folder tree exceeds the size limit for one request.',
+  书签已被删除: 'The bookmark was deleted.',
+  'AI 认为当前位置已经合适': 'AI considers the current folder suitable.',
+  所在目录在隐私排除范围内: 'This folder is excluded by your privacy settings.',
+} as const;

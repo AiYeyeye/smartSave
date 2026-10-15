@@ -1,3 +1,4 @@
+import { useI18n } from '../ui/i18n';
 import { useEffect, useRef, useState } from 'react';
 import {
   correctionError,
@@ -43,6 +44,7 @@ export function SaveCorrection({
   onClose: () => void;
   send?: typeof sendCorrection;
 }) {
+  const { t, message: localize } = useI18n();
   const [ready, setReady] = useState<Extract<CorrectionResponse, { status: 'ready' }>>();
   const [outcome, setOutcome] = useState<CorrectionResponse>();
   const [target, setTarget] = useState('');
@@ -94,22 +96,22 @@ export function SaveCorrection({
   const paths = organizePaths(ready?.tree);
   const moved = outcome?.status === 'moved' ? outcome : undefined;
   return (
-    <section className="save-correction" aria-label="纠正本条收藏">
-      <h3>纠正本条收藏</h3>
-      {!ready && !outcome && <p role="status">正在核对书签当前位置…</p>}
+    <section className="save-correction" aria-label={t('纠正本条收藏')}>
+      <h3>{t('纠正本条收藏')}</h3>
+      {!ready && !outcome && <p role="status">{t('正在核对书签当前位置…')}</p>}
       {ready && !submitted && (
         <>
           <p>{source?.title}</p>
-          <p>当前目录：{paths.get(source?.parentId ?? '') || '根目录'}</p>
+          <p>{t('当前目录：{path}', { path: paths.get(source?.parentId ?? '') || t('根目录') })}</p>
           <label className="field">
-            改到目录
+            {t('改到目录')}
             <Select
-              aria-label="改到目录"
+              aria-label={t('改到目录')}
               value={target}
               onChange={event => setTarget(event.target.value)}
               disabled={busy}
             >
-              <option value="">选择目标目录</option>
+              <option value="">{t('选择目标目录')}</option>
               {ready.tree.nodes
                 .filter(
                   node => node.ref.kind === 'folder' && node.childrenWritable && node.ref.nativeId !== source?.parentId,
@@ -122,22 +124,27 @@ export function SaveCorrection({
             </Select>
           </label>
           <button type="button" disabled={!target || busy} onClick={() => void act('move')}>
-            改到这个目录
+            {t('改到这个目录')}
           </button>
         </>
       )}
-      {busy && <p role="status">{moved ? '正在保存网站规则…' : '正在纠正并核对结果…'}</p>}
-      {outcome?.status === 'error' && <p role="alert">{correctionError(outcome.reason)}</p>}
+      {busy && <p role="status">{moved ? t('正在保存网站规则…') : t('正在纠正并核对结果…')}</p>}
+      {outcome?.status === 'error' && <p role="alert">{localize(correctionError(outcome.reason))}</p>}
       {outcome?.status === 'result' && <MutationFeedback result={outcome.result} />}
       {moved && (
         <>
           <p>
-            本次已改到「{moved.targetTitle}」。以后 {moved.host} 都默认放到这里吗？
+            {t('本次已改到「{folder}」。以后 {host} 都默认放到这里吗？', {
+              folder: moved.targetTitle,
+              host: moved.host,
+            })}
           </p>
           {moved.previousRule && (
             <p>
-              将替换此网站已有规则（{paths.get(moved.previousRule.folder.nativeId) || '原目录已不可用'}
-              {moved.previousRule.includeSubdomains ? '，含子域名' : '，仅此域名'}）。
+              {t('将替换此网站已有规则（{folder}{scope}）。', {
+                folder: paths.get(moved.previousRule.folder.nativeId) || t('原目录已不可用'),
+                scope: moved.previousRule.includeSubdomains ? t('，含子域名') : t('，仅此域名'),
+              })}
             </p>
           )}
           <label className="check">
@@ -147,18 +154,18 @@ export function SaveCorrection({
               disabled={busy}
               onChange={event => setIncludeSubdomains(event.target.checked)}
             />
-            也包含此域名的子域名
+            {t('也包含此域名的子域名')}
           </label>
           <button type="button" disabled={busy} onClick={() => void act('rule')}>
-            {error ? '重试保存规则' : '以后都放这里'}
+            {error ? t('重试保存规则') : t('以后都放这里')}
           </button>
-          <small>移动记录：{moved.requestId}；撤销本次移动请使用恢复记录。</small>
+          <small>{t('移动记录：{id}；撤销本次移动请使用恢复记录。', { id: moved.requestId })}</small>
         </>
       )}
-      {error && <p role="alert">本次纠正不重复执行。{error}</p>}
-      {outcome?.status === 'rule-saved' && <p role="status">网站规则已保存，可在隐私与规则中修改。</p>}
+      {error && <p role="alert">{t('本次纠正不重复执行。{error}', { error: localize(error) })}</p>}
+      {outcome?.status === 'rule-saved' && <p role="status">{t('网站规则已保存，可在隐私与规则中修改。')}</p>}
       <button type="button" disabled={busy} onClick={onClose}>
-        {moved ? '仅这一次，关闭' : '关闭纠正'}
+        {moved ? t('仅这一次，关闭') : t('关闭纠正')}
       </button>
     </section>
   );
