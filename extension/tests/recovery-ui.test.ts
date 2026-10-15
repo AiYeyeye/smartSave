@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { expect, it } from 'vitest';
 import { RecoveryWorkbench } from '../options/RecoveryWorkbench';
 import { ThemePicker, ThemeProvider } from '../ui/ThemeProvider';
+import { LanguagePicker, LocaleProvider } from '../ui/i18n';
 import { confirmSchema, type Command, type ConfirmMutation } from '../schemas/messages';
 
 type Sent = { type: string; requestId: string; [key: string]: unknown };
@@ -358,24 +359,31 @@ it('retains skipped coverage when applying and clearing the preview', async () =
   expect(screen.queryByRole('region', { name: '恢复预览' })).not.toBeInTheDocument();
 });
 it('preview consent and risk consent are independent: checking one never unlocks the other', async () => {
+  const sent: Sent[] = [];
   const proposal = request('apply', create, { sourceRequestId: 'source', mode: 'undo', conflicts: [] });
   render(
-    createElement(RecoveryWorkbench, {
-      send: async raw => {
-        const message = raw as Sent;
-        if (message.type === 'recoveryList')
-          return ready(message.requestId, [settled('source'), unsettled('unknown', true)]);
-        if (message.type === 'recoveryPreview')
-          return {
-            status: 'preview',
-            requestId: message.requestId,
-            proposal,
-            conflicts: [],
-            warning: 'Safe items only',
-          };
-        throw Error('no write may be sent while consent is being toggled');
-      },
-    }),
+    createElement(
+      LocaleProvider,
+      null,
+      createElement(LanguagePicker),
+      createElement(RecoveryWorkbench, {
+        send: async raw => {
+          const message = raw as Sent;
+          sent.push(message);
+          if (message.type === 'recoveryList')
+            return ready(message.requestId, [settled('source'), unsettled('unknown', true)]);
+          if (message.type === 'recoveryPreview')
+            return {
+              status: 'preview',
+              requestId: message.requestId,
+              proposal,
+              conflicts: [],
+              warning: 'Safe items only',
+            };
+          throw Error('no write may be sent while consent is being toggled');
+        },
+      }),
+    ),
   );
   fireEvent.click(await screen.findByRole('button', { name: '预览撤销' }));
   const apply = await screen.findByRole('button', { name: '应用撤销' });
@@ -386,9 +394,75 @@ it('preview consent and risk consent are independent: checking one never unlocks
   fireEvent.click(screen.getByRole('checkbox', { name: '确认以上影响范围' }));
   expect(apply).toBeEnabled();
   expect(confirmRisk).toBeDisabled();
+  fireEvent.change(screen.getByRole('combobox', { name: '语言' }), { target: { value: 'en' } });
+  expect(screen.getByRole('button', { name: 'Apply undo' })).toBe(apply);
+  expect(screen.getByRole('button', { name: 'Confirm' })).toBe(confirmRisk);
+  expect(apply).toBeEnabled();
+  expect(confirmRisk).toBeDisabled();
+  expect(sent.map(m => m.type)).toEqual(['recoveryList', 'recoveryPreview']);
+  fireEvent.change(screen.getByRole('combobox', { name: 'Language' }), { target: { value: 'zh-CN' } });
   fireEvent.click(screen.getByRole('checkbox', { name: '我已核对并理解风险' }));
   expect(confirmRisk).toBeEnabled();
   fireEvent.click(screen.getByRole('checkbox', { name: '确认以上影响范围' }));
   expect(apply).toBeDisabled();
   expect(confirmRisk).toBeEnabled();
+});
+
+it('switches language during a pending undo without resubmission or losing skipped coverage', async () => {
+  const sent: Sent[] = [];
+  let resolveApply!: (value: unknown) => void;
+  const conflicts = [{ nativeId: '删除{id}', reason: 'unsupported-recovery-url' }];
+  const proposal = request(
+    'apply{id}',
+    { ...create, title: '确认 {parent}' },
+    {
+      sourceRequestId: 'source',
+      mode: 'undo',
+      conflicts,
+    },
+  );
+  render(
+    createElement(
+      LocaleProvider,
+      null,
+      createElement(LanguagePicker),
+      createElement(RecoveryWorkbench, {
+        send: async raw => {
+          const message = raw as Sent;
+          sent.push(message);
+          if (message.type === 'recoveryList') return ready(message.requestId, [settled('source')]);
+          if (message.type === 'recoveryPreview')
+            return {
+              status: 'preview',
+              requestId: message.requestId,
+              proposal,
+              conflicts,
+              warning: '仅应用预览中的安全项；冲突保留当前数据。',
+            };
+          return new Promise(resolve => {
+            resolveApply = resolve;
+          });
+        },
+      }),
+    ),
+  );
+  fireEvent.click(await screen.findByRole('button', { name: '预览撤销' }));
+  await screen.findByRole('region', { name: '恢复预览' });
+  fireEvent.change(screen.getByRole('combobox', { name: '语言' }), { target: { value: 'en' } });
+  expect(screen.getByText('Create “确认 {parent}” → folder root')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Confirm the impact shown above' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Apply undo' }));
+  expect(sent.at(-1)).toEqual(proposal);
+  for (const language of ['zh-CN', 'en']) {
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: language } });
+    expect(sent).toHaveLength(3);
+  }
+  expect(screen.getByRole('button', { name: 'Refresh recovery records' })).toBeDisabled();
+  await act(async () => resolveApply(completed('apply{id}')));
+  await waitFor(() => expect(sent).toHaveLength(4));
+  expect(sent.map(m => m.type)).toEqual(['recoveryList', 'recoveryPreview', 'confirmMutation', 'recoveryList']);
+  expect(screen.getByRole('alert')).toHaveTextContent('Restoration incomplete');
+  expect(screen.getByRole('alert')).toHaveTextContent('删除{id}: unsupported-recovery-url');
+  expect(screen.getByRole('alert')).toHaveTextContent('apply{id}');
+  expect(screen.queryByRole('region', { name: 'Recovery preview' })).toBeNull();
 });

@@ -101,9 +101,40 @@ with sync_playwright() as playwright:
         }""")
         assert len(records) == 1 and records[0]['result']['status'] == 'completed'
         assert fixture['items'][1]['url'] in json.dumps(records[0]['backup'])
+        # The same real journal powers undo. Locale changes must preserve consent without writing.
+        page.get_by_text(text('恢复与撤销记录', 'Recovery and undo records'), exact=True).click()
+        recovery = page.get_by_role('region', name=text('备份与恢复', 'Backup and recovery'), exact=True)
+        recovery.get_by_role('button', name=text('预览撤销', 'Preview undo'), exact=True).click()
+        preview = recovery.get_by_role('region', name=text('恢复预览', 'Recovery preview'), exact=True)
+        expect(preview).to_contain_text(fixture['items'][1]['title'])
+        expect(preview).to_contain_text(fixture['items'][1]['url'])
+        expect(preview).to_contain_text(text('新建的恢复节点会追加到目标目录末尾', 'Newly restored items are appended to the destination folder'))
+        preview.get_by_role('checkbox', name=text('确认以上影响范围', 'Confirm the impact shown above'), exact=True).check()
+        if args.language == 'en':
+            preferences.get_by_label('Language', exact=True).select_option('zh-CN')
+            expect(page.get_by_role('checkbox', name='确认以上影响范围', exact=True)).to_be_checked()
+            preferences.get_by_label('语言', exact=True).select_option('en')
+            expect(preview.get_by_role('checkbox', name='Confirm the impact shown above', exact=True)).to_be_checked()
+        assert worker.evaluate('async id=>(await chrome.bookmarks.getSubTree(id))[0].children', fixture['root']) == after
+        for width in [320, 340, 480, 1024]:
+            page.set_viewport_size({'width': width, 'height': 960})
+            page.evaluate('()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))')
+            measured = page.evaluate('({width:innerWidth,scroll:document.documentElement.scrollWidth})')
+            assert measured['scroll'] <= width + 1, measured
+            geometry.append({'surface': 'recovery-preview', **measured})
+            preview.scroll_into_view_if_needed()
+            page.screenshot(path=str(root / f'recovery-preview-{width}.png'))
+        preview.get_by_role('button', name=text('应用撤销', 'Apply undo'), exact=True).click()
+        expect(recovery).to_contain_text(text('执行子计划 completed', 'execution subplan completed'))
+        restored = worker.evaluate('async id=>(await chrome.bookmarks.getSubTree(id))[0].children', fixture['root'])
+        assert sorted((item['title'], item['url']) for item in restored) == sorted((item['title'], item['url']) for item in fixture['items'])
+        assert restored[:-1] == after  # Existing identities and order remain intact.
+        assert restored[-1]['id'] != fixture['items'][1]['id']
         result = {'status': 'PASS', 'browser': context.browser.version, 'evidence': str(root), 'geometry': geometry,
                   'reviewLanguage': args.language, 'crossDocumentSelectionRetained': args.language == 'en',
                   'deleted': fixture['items'][1]['id'], 'remaining': len(after), 'journalBackup': True,
+                  'explicitUndoRestored': True, 'undoConsentRetainedAcrossLocale': args.language == 'en',
+                  'restoredOrder': 'New identities appended, disclosed before applying; original order not guaranteed.',
                   'workerSHA256': hashlib.sha256((extension / 'service-worker.js').read_bytes()).hexdigest(),
                   'scope': 'Unmodified production dist; isolated native fixture, no configured model. Explicit preview/final deletion, retained originals and durable backup verified. Not branded-browser release acceptance.'}
         (root / 'results.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
