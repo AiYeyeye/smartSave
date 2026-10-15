@@ -22,6 +22,7 @@ import { readWireReply, type ModelStreamProgress } from './model-stream';
 import type { ModelTiming } from '../domain/save-performance';
 import { modelThinkingPlan, rejectsThinkingParameter } from '../domain/model-thinking';
 import { abortableDelay } from '../domain/cancellable';
+import { anthropicPromptContent } from '../domain/model-cache';
 export type ModelProgress = ModelStreamProgress & {
   phase: 'waiting' | 'receiving' | 'validating';
   retry?: { attempt: number; delaySeconds: number; httpStatus: number };
@@ -81,7 +82,7 @@ export function modelRequestBody(
       max_tokens: modelOutputTokenLimit(config),
       stream: modelStreaming(config),
       system,
-      messages: [{ role: 'user', content: payload }],
+      messages: [{ role: 'user', content: anthropicPromptContent(config, payload) }],
     });
   }
   if (config.adapter === 'openai-responses') {
