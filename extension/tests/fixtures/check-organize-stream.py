@@ -81,6 +81,7 @@ with sync_playwright() as p:
             page.screenshot(path=str(out / f'first-batch-{width}.png'), full_page=True, animations='disabled')
             # Completed out-of-order results survive pause. Resume a + c, without asking b again.
             page.get_by_role('button', name='暂停后续批次', exact=True).click()
+            expect(page.get_by_role('button', name='继续未完成批次', exact=True)).to_be_enabled()
             paused_time = page.get_by_label('整理用时', exact=True).inner_text()
             page.clock.run_for(60_000)
             expect(page.get_by_label('整理用时', exact=True)).to_have_text(paused_time)

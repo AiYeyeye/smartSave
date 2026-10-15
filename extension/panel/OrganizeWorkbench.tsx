@@ -2,10 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { SettingsStore } from '../persistence/settings';
 import type { AiServicesStore } from '../persistence/ai-services';
 import { featureModelSettings } from '../adapters/feature-model-settings';
-import { browserModelAuthority } from '../adapters/model-authority';
-import { ModelTransport } from '../adapters/model-transport';
 import { RecoveryWorkbench } from '../options/RecoveryWorkbench';
 import { OrganizeController, type OrganizeState } from './organize-controller';
+import { OrganizeTaskClient, type OrganizeWorkbenchOwner } from './organize-task-client';
 import { connectTree } from './tree-client';
 import { organizePaths as pathLabels, organizeReview, organizeRejectionKey } from '../domain/organize-review';
 import {
@@ -26,7 +25,7 @@ import { WorkflowSteps } from '../ui/WorkflowSteps';
 import { BusyIndicator } from '../ui/BusyIndicator';
 import { ORGANIZE_STYLES, ORGANIZE_INSTRUCTIONS_LIMIT, type OrganizeStyle } from '../domain/organize-preferences';
 import { ORGANIZE_BATCH_SIZE } from '../domain/organize-batches';
-type CreateController = (emit: (state: OrganizeState) => void) => OrganizeController;
+type CreateController = (emit: (state: OrganizeState) => void) => OrganizeWorkbenchOwner;
 const actionNames = { create: '新建目录', move: '移动', merge: '合并目录', delete: '删除', rename: '重命名分类' };
 export function OrganizeWorkbench({
   visible,
@@ -73,21 +72,13 @@ export function OrganizeWorkbench({
     busy: false,
     message: '正在连接书签服务…',
   });
-  const owner = useRef<OrganizeController | undefined>(undefined);
+  const owner = useRef<OrganizeWorkbenchOwner | undefined>(undefined);
   useEffect(() => {
-    const authority =
-      !createController && settings && typeof chrome !== 'undefined'
-        ? browserModelAuthority(featureModelSettings(settings, aiServices, 'organize'))
-        : undefined;
-    const transport = authority
-      ? new ModelTransport(
-          { fetch: (...args) => fetch(...args), contains: request => chrome.permissions.contains(request) },
-          authority,
-        )
-      : undefined;
     const controller = createController
       ? createController(setState)
-      : new OrganizeController(setState, authority, transport);
+      : settings && typeof chrome !== 'undefined' && typeof chrome.runtime?.sendMessage === 'function'
+        ? new OrganizeTaskClient(setState, featureModelSettings(settings, aiServices, 'organize'))
+        : new OrganizeController(setState);
     owner.current = controller;
     const stop =
       !createController && typeof chrome !== 'undefined' && typeof chrome.runtime?.connect === 'function'
@@ -101,6 +92,12 @@ export function OrganizeWorkbench({
       owner.current = undefined;
     };
   }, [settings, aiServices, createController]);
+  useEffect(() => {
+    if (state.task?.id) {
+      setMethod('ai');
+      setStep(state.task.requestId ? 3 : 2);
+    }
+  }, [state.task?.id, state.task?.requestId]);
   const folders = state.tree.status === 'ready' ? state.tree.snapshot.nodes.filter(n => n.childrenWritable) : [];
   const proposal = state.proposal;
   const installationId = state.tree.status === 'ready' ? state.tree.snapshot.installationId : undefined;
@@ -130,7 +127,7 @@ export function OrganizeWorkbench({
     if (!installationId || memoryOperation.current) return;
     memoryOperation.current = true;
     setMemoryBusy(true);
-    if (invalidate) owner.current?.cancel();
+    if (invalidate) await owner.current?.cancel();
     try {
       setMemory(await memoryOwner.update(installationId, change));
       setMemoryError('');
@@ -175,11 +172,17 @@ export function OrganizeWorkbench({
       setMemoryBusy(false);
     }
   };
-  const rememberRejection = (action: OrganizeAction) => {
+  const rememberRejection = async (action: OrganizeAction) => {
     if (!proposal) return;
-    owner.current?.toggle(action.id, false);
     const signature = organizeRejectionKey(proposal, action, state.targets);
-    void changeMemory(value => ({
+    const controller = owner.current;
+    if (controller?.deselectForMemory) {
+      if (!(await controller.deselectForMemory(action.id))) {
+        setMemoryError('取消选择尚未保存，未记住此次拒绝；请重新读取任务后重试。');
+        return;
+      }
+    } else await controller?.toggle(action.id, false);
+    await changeMemory(value => ({
       ...value,
       rejected: [
         ...value.rejected.filter(r => r.signature !== signature),
@@ -284,6 +287,57 @@ export function OrganizeWorkbench({
     >
       <h2>整理书签</h2>
       <p>先确认文件夹分类，再分批查看书签建议，最后统一确认执行。</p>
+      {state.task && (
+        <details className="workflow-help organize-saved-tasks">
+          <summary>已保存的整理任务（{state.task.available.length}）</summary>
+          <label>
+            整理任务
+            <Select
+              aria-label="已保存的整理任务"
+              value={state.task.id ?? ''}
+              disabled={state.busy || memoryBusy}
+              onChange={event => {
+                if (event.target.value) void owner.current?.restoreTask?.(event.target.value);
+              }}
+            >
+              <option value="">选择一项任务查看进度</option>
+              {state.task.available.map(task => (
+                <option key={task.id} value={task.id} disabled={!task.readable}>
+                  {new Date(task.updatedAt).toLocaleString()} ·{' '}
+                  {task.requestId
+                    ? '已提交'
+                    : task.stage === 'complete'
+                      ? '待确认'
+                      : task.stage === 'folders'
+                        ? '分类方案'
+                        : '书签分析'}{' '}
+                  · {task.id.slice(0, 8)}
+                </option>
+              ))}
+            </Select>
+          </label>
+          <button disabled={state.busy && state.task.connected} onClick={() => void owner.current?.refreshTasks?.()}>
+            重新读取任务列表
+          </button>
+          {state.task.id && (
+            <button
+              disabled={state.busy && state.task.connected}
+              onClick={() => void owner.current?.restoreTask?.(state.task!.id!)}
+            >
+              重新读取当前任务
+            </button>
+          )}
+        </details>
+      )}
+      {state.task?.needsCredential && (
+        <p role="status">
+          本次整理的临时 API Key 已不在后台内存中。请到 <a href="#ai-services">AI 服务</a>{' '}
+          重新输入，再明确继续；已完成建议保留。
+        </p>
+      )}
+      {state.task && !state.task.connected && (
+        <p role="alert">整理任务连接不可用，请重新读取进度；不会自动重发分析或书签写入。</p>
+      )}
       <WorkflowSteps
         labels={
           method === 'ai' ? ['选择范围', '分类方案', '分批书签', '确认执行'] : ['选择范围', '查看方案', '确认执行']
@@ -516,7 +570,9 @@ export function OrganizeWorkbench({
         {method === 'ai' && scopeProtected && <p role="status">该范围位于受保护分类中，请取消保护或选择其他范围。</p>}
         {method === 'ai' && (
           <p className="hint">
-            默认按主题整理。请保持本页面打开；切换页内栏目不影响生成，关闭或刷新页面会丢失本次进度。
+            {state.task
+              ? '默认按主题整理。进度保存在本机，可关闭页面后重新打开查看；浏览器或后台中断后，需手动继续未完成批次。'
+              : '默认按主题整理。请保持本页面打开；切换页内栏目不影响生成，关闭或刷新页面会丢失本次进度。'}
           </p>
         )}
         <p className="hint">这一步只生成建议，不会修改书签。</p>
@@ -985,6 +1041,11 @@ export function OrganizeWorkbench({
             请求编号：{state.result.requestId}。状态 {state.result.status}；已完成 {state.result.completedSteps}，未完成{' '}
             {state.result.remainingSteps}。请读取下方恢复记录核对逐步回执。
           </p>
+        )}
+        {state.task?.requestId && (
+          <button disabled={state.busy} onClick={() => void owner.current?.observe?.(true)}>
+            核对这次整理的执行结果
+          </button>
         )}
       </div>
       <details className="workflow-help">

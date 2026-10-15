@@ -9,6 +9,21 @@ import type { OrganizeRequest, approvedOrganizeFolders } from './organize-batche
 import type { exactDuplicates, DuplicateChoice } from './exact-duplicates';
 
 export interface OrganizeState {
+  task?: {
+    id?: string;
+    revision?: number;
+    connected: boolean;
+    needsCredential: boolean;
+    requestId?: string;
+    available: {
+      id: string;
+      updatedAt: number;
+      stage: string;
+      status: string;
+      readable: boolean;
+      requestId?: string;
+    }[];
+  };
   pipeline?: {
     stage: 'folders' | 'bookmarks' | 'complete';
     status: 'review' | 'running' | 'paused' | 'failed' | 'invalid';

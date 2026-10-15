@@ -179,6 +179,7 @@ export class OrganizeTaskOwner {
       },
     };
     const context = await this.bounded(authority.read());
+    if (!context.config) throw Error('model-unconfigured');
     if (this.options.memory && checkpoint) {
       const memory = await this.bounded(this.options.memory.load(context.tree.installationId));
       if (organizeProtectionChanged(checkpoint, context.tree, memory.protectedFolderIds)) throw Error('stale-context');
@@ -312,6 +313,7 @@ export class OrganizeTaskOwner {
       this.launch(task, () => task.controller.generate(input.preference, { ...options, staged: true }));
       task.editing = false;
       await this.bounded(task.ready);
+      if (task.revision < 0) throw Error('organize-task-unavailable');
       return this.view(task);
     } catch (error) {
       if (created && !created.retired) this.retire(created);
@@ -424,7 +426,11 @@ export class OrganizeTaskOwner {
     action: 'confirmFolders' | 'resume' | 'pause' | 'cancel' | 'returnToFolders',
     credential?: OrganizeCredentialGrant,
   ) {
-    let task = this.edit(id, revision);
+    const active = this.require(id);
+    // Progress commits can outrun a page's observation. A stop still addresses the same active task,
+    // while review edits/continuations continue to require exact revision CAS.
+    const stopping = (action === 'pause' || action === 'cancel') && active.operation && revision <= active.revision;
+    let task = this.edit(id, stopping ? active.revision : revision);
     const editingTask = task;
     try {
       if (credential) {

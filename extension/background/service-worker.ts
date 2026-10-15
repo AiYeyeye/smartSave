@@ -69,11 +69,22 @@ const { validateSaveContext, livePageForSender } = startSaveEntrypoints(
 const projection = startTreeService();
 startFileOutput(projection);
 const settings = new SettingsStore(chrome.storage.local);
+// Complete first-install migration before a model task can retain its settings baseline.
+// Native ingress also loads settings; a later first write must not revoke an otherwise unchanged organizer task.
+const settingsReady = settings.load();
+void settingsReady.catch(() => {});
+const initializedSettings = {
+  snapshot: async () => {
+    await settingsReady;
+    return settings.snapshot();
+  },
+  subscribe: (listener: () => void) => settings.subscribe(listener),
+};
 const aiServices = new AiServicesStore(chrome.storage.local);
 const ownWrites = new OwnWriteGuard();
 const writer = ownWrites.wrap(bookmarksWrite(chrome.bookmarks));
 const persistence = new ImportPersistenceStore();
-const organizeSettings = featureModelSettings(settings, aiServices, 'organize');
+const organizeSettings = featureModelSettings(initializedSettings, aiServices, 'organize');
 const organizeMemory = new OrganizeMemoryStore(chrome.storage.local);
 const organizerAuthority = startOrganizerAuthority(organizeSettings, workerDiagnostics);
 const organizeTasks = new OrganizeTaskOwner({
@@ -108,7 +119,11 @@ const coordinator = startMutationService(
   projection,
   validateSaveContext,
   organizerAuthority,
-  startImportAuthority(featureModelSettings(settings, aiServices, 'import'), projection, persistence.importCheckpoints),
+  startImportAuthority(
+    featureModelSettings(initializedSettings, aiServices, 'import'),
+    projection,
+    persistence.importCheckpoints,
+  ),
   persistence,
   writer,
   organizeTaskAuthority,

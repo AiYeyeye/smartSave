@@ -8,6 +8,11 @@ import { parseImport } from '../../import/parsers';
 import { SettingsStore } from '../../persistence/settings';
 import { AiServicesStore } from '../../persistence/ai-services';
 import type { ConfirmMutation } from '../../schemas/messages';
+import { OrganizeTaskOwner } from '../../background/organize-task-owner';
+import { startOrganizeTaskService } from '../../background/organize-task-service';
+import { OrganizeCheckpointStore } from '../../persistence/organize-checkpoints';
+import { OrganizeMemoryStore } from '../../persistence/organize-memory';
+import { ORGANIZE_TASK_PORT } from '../../domain/organize-task-protocol';
 const snapshot: TreeSnapshot = {
   installationId: 'visual',
   epoch: 'fixture',
@@ -92,12 +97,22 @@ const taxonomyPreview = location.search.includes('organize-taxonomy');
 const treeListeners: ((message: unknown) => void)[] = [];
 const requests: unknown[] = [];
 const connections: string[] = [];
+const workerMessages = new Set<
+  (input: unknown, sender: chrome.runtime.MessageSender, reply: (value: unknown) => void) => unknown
+>();
+const workerConnects = new Set<(port: chrome.runtime.Port) => void>();
+const taskTreeListeners = new Set<(tree: TreeState) => void>();
+let taskTree: TreeState = { status: 'ready', snapshot };
+const publishTree = (state: TreeState) => {
+  taskTree = state;
+  treeListeners.forEach(listener => listener({ version: 1, state }));
+  taskTreeListeners.forEach(listener => listener(state));
+};
 Object.assign(globalThis, {
   __visualTreeConnections: connections,
   __visualSearchRequests: requests,
-  __visualTreeState: (state: TreeState) => treeListeners.forEach(listener => listener({ version: 1, state })),
-  __visualRestoreTree: () =>
-    treeListeners.forEach(listener => listener({ version: 1, state: { status: 'ready', snapshot } })),
+  __visualTreeState: publishTree,
+  __visualRestoreTree: () => publishTree({ status: 'ready', snapshot }),
 });
 if (semanticPreview) {
   const bookmark = snapshot.nodes.find(node => node.ref.nativeId === 'figma')!;
@@ -268,8 +283,52 @@ Object.assign(chrome, {
     onRemoved: { addListener: noop, removeListener: noop },
   },
   runtime: {
+    id: 'visual-host',
+    onMessage: {
+      addListener: (listener: typeof workerMessages extends Set<infer T> ? T : never) => workerMessages.add(listener),
+      removeListener: (listener: typeof workerMessages extends Set<infer T> ? T : never) =>
+        workerMessages.delete(listener),
+    },
+    onConnect: {
+      addListener: (listener: (port: chrome.runtime.Port) => void) => workerConnects.add(listener),
+      removeListener: (listener: (port: chrome.runtime.Port) => void) => workerConnects.delete(listener),
+    },
     connect: ({ name }: { name: string }) => {
       connections.push(name);
+      if (name === ORGANIZE_TASK_PORT) {
+        const pageMessages = new Set<(value: unknown) => void>(),
+          workerMessages = new Set<(value: unknown) => void>();
+        const disconnects = new Set<() => void>();
+        let closed = false;
+        const disconnect = () => {
+          if (!closed) {
+            closed = true;
+            disconnects.forEach(listener => listener());
+          }
+        };
+        const onDisconnect = { addListener: (listener: () => void) => disconnects.add(listener) };
+        const page = {
+          name,
+          disconnect,
+          onDisconnect,
+          onMessage: { addListener: (listener: (value: unknown) => void) => pageMessages.add(listener) },
+          postMessage: (value: unknown) => {
+            if (!closed) workerMessages.forEach(listener => listener(value));
+          },
+        };
+        const worker = {
+          name,
+          disconnect,
+          onDisconnect,
+          sender: { id: 'visual-host', url: 'chrome-extension://visual-host/options/index.html' },
+          onMessage: { addListener: (listener: (value: unknown) => void) => workerMessages.add(listener) },
+          postMessage: (value: unknown) => {
+            if (!closed) pageMessages.forEach(listener => listener(structuredClone(value)));
+          },
+        };
+        workerConnects.forEach(listener => listener(worker as unknown as chrome.runtime.Port));
+        return page;
+      }
       const listeners: ((message: unknown) => void)[] = [];
       const disconnectListeners: (() => void)[] = [];
       let idleTimer: ReturnType<typeof setTimeout> | undefined;
@@ -307,6 +366,16 @@ Object.assign(chrome, {
       message: { type?: string; request?: ConfirmMutation; requestId?: string },
       reply?: (value: unknown) => void,
     ) => {
+      if (message.type === 'organizeTask') {
+        workerMessages.forEach(listener =>
+          listener(
+            message,
+            { id: 'visual-host', url: 'chrome-extension://visual-host/options/index.html' },
+            reply ?? noop,
+          ),
+        );
+        return;
+      }
       if (!interactionPreview) return;
       if (message.type === 'registerMutationPreview') reply?.({ status: 'preview', proposal: message.request });
       if (message.type === 'confirmMutation') {
@@ -403,6 +472,30 @@ async function start() {
       );
     }
   }
+  const taskSettings = new SettingsStore(chrome.storage.local, run => run());
+  startOrganizeTaskService(
+    new OrganizeTaskOwner({
+      settings: taskSettings,
+      projection: {
+        get state() {
+          return taskTree;
+        },
+        fresh: async () => {
+          if (taskTree.status !== 'ready') throw Error('tree-unavailable');
+          return structuredClone(taskTree.snapshot);
+        },
+        subscribe: listener => {
+          taskTreeListeners.add(listener);
+          listener(taskTree);
+          return () => {
+            taskTreeListeners.delete(listener);
+          };
+        },
+      },
+      store: new OrganizeCheckpointStore(globalThis.indexedDB, `zhilan-visual-organize-${location.search}`),
+      memory: new OrganizeMemoryStore(chrome.storage.local),
+    }),
+  );
   createRoot(document.getElementById('root')!).render(
     <App page={location.search.includes('options') ? 'options' : 'panel'} />,
   );

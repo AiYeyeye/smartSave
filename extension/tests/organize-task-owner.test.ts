@@ -204,6 +204,30 @@ it('ignores unrelated memory and protection but stops new relevant protection be
   expect((await h.store.get(started.id))?.status).toBe('invalid');
   h.owner.dispose();
 });
+
+it('accepts an observed older revision only for stopping the same active generation', async () => {
+  const h = setup();
+  h.run.mockResolvedValueOnce(folder).mockImplementation(() => new Promise(() => {}));
+  const started = await h.owner.start(request);
+  const reviewed = await idle(h, started.id);
+  await h.owner.command(started.id, reviewed.revision, 'confirmFolders');
+  await vi.waitFor(() => expect(h.run).toHaveBeenCalledTimes(3));
+  const paused = await h.owner.command(started.id, started.revision, 'pause');
+  expect(paused.state.pipeline?.status).toBe('paused');
+  await idle(h, started.id);
+  await expect(h.owner.command(started.id, started.revision, 'resume')).rejects.toThrow('conflict');
+  expect(h.run).toHaveBeenCalledTimes(3);
+  h.owner.dispose();
+});
+
+it('rejects an unconfigured start without exposing a negative revision or retaining an unreadable task', async () => {
+  const h = setup();
+  delete (h.value as { config?: unknown }).config;
+  await expect(h.owner.start(request)).rejects.toThrow('model-unconfigured');
+  expect(await h.owner.list()).toEqual([]);
+  expect(h.run).not.toHaveBeenCalled();
+  h.owner.dispose();
+});
 async function idle(h: ReturnType<typeof setup>, id: string) {
   await vi.waitFor(async () => expect((await h.owner.get(id)).state.busy).toBe(false));
   return h.owner.get(id);

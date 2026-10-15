@@ -23,8 +23,17 @@ afterEach(() => {
 });
 const flush = () => new Promise<void>(resolve => setTimeout(resolve, 0));
 
-async function worker(withOpenPopup = false) {
+async function worker(withOpenPopup = false, initialization?: Promise<void>) {
   vi.resetModules();
+  if (initialization)
+    vi.stubGlobal('navigator', {
+      locks: {
+        request: async (_name: string, run: () => Promise<unknown>) => {
+          await initialization;
+          return run();
+        },
+      },
+    });
   const messages =
     event<(message: unknown, sender: chrome.runtime.MessageSender, reply: (value: unknown) => void) => unknown>();
   const installed = event<() => void>();
@@ -76,6 +85,7 @@ async function worker(withOpenPopup = false) {
         setAccessLevel: async () => {},
         get: async () => ({ installationId: 'test-install' }),
         set: async () => {},
+        remove: async () => {},
       },
       onChanged: event(),
     },
@@ -127,6 +137,7 @@ async function worker(withOpenPopup = false) {
   }
   return {
     messages,
+    connected,
     clicked,
     save,
     popup,
@@ -142,6 +153,34 @@ async function worker(withOpenPopup = false) {
     },
   };
 }
+
+it('registers listeners immediately but waits for first-install settings initialization before issuing a workbench lease', async () => {
+  let release!: () => void;
+  const initial = new Promise<void>(resolve => {
+    release = resolve;
+  });
+  const h = await worker(false, initial);
+  const received: unknown[] = [];
+  const incoming = event<(message: unknown) => void>(),
+    disconnected = event<() => void>();
+  h.connected.emit({
+    name: 'zhilan-organizer-authority-v1',
+    sender: { id: 'i', url: 'chrome-extension://i/options/index.html' },
+    onMessage: incoming,
+    onDisconnect: disconnected,
+    disconnect: () => disconnected.emit(),
+    postMessage: (message: unknown) => received.push(message),
+  } as unknown as chrome.runtime.Port);
+  await flush();
+  expect(received).toEqual([]);
+  expect(h.clicked.count()).toBe(1);
+  release();
+  await vi.waitFor(() =>
+    expect(received).toContainEqual(expect.objectContaining({ version: 1, organizerContext: expect.any(String) })),
+  );
+  disconnected.emit();
+  expect(h.nativeWrite).not.toHaveBeenCalled();
+});
 
 it('cold worker injects nothing until the toolbar is clicked', async () => {
   const h = await worker();

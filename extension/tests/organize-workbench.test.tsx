@@ -1,11 +1,70 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, expect, it, vi } from 'vitest';
 import { OrganizeWorkbench } from '../panel/OrganizeWorkbench';
 import { OrganizeController } from '../panel/organize-controller';
 import { organizerTree } from './fixtures/organizer-tree';
 import { ThemeProvider, ThemePicker } from '../ui/ThemeProvider';
 import { APPEARANCES } from './appearance';
 import { SettingsStore } from '../persistence/settings';
+import { organizeClientRuntime } from './fixtures/organize-client-runtime';
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
+
+it('uses the worker client to reopen a persisted review and confirms only the restored selection', async () => {
+  const h = organizeClientRuntime();
+  h.run.mockImplementation(async input => ({
+    status: 'completed',
+    output: {
+      newFolders: [],
+      merges: [],
+      moves:
+        input.request.task === 'organize' && input.request.stage === 'bookmarks'
+          ? input.request.itemIds.map(itemId => ({ itemId, folderId: 'right' }))
+          : [],
+    },
+  }));
+  const settings = new SettingsStore({
+    get: async () => ({}),
+    set: async () => {},
+    remove: async () => {},
+    setAccessLevel: async () => {},
+  });
+  const create = (emit: ConstructorParameters<typeof OrganizeController>[0]) => h.client(emit);
+  const first = render(
+    <OrganizeWorkbench visible settings={settings} createController={create} memoryStore={h.memory} />,
+  );
+  await waitFor(() => expect(screen.getByRole('button', { name: '下一步：生成整理方案' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: '下一步：生成整理方案' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: '确认分类，开始分批整理书签' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: '确认分类，开始分批整理书签' }));
+  await screen.findByText('查看并调整 2 条书签');
+  fireEvent.click(screen.getByText('查看并调整 2 条书签'));
+  await waitFor(() => expect(screen.getByLabelText('选择 move:a')).toBeEnabled());
+  fireEvent.click(screen.getByLabelText('选择 move:a'));
+  await waitFor(() => expect(screen.getByLabelText('选择 move:a')).toBeEnabled());
+  expect(screen.getByLabelText('选择 move:a')).not.toBeChecked();
+  first.unmount();
+  expect(h.move).not.toHaveBeenCalled();
+  const reopened = render(
+    <OrganizeWorkbench visible settings={settings} createController={create} memoryStore={h.memory} />,
+  );
+  await screen.findByText('查看并调整 2 条书签');
+  expect(screen.getByLabelText('选择 move:a')).not.toBeChecked();
+  expect(screen.getByLabelText('选择 move:b')).toBeChecked();
+  expect(h.run).toHaveBeenCalledTimes(2);
+  const next = await screen.findByRole('button', { name: '下一步：确认操作' });
+  await waitFor(() => expect(next).toBeEnabled());
+  fireEvent.click(next);
+  fireEvent.click(screen.getByRole('button', { name: '确认并执行 1 项操作' }));
+  await waitFor(() => expect(h.move).toHaveBeenCalledTimes(1));
+  await screen.findByText(/请求编号：.*状态 completed/);
+  expect(h.move.mock.calls[0]![0]).toBe('b');
+  reopened.unmount();
+  settings.dispose();
+  h.dispose();
+});
 it('requires custom instructions, previews streaming suggestions read-only and exposes retry after failure', async () => {
   let fail!: (value: { status: 'failed'; reason: string; detail?: 'output-limit' }) => void;
   let disconnect!: () => void;
