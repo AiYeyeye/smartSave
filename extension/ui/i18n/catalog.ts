@@ -2,12 +2,14 @@ import { aiServicesEnglish } from './ai-services';
 import { saveEnglish } from './save';
 import { saveReceiptsEnglish } from './save-receipts';
 import { bookmarksEnglish } from './bookmarks';
+import { organizeEnglish } from './organize';
 /** UI-owned messages only. Native bookmark content and provider output never enter this catalog. */
 export const english = {
   ...aiServicesEnglish,
   ...saveEnglish,
   ...saveReceiptsEnglish,
   ...bookmarksEnglish,
+  ...organizeEnglish,
   智栏: 'Zhilan',
   '智栏 · 书签助手': 'Zhilan · Bookmark assistant',
   语言: 'Language',

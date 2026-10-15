@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, type ReactNode } from 'react';
 import type { OrganizeAction, OrganizeProposal } from '../domain/organize-proposal';
 import { organizePaths } from '../domain/organize-review';
 import { Select } from '../ui/Select';
+import { useI18n } from '../ui/i18n';
 
 function GroupChoice({
   checked,
@@ -63,6 +64,7 @@ export function OrganizeTargetReview({
   reject: (action: OrganizeAction) => void;
   rejectDisabled: boolean;
 }) {
+  const { t } = useI18n();
   const groups = useMemo(() => {
     const result = new Map<string, OrganizeAction[]>();
     for (const action of actions) {
@@ -77,9 +79,9 @@ export function OrganizeTargetReview({
   const chosen = new Set(selected);
   if (!groups.length) return null;
   return (
-    <section className="organize-target-review" aria-label="按目标目录审核">
-      <h3>按目标目录审核</h3>
-      <p className="hint">勾选整组采用，取消整组保持原位；展开后可逐条调整。尚未修改书签。</p>
+    <section className="organize-target-review" aria-label={t('按目标目录审核')}>
+      <h3>{t('按目标目录审核')}</h3>
+      <p className="hint">{t('勾选整组采用，取消整组保持原位；展开后可逐条调整。尚未修改书签。')}</p>
       {groups.map(([id, items]) => {
         const count = items.filter(action => chosen.has(action.id)).length;
         const label = targetLabels.get(id) ?? id;
@@ -89,7 +91,7 @@ export function OrganizeTargetReview({
               checked={count === items.length}
               mixed={count > 0 && count < items.length}
               disabled={disabled}
-              label={`采纳 ${label}`}
+              label={t('采纳 {title}', { title: label })}
               change={value =>
                 toggleMany(
                   items.map(a => a.id),
@@ -97,39 +99,37 @@ export function OrganizeTargetReview({
                 )
               }
             />
-            <p className="hint">
-              已选 {count} / {items.length} 条书签
-            </p>
+            <p className="hint">{t('已选 {count} / {total} 条书签', { count, total: items.length })}</p>
             <details>
-              <summary>查看并调整 {items.length} 条书签</summary>
+              <summary>{t('查看并调整 {count} 条书签', { count: items.length })}</summary>
               {items.map(action => (
                 <div className="workflow-review-row" key={action.id}>
                   <label>
                     <input
                       type="checkbox"
-                      aria-label={`选择 ${action.id}`}
+                      aria-label={t('选择 {title}', { title: action.id })}
                       checked={chosen.has(action.id)}
                       disabled={disabled}
                       onChange={e => toggle(action.id, e.target.checked)}
                     />
                     {action.title}
                   </label>
-                  <p>当前路径：{paths.get(action.sourceId)}</p>
+                  <p>{t('当前路径：{path}', { path: paths.get(action.sourceId) ?? '' })}</p>
                   <div className="organize-reason">
-                    <p>建议理由：{action.reason}</p>
+                    <p>{t('建议理由：{reason}', { reason: action.reason ?? '' })}</p>
                     <button
                       className="organize-reject"
                       disabled={disabled || rejectDisabled}
-                      title="记住此选择，以后不再建议这个操作；仅本次不采用请取消勾选"
+                      title={t('记住此选择，以后不再建议这个操作；仅本次不采用请取消勾选')}
                       onClick={() => reject(action)}
                     >
-                      不再建议
+                      {t('不再建议')}
                     </button>
                   </div>
                   <label>
-                    建议目标
+                    {t('建议目标')}
                     <Select
-                      aria-label={`${action.id} 目标`}
+                      aria-label={t('{id} 目标', { id: action.id })}
                       value={id}
                       disabled={disabled}
                       onChange={e => target(action.id, e.target.value)}

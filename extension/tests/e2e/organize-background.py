@@ -19,9 +19,12 @@ sys.stdout.reconfigure(encoding='utf-8')
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--run', action='store_true')
+parser.add_argument('--language', choices=['zh-CN', 'en'], default='zh-CN')
 parser.add_argument('--browser', default=os.environ.get('ZHILAN_BROWSER_EXECUTABLE', 'C:/Users/PC/AppData/Local/ms-playwright/chromium-1208/chrome-win64/chrome.exe'))
 parser.add_argument('--output')
 args = parser.parse_args()
+def text(zh, en):
+    return en if args.language == 'en' else zh
 if not args.run:
     print('SKIP: pass --run to test an isolated synthetic extension profile')
     raise SystemExit(0)
@@ -148,7 +151,7 @@ with sync_playwright() as playwright:
           const bar=(await chrome.bookmarks.getTree())[0].children[0].id;
           const root=await chrome.bookmarks.create({parentId:bar,title:'Organizer isolated fixture'});
           const source=await chrome.bookmarks.create({parentId:root.id,title:'Source'});
-          const target=await chrome.bookmarks.create({parentId:root.id,title:'Target'});
+          const target=await chrome.bookmarks.create({parentId:root.id,title:'不再建议'});
           const a=await chrome.bookmarks.create({parentId:source.id,title:'Synthetic A',url:'https://example.test/a'});
           const b=await chrome.bookmarks.create({parentId:source.id,title:'Synthetic B',url:'https://example.test/b'});
           return {root:root.id,source:source.id,target:target.id,a:a.id,b:b.id};
@@ -158,6 +161,11 @@ with sync_playwright() as playwright:
           mode:'anthropic',status:'ok',letter:'A',avatarClass:'av-o',catalog:[{id:'synthetic',ctx:''}],enabled:['synthetic'],timeoutMs:60000,streaming:true
         }],features:[{id:'organize',name:'Organize',desc:'fixture',connId:'local',modelId:'synthetic'}]}})}""", origin)
         before = worker.evaluate('(id)=>chrome.bookmarks.getSubTree(id)', fixture['root'])
+        if args.language == 'en':
+            preferences = context.new_page()
+            preferences.goto(f'chrome-extension://{extension_id}/options/index.html#appearance')
+            preferences.get_by_label('语言', exact=True).select_option('en')
+            preferences.close()
 
         def open_ui():
             page = context.new_page()
@@ -186,18 +194,40 @@ with sync_playwright() as playwright:
         count = len([e for e in events if e['state'] == 'started'])
         page = open_ui()
         wait_for(lambda: worker.evaluate('()=>chrome.action.getBadgeText({})') == '')
-        page.get_by_text('查看并调整 2 条书签', exact=True).click()
-        expect(page.get_by_label(f'选择 move:{fixture["a"]}', exact=True)).to_be_checked()
-        page.get_by_label(f'选择 move:{fixture["a"]}', exact=True).click()
-        expect(page.get_by_label(f'选择 move:{fixture["a"]}', exact=True)).not_to_be_checked()
+        review_label = text('查看并调整 2 条书签', 'Review and adjust bookmarks (2)')
+        choice_label = text(f'选择 move:{fixture["a"]}', f'Select move:{fixture["a"]}')
+        page.get_by_text(review_label, exact=True).click()
+        expect(page.get_by_label(choice_label, exact=True)).to_be_checked()
+        page.get_by_label(choice_label, exact=True).click()
+        expect(page.get_by_label(choice_label, exact=True)).not_to_be_checked()
+        if args.language == 'en':
+            preferences = context.new_page()
+            preferences.goto(f'chrome-extension://{extension_id}/options/index.html#appearance')
+            preferences.get_by_label('Language', exact=True).select_option('zh-CN')
+            expect(page.get_by_label(f'选择 move:{fixture["a"]}', exact=True)).not_to_be_checked()
+            preferences.get_by_label('语言', exact=True).select_option('en')
+            expect(page.get_by_label(choice_label, exact=True)).not_to_be_checked()
+            expect(page.get_by_label(f'Destination for move:{fixture["a"]}', exact=True)).to_have_value(fixture['target'])
+            preferences.close()
         expect(page.get_by_role('button', name='下一步：确认操作', exact=True)).to_be_enabled()
         page.close()
         page = open_ui()
-        page.get_by_text('查看并调整 2 条书签', exact=True).click()
-        expect(page.get_by_label(f'选择 move:{fixture["a"]}', exact=True)).not_to_be_checked()
+        page.get_by_text(review_label, exact=True).click()
+        expect(page.get_by_label(choice_label, exact=True)).not_to_be_checked()
         assert len([e for e in events if e['state'] == 'started']) == count
         assert worker.evaluate('(id)=>chrome.bookmarks.getSubTree(id)', fixture['root']) == before
         page.screenshot(path=str(root / 'restored-review.png'), full_page=True)
+        page.get_by_text('完整分类树与内容去向', exact=True).click()
+        expect(page.get_by_role('heading', name=text('预计整理后的分类', 'Proposed folders'), exact=True)).to_be_visible()
+        expect(page.locator('.organize-classification-tree').get_by_text('不再建议', exact=True)).to_be_visible()
+        geometry = []
+        for width in [320, 340, 480, 1024]:
+            page.set_viewport_size({'width': width, 'height': 900})
+            page.evaluate('()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))')
+            measured = page.evaluate('({width:innerWidth,scroll:document.documentElement.scrollWidth})')
+            assert measured['scroll'] <= width + 1, measured
+            geometry.append(measured)
+            page.screenshot(path=str(root / f'review-{width}.png'), full_page=True)
 
         # A second task is interrupted with B durable and A still pending.
         cycle = 2
@@ -220,7 +250,7 @@ with sync_playwright() as playwright:
         previous = len([e for e in events if e['state'] == 'started'])
         assert previous == count + 3
         resume.click()
-        page.get_by_text('查看并调整 2 条书签', exact=True).wait_for()
+        page.get_by_text(review_label, exact=True).wait_for()
         assert len([e for e in events if e['state'] == 'started']) == previous + 1
         restored = next(t for t in worker.evaluate(read_tasks) if t['id'] == task['id'])
         assert [batch['id'] for batch in restored['batches']] == stable
@@ -239,6 +269,7 @@ with sync_playwright() as playwright:
         assert worker.evaluate('(id)=>chrome.bookmarks.getSubTree(id)', fixture['root']) == after
         page.screenshot(path=str(root / 'submitted-result.png'), full_page=True)
         result = {'status': 'PASS', 'browser': context.browser.version, 'taskId': task['id'], 'requestId': submitted,
+                  'reviewLanguage': args.language, 'geometry': geometry, 'crossDocumentSelectionRetained': args.language == 'en',
                   'events': events, 'evidence': str(root), 'manifestDelta': {'host_permissions': ['http://127.0.0.1/*']},
                   'productionWorkerSHA256': hashlib.sha256((extension / 'service-worker.js').read_bytes()).hexdigest(),
                   'badge': 'PASS: closed-page progress, unread review, visible acknowledgement, restart-paused reminder',

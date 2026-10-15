@@ -10,6 +10,7 @@ from playwright.sync_api import expect, sync_playwright
 sys.stdout.reconfigure(encoding='utf-8')
 parser = argparse.ArgumentParser()
 parser.add_argument('--run', action='store_true')
+parser.add_argument('--language', choices=['zh-CN', 'en'], default='zh-CN')
 parser.add_argument('--browser', default='C:/Users/PC/AppData/Local/ms-playwright/chromium-1208/chrome-win64/chrome.exe')
 args = parser.parse_args()
 if not args.run:
@@ -17,6 +18,8 @@ if not args.run:
     raise SystemExit(0)
 extension = Path(__file__).resolve().parents[2] / 'dist'
 root = Path(tempfile.mkdtemp(prefix='zhilan-duplicates-'))
+def text(zh, en):
+    return en if args.language == 'en' else zh
 
 with sync_playwright() as playwright:
     context = playwright.chromium.launch_persistent_context(str(root / 'profile'), executable_path=args.browser, headless=True,
@@ -35,32 +38,53 @@ with sync_playwright() as playwright:
           return {root:root.id,items};
         }""")
         before = worker.evaluate('(id)=>chrome.bookmarks.getSubTree(id)', fixture['root'])
+        preferences = context.new_page()
+        preferences.goto(f'chrome-extension://{extension_id}/options/index.html#appearance')
+        if args.language == 'en':
+            preferences.get_by_label('语言', exact=True).select_option('en')
         page = context.new_page()
         page.goto(f'chrome-extension://{extension_id}/options/index.html#organize')
         page.get_by_role('radio', name='清理重复书签', exact=False).check()
         page.get_by_label('整理范围', exact=True).select_option(fixture['root'])
         page.get_by_role('button', name='下一步：查找重复书签', exact=True).click()
-        expect(page.get_by_role('heading', name='精确重复 · 2 条', exact=True)).to_be_visible()
-        expect(page.get_by_role('heading', name='疑似重复 · 3 条', exact=True)).to_be_visible()
+        expect(page.get_by_role('heading', name=text('精确重复 · 2 条', 'Exact duplicates · 2'), exact=True)).to_be_visible()
+        expect(page.get_by_role('heading', name=text('疑似重复 · 3 条', 'Possible duplicates · 3'), exact=True)).to_be_visible()
         assert page.locator('.duplicate-review select').count() == 5
         for select in page.locator('.duplicate-review select').all():
             expect(select).to_have_value('unselected')
         for item in fixture['items'][:3]:
             expect(page.locator('.duplicate-review').get_by_text(item['url'], exact=True)).to_be_visible()
-        expect(page.get_by_label('Different content 保留或删除', exact=True)).to_have_count(0)
-        page.get_by_label('Delete B 保留或删除', exact=True).select_option('delete')
+        expect(page.get_by_label(text('Different content 保留或删除', 'Keep or delete Different content'), exact=True)).to_have_count(0)
+        page.get_by_label(text('Delete B 保留或删除', 'Keep or delete Delete B'), exact=True).select_option('delete')
         expect(page.get_by_role('button', name='生成去重预览', exact=True)).to_be_disabled()
-        page.get_by_label('Keep A 保留或删除', exact=True).select_option('keep')
+        page.get_by_label(text('Keep A 保留或删除', 'Keep or delete Keep A'), exact=True).select_option('keep')
+        if args.language == 'en':
+            preferences.get_by_label('Language', exact=True).select_option('zh-CN')
+            expect(page.get_by_label('Delete B 保留或删除', exact=True)).to_have_value('delete')
+            expect(page.get_by_label('Keep A 保留或删除', exact=True)).to_have_value('keep')
+            preferences.get_by_label('语言', exact=True).select_option('en')
+            expect(page.get_by_label('Keep or delete Delete B', exact=True)).to_have_value('delete')
         assert worker.evaluate('(id)=>chrome.bookmarks.getSubTree(id)', fixture['root']) == before
         geometry = []
-        for width in [340, 480, 1024]:
+        for width in [320, 340, 480, 1024]:
             page.set_viewport_size({'width': width, 'height': 960})
+            page.evaluate('()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))')
             page.evaluate('scrollTo(0,0)')
             measured = page.evaluate('({width:innerWidth,scroll:document.documentElement.scrollWidth})')
             assert measured['scroll'] <= measured['width'] + 1, measured
             geometry.append(measured)
             page.screenshot(path=str(root / f'duplicate-review-{width}.png'), full_page=True)
         page.get_by_role('button', name='生成去重预览', exact=True).click()
+        page.get_by_text('完整分类树与内容去向', exact=True).click()
+        expect(page.get_by_role('heading', name=text('预计整理后的分类', 'Proposed folders'), exact=True)).to_be_visible()
+        expect(page.get_by_text(text('→ 删除重复书签 · 1 条书签', '→ Delete duplicate bookmarks · Bookmarks: 1'), exact=True)).to_be_visible()
+        for width in [320, 340, 480, 1024]:
+            page.set_viewport_size({'width': width, 'height': 960})
+            page.evaluate('()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))')
+            measured = page.evaluate('({width:innerWidth,scroll:document.documentElement.scrollWidth})')
+            assert measured['scroll'] <= width + 1, measured
+            geometry.append({'surface': 'preview', **measured})
+            page.screenshot(path=str(root / f'duplicate-preview-{width}.png'), full_page=True)
         page.get_by_role('button', name='下一步：确认操作', exact=True).click()
         assert worker.evaluate('(id)=>chrome.bookmarks.getSubTree(id)', fixture['root']) == before
         page.get_by_role('button', name='确认并执行 1 项操作', exact=True).click()
@@ -75,6 +99,7 @@ with sync_playwright() as playwright:
         assert len(records) == 1 and records[0]['result']['status'] == 'completed'
         assert fixture['items'][1]['url'] in json.dumps(records[0]['backup'])
         result = {'status': 'PASS', 'browser': context.browser.version, 'evidence': str(root), 'geometry': geometry,
+                  'reviewLanguage': args.language, 'crossDocumentSelectionRetained': args.language == 'en',
                   'deleted': fixture['items'][1]['id'], 'remaining': len(after), 'journalBackup': True,
                   'workerSHA256': hashlib.sha256((extension / 'service-worker.js').read_bytes()).hexdigest(),
                   'scope': 'Unmodified production dist; isolated native fixture, no configured model. Explicit preview/final deletion, retained originals and durable backup verified. Not branded-browser release acceptance.'}

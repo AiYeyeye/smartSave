@@ -22,11 +22,14 @@ export function organizeProgressTiming(
   };
 }
 
-export function organizeDuration(ms: number) {
+export function organizeDuration(
+  ms: number,
+  units: Readonly<{ second: string; minute: string; hour: string }> = { second: '秒', minute: '分', hour: '小时' },
+) {
   const seconds = Math.floor(Math.max(0, ms) / 1000);
-  if (seconds < 60) return `${seconds} 秒`;
-  if (seconds < 3600) return `${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒`;
-  return `${Math.floor(seconds / 3600)} 小时 ${Math.floor((seconds % 3600) / 60)} 分`;
+  if (seconds < 60) return `${seconds} ${units.second}`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} ${units.minute} ${seconds % 60} ${units.second}`;
+  return `${Math.floor(seconds / 3600)} ${units.hour} ${Math.floor((seconds % 3600) / 60)} ${units.minute}`;
 }
 
 /** Bounded, provisional display only. This never constructs a writable proposal. */
