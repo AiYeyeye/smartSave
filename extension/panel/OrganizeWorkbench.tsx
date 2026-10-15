@@ -19,7 +19,7 @@ import { OrganizeTargetReview } from './OrganizeTargetReview';
 import { OrganizeTiming } from './OrganizeTiming';
 import { cancellable } from '../domain/cancellable';
 import { OrganizeMemoryStore, emptyOrganizeMemory, type OrganizeMemory } from '../persistence/organize-memory';
-import type { DuplicateChoice } from '../domain/exact-duplicates';
+import { DuplicateReview } from './DuplicateReview';
 import { Select } from '../ui/Select';
 import { WorkflowSteps } from '../ui/WorkflowSteps';
 import { BusyIndicator } from '../ui/BusyIndicator';
@@ -412,7 +412,7 @@ export function OrganizeWorkbench({
             />
             <span>
               <strong>清理重复书签</strong>
-              <small>本地查找链接完全相同的书签，手动选择保留项。</small>
+              <small>本地查找精确重复和疑似重复，逐条选择保留或删除。</small>
             </span>
           </label>
         </div>
@@ -760,30 +760,13 @@ export function OrganizeWorkbench({
           </section>
         )}
         <div hidden={step !== 2 || !!state.result}>
-          {state.duplicates.map(group => (
-            <article key={group.url}>
-              <h3>精确重复：{group.url}</h3>
-              <p>保留至少一项；未选择的项目不删除。参数、片段和尾斜杠不同不会合并。</p>
-              {group.items.map(node => (
-                <label key={node.ref.nativeId}>
-                  {node.title} ·{' '}
-                  {proposalPaths.get(node.ref.nativeId) ?? currentPaths.get(node.ref.nativeId) ?? node.ref.nativeId}
-                  <Select
-                    aria-label={`${node.title} 保留或删除`}
-                    disabled={state.busy || state.invalid}
-                    value={state.choices[node.ref.nativeId] ?? 'unselected'}
-                    onChange={e => owner.current?.choice(node.ref.nativeId, e.target.value as DuplicateChoice)}
-                  >
-                    <option value="unselected">未选择</option>
-                    <option value="keep">明确保留</option>
-                    <option value="delete" disabled={node.readOnly}>
-                      明确删除
-                    </option>
-                  </Select>
-                </label>
-              ))}
-            </article>
-          ))}
+          <DuplicateReview
+            groups={state.duplicates}
+            choices={state.choices}
+            paths={currentPaths}
+            disabled={state.busy || state.invalid}
+            onChoice={(id, choice) => owner.current?.choice(id, choice)}
+          />
           {!!state.duplicates.length && !proposal && (
             <button
               className="primary"
@@ -954,7 +937,7 @@ export function OrganizeWorkbench({
             <p>确认后将修改浏览器书签，写入前会自动备份。删除和合并操作也会执行，请确认上一步的选择。</p>
           </>
         )}
-        <div className="workflow-footer organize-footer">
+        <div className={`workflow-footer${method === 'ai' ? ' organize-footer' : ''}`}>
           <p
             className="organize-footer-status"
             role={state.invalid && !state.failure ? 'alert' : 'status'}
@@ -1088,8 +1071,8 @@ export function OrganizeWorkbench({
       <details className="workflow-help">
         <summary>整理说明</summary>
         <p>
-          只整理所选目录。重复链接按原始 URL
-          精确匹配，参数、片段和尾斜杠不同不会合并。执行失败会停止，已经执行的操作需从恢复记录核对。
+          只整理所选目录。精确重复按原始链接匹配；疑似重复忽略 utm_* 参数、http/https、www 和末尾斜杠，
+          保留其他参数与片段的差异。所有重复项都由你选择保留或删除，预览后再确认执行。执行失败会停止，已执行的操作可从恢复记录核对。
         </p>
       </details>
       <details className="workflow-help" onToggle={e => setRecoveryOpen(e.currentTarget.open)}>

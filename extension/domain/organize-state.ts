@@ -6,7 +6,8 @@ import type { TreeSnapshot, TreeState } from './node-reference';
 import type { OrganizeProposal, OrganizeOptions } from './organize-proposal';
 import type { OrganizePreference } from './organize-preferences';
 import type { OrganizeRequest, approvedOrganizeFolders } from './organize-batches';
-import type { exactDuplicates, DuplicateChoice } from './exact-duplicates';
+import type { DuplicateChoice } from './exact-duplicates';
+import type { DuplicateGroup } from './suspected-duplicates';
 import type { OrganizeRepair } from './organize-partial-repair';
 
 export interface OrganizeState {
@@ -45,7 +46,7 @@ export interface OrganizeState {
   proposal?: OrganizeProposal;
   selected: string[];
   targets: Record<string, string>;
-  duplicates: ReturnType<typeof exactDuplicates>;
+  duplicates: DuplicateGroup[];
   choices: Record<string, DuplicateChoice>;
   invalid: boolean;
   busy: boolean;

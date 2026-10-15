@@ -93,6 +93,28 @@ it('defaults to the first writable native root and preserves an explicit scope a
   expect(state.scopeId).toBe('');
   controller.dispose();
 });
+
+it('scans suspected duplicates locally, requires explicit choices and invalidates a changed URL before deletion', async () => {
+  const h = setup();
+  h.context.tree.nodes.find(node => node.ref.nativeId === 'a')!.url = 'http://www.x.test/a/?utm_source=mail';
+  h.context.tree.nodes.find(node => node.ref.nativeId === 'b')!.url = 'https://x.test/a';
+  h.controller.setTree({ status: 'ready', snapshot: h.context.tree });
+  h.controller.scan();
+  expect(h.state().duplicates[0]?.suspected).toBe(true);
+  expect(h.state().choices).toEqual({});
+  h.controller.choice('a', 'keep');
+  h.controller.choice('b', 'delete');
+  await h.controller.previewDuplicates();
+  expect(h.state().proposal?.actions.map(action => action.id)).toEqual(['delete:b']);
+  expect(h.model.run).not.toHaveBeenCalled();
+  expect(h.send).not.toHaveBeenCalled();
+  h.context.tree.nodes.find(node => node.ref.nativeId === 'b')!.url += '?different=1';
+  h.controller.setTree({ status: 'ready', snapshot: h.context.tree });
+  await h.controller.apply();
+  expect(h.state().invalid).toBe(true);
+  expect(h.send).not.toHaveBeenCalled();
+  h.controller.dispose();
+});
 it('counts active analysis time and stops the clock during review and pauses', async () => {
   let now = 1000;
   const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);

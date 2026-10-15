@@ -39,7 +39,8 @@ import {
   actionDependencies,
   reconcileOrganizeSelection,
 } from '../domain/organize-proposal';
-import { duplicateProposal, exactDuplicates, type DuplicateChoice } from '../domain/exact-duplicates';
+import { duplicateProposal, type DuplicateChoice } from '../domain/exact-duplicates';
+import { duplicateGroups } from '../domain/suspected-duplicates';
 import { submitMutation, sendMutation, type SendMutation } from './mutation-client';
 import { openOrganizerLease, type OpenOrganizerLease, type OrganizerLease } from './organizer-client';
 import type { OrganizeState, GenerationOptions, StagedRun } from '../domain/organize-state';
@@ -326,13 +327,15 @@ export class OrganizeController {
     this.state.pipeline = undefined;
     try {
       this.scanTree = structuredClone(this.state.tree.snapshot);
-      this.state.duplicates = exactDuplicates(this.scanTree, this.state.scopeId);
+      this.state.duplicates = duplicateGroups(this.scanTree, this.state.scopeId);
       this.scopeDigest = scopeDependencies(this.scanTree, this.state.scopeId);
       this.state.choices = {};
       this.state.proposal = undefined;
       this.state.result = undefined;
       this.state.invalid = false;
-      this.state.message = '本地扫描完成；每组需明确选择保留和删除，不默认删除。';
+      this.state.message = this.state.duplicates.length
+        ? '本地扫描完成；精确重复与疑似重复分别标注，每组需明确选择保留和删除。'
+        : '本地扫描完成，未发现精确重复或疑似重复书签。';
     } catch {
       this.scanTree = undefined;
       this.state.message = '范围不可用，请重新选择。';
@@ -1007,7 +1010,7 @@ export class OrganizeController {
         scopeDependencies(this.state.tree.snapshot, this.state.scopeId) !== this.scopeDigest
       )
         throw Error('stale');
-      this.accept(duplicateProposal(tree, this.state.scopeId, this.state.choices));
+      this.accept(duplicateProposal(tree, this.state.scopeId, this.state.choices, true));
     } catch {
       if (generation !== this.generation) return;
       this.lease?.close();

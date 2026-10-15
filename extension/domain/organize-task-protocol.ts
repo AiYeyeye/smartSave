@@ -61,7 +61,9 @@ export const organizeTaskViewSchema = z.strictObject({
     scopeId: z.string(),
     selected: strings,
     targets: z.record(z.string(), z.string()),
-    duplicates: z.array(z.strictObject({ url: z.string(), items: z.array(nodeSchema) })),
+    duplicates: z.array(
+      z.strictObject({ url: z.string(), items: z.array(nodeSchema), suspected: z.boolean().optional() }),
+    ),
     choices: z.record(z.string(), z.enum(['keep', 'delete', 'unselected'])),
     invalid: z.boolean(),
     busy: z.boolean(),
