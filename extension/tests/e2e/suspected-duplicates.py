@@ -102,8 +102,9 @@ with sync_playwright() as playwright:
         assert len(records) == 1 and records[0]['result']['status'] == 'completed'
         assert fixture['items'][1]['url'] in json.dumps(records[0]['backup'])
         # The same real journal powers undo. Locale changes must preserve consent without writing.
-        page.get_by_text(text('恢复与撤销记录', 'Recovery and undo records'), exact=True).click()
-        recovery = page.get_by_role('region', name=text('备份与恢复', 'Backup and recovery'), exact=True)
+        workbench = page.get_by_role('region', name=text('整理工作台', 'Organization workbench'), exact=True)
+        workbench.get_by_text(text('恢复与撤销记录', 'Recovery and undo records'), exact=True).click()
+        recovery = workbench.get_by_role('region', name=text('备份与恢复', 'Backup and recovery'), exact=True)
         recovery.get_by_role('button', name=text('预览撤销', 'Preview undo'), exact=True).click()
         preview = recovery.get_by_role('region', name=text('恢复预览', 'Recovery preview'), exact=True)
         expect(preview).to_contain_text(fixture['items'][1]['title'])

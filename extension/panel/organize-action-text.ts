@@ -29,3 +29,11 @@ export function organizeActionReason(language: Language, action: OrganizeAction,
     }
   }
 }
+
+export const organizeActionNames = {
+  create: '新建目录',
+  move: '移动',
+  merge: '合并目录',
+  delete: '删除',
+  rename: '重命名分类',
+} as const;
