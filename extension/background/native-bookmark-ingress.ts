@@ -20,6 +20,7 @@ import type { ModelTiming } from '../domain/save-performance';
 import { localClassification } from '../domain/local-classification';
 import type { SiteRulesStore } from '../persistence/site-rules';
 import { actionBadges, type NativeBadgeState } from './action-badge';
+import type { BookmarkKeywordsStore } from '../persistence/bookmark-keywords';
 
 export type NativeClassifyResult =
   | { status: 'skipped'; reason: string; bookmarkId: string }
@@ -51,6 +52,7 @@ export type NativeBookmarkIngressOptions = {
   /** Receipts the popup shows (where it went / why AI did not run). Optional for tests. */
   receipts?: SaveReceiptLog;
   rules?: Pick<SiteRulesStore, 'load' | 'subscribe'>;
+  keywords?: Pick<BookmarkKeywordsStore, 'remember'>;
   /** Toolbar badge hint; never throws. */
   badge?: (state: BadgeState) => void;
   /** Optional UI hint after a successful auto-classify. Never throws. */
@@ -548,7 +550,18 @@ export function startNativeBookmarkIngress(options: NativeBookmarkIngressOptions
       }
 
       const plan = planNativeSaveApply(live, bookmarkId, assignment.folderId, response.output.newFolders);
+      const rememberKeywords = () =>
+        options.keywords
+          ?.remember({
+            installationId: tree.installationId,
+            nativeId: bookmarkId,
+            title: node.title,
+            url: node.url!,
+            keywords: 'keywords' in assignment ? (assignment.keywords ?? []) : [],
+          })
+          .catch(() => {});
       if (plan.status === 'noop') {
+        await rememberKeywords();
         debug('noop', { bookmarkId, reason: plan.reason });
         await finish('kept', {
           reason: 'already-in-destination',
@@ -585,6 +598,7 @@ export function startNativeBookmarkIngress(options: NativeBookmarkIngressOptions
       const after = await projection.fresh();
       if (!after.nodes.some(n => n.ref.nativeId === bookmarkId && n.parentId === destinationId))
         throw Error('native-write-uncertain');
+      await rememberKeywords();
       await finish('moved', {
         model: route.label,
         toId: destinationId,

@@ -1,4 +1,4 @@
-# Markora · 智栏
+# Zhilan · 智栏
 
 English · [简体中文](README.md)
 
@@ -8,11 +8,13 @@ A Chrome / Edge extension for browser bookmarks. Classify new bookmarks when you
 
 - **Classify as you save.** Confirmed website rules and confident same-domain matches run locally before AI. A timeout leaves the bookmark where it is. Receipts offer correction and undo; saving a website rule requires separate confirmation.
 - **Organize in batches.** Review the folder plan first, then analyze bookmarks with two concurrent batches by default. Generation continues in the background. Reopen the workspace to review progress, or manually resume interrupted work. Applying changes always requires confirmation.
-- **Local and AI search.** Search titles, URLs, folder paths, Chinese pinyin and initials locally. Fast AI search and segmented deep search run only when requested.
+- **Local and AI search.** Search titles, URLs, folder paths, Chinese pinyin and initials locally. Save classification can also generate a few local search keywords in the same model request. Fast AI search and segmented deep search run only when requested.
 - **Review duplicates.** Exact duplicates and suspected URL variants are labeled separately. Original URLs remain visible, with explicit keep/delete choices.
 - **Import, export and recover.** Import HTML, JSON, CSV, TXT or Markdown. Export JSON, HTML or Markdown, save to local files and inspect operation recovery records.
 
-Native browser bookmarks are the source of truth. No Markora account is needed. AI features use services you already have; public configuration exports exclude credentials, and model host access is requested as needed.
+Native browser bookmarks are the source of truth. No Zhilan account is needed. AI features use services you already have; public configuration exports exclude credentials, and model host access is requested as needed.
+
+Language, light/dark mode and accent color can sync through your browser. Provider keys, URLs, folder rules and bookmark keywords stay local. Keywords enrich only matching native bookmarks and are removed after deletion, title or URL changes. Existing bookmarks do not trigger automatic model requests for enrichment.
 
 ## Install from source
 

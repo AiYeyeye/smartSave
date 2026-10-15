@@ -8,6 +8,7 @@ import { openUrl } from '../domain/open-url';
 import { cancellable } from '../domain/cancellable';
 import { fastSearchCandidates } from '../domain/search-retrieval';
 import { AI_SEARCH_CANDIDATES, AI_SEARCH_RESULTS } from '../domain/search-limits';
+import type { BookmarkKeywordRecord } from '../domain/bookmark-keywords';
 export interface SearchState {
   query: string;
   hits: SearchHit[];
@@ -35,6 +36,11 @@ function failureMessage(reason: string): string {
   return `AI 搜索未完成，保留本地结果。${messages[reason] ?? '请检查模型连接后重试。'}`;
 }
 export class SearchController {
+  private keywords: BookmarkKeywordRecord[] = [];
+  setKeywords(records: BookmarkKeywordRecord[]) {
+    this.keywords = records;
+    if (this.tree.status === 'ready') this.setTree(this.tree);
+  }
   private index?: SearchIndex;
   private tree: TreeState = { status: 'loading' };
   private local: SearchHit[] = [];
@@ -79,7 +85,7 @@ export class SearchController {
   setTree(tree: TreeState) {
     this.tree = structuredClone(tree);
     try {
-      if (this.tree.status === 'ready') this.index = new SearchIndex(this.tree.snapshot);
+      if (this.tree.status === 'ready') this.index = new SearchIndex(this.tree.snapshot, this.keywords);
     } catch {
       this.tree = { status: 'error', message: '搜索索引不可用，请等待书签刷新。' };
       this.index = undefined;
@@ -179,7 +185,7 @@ export class SearchController {
         const expanded = await run({ task: 'search-expand', query: this.state.query, itemIds: [], folderIds: [] });
         if (!('terms' in expanded)) throw Error('schema');
         const shortList = fastSearchCandidates(
-          new SearchIndex(context.tree),
+          new SearchIndex(context.tree, this.keywords),
           candidates,
           this.state.query,
           expanded.terms,

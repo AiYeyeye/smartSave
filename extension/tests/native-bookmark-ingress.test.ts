@@ -11,6 +11,8 @@ import { SaveReceiptLog, readSaveReceipts, SAVE_RECEIPTS_KEY, type SaveReceipt }
 import type { ApiMode } from '../domain/ai-providers';
 import { ModelTransport } from '../adapters/model-transport';
 import type { SiteRulesStore } from '../persistence/site-rules';
+import { BookmarkKeywordsStore } from '../persistence/bookmark-keywords';
+import { SearchIndex } from '../domain/search-index';
 
 function event<T extends (...args: never[]) => unknown>() {
   const listeners = new Set<T>();
@@ -204,6 +206,7 @@ async function harness(
   const wrapped = guard.wrap(writer);
   const fetchMock = vi.fn<typeof fetch>();
   const permissions = { contains: vi.fn(async () => true) };
+  const keywords = new BookmarkKeywordsStore(storage, () => projection.fresh());
 
   const ingress = startNativeBookmarkIngress({
     projection,
@@ -223,6 +226,7 @@ async function harness(
     permissions,
     fetch: fetchMock,
     rules: opts.rules,
+    keywords,
   });
 
   return {
@@ -241,8 +245,44 @@ async function harness(
     writer,
     projection,
     storage,
+    keywords,
   };
 }
+
+it('one native save request enriches local search only after successful readback', async () => {
+  const h = await harness({ streaming: false });
+  const node = {
+    syncing: false,
+    id: 'keyword-book',
+    parentId: '1',
+    title: 'Drawing site',
+    url: 'https://drawing.test/',
+  };
+  h.find('1').children!.push(node);
+  await h.writer.create({ parentId: '2', title: '_touch' });
+  h.fetchMock.mockResolvedValue(
+    new Response(
+      JSON.stringify({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                assignments: [{ itemId: node.id, folderId: '2', keywords: ['流程图', 'diagramming', '图表'] }],
+                newFolders: [],
+              }),
+            },
+          },
+        ],
+      }),
+    ),
+  );
+  expect(await h.ingress.classify(node.id)).toMatchObject({ status: 'completed' });
+  expect(h.fetchMock).toHaveBeenCalledOnce();
+  expect(
+    new SearchIndex(await h.projection.fresh(), await h.keywords.read()).query('diagramming').map(hit => hit.id),
+  ).toEqual([node.id]);
+  h.ingress.dispose();
+});
 
 it('recovers abandoned receipts before new saves without replaying any model or bookmark writes', async () => {
   const pending: SaveReceipt = {

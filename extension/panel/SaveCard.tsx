@@ -23,7 +23,7 @@ import { siteHost, matchSiteRule, type SiteRule } from '../domain/site-rules';
 import { SettingsStore } from '../persistence/settings';
 import { ModelTransport } from '../adapters/model-transport';
 import { browserModelAuthority, type ModelAuthorityChange } from '../adapters/model-authority';
-import { completedSaveFolder, reconcileSave, type ReconcileSave } from './save-receipt';
+import { completedSaveFolder, completedSaveBookmark, reconcileSave, type ReconcileSave } from './save-receipt';
 import { openUrl } from '../domain/open-url';
 import { Select } from '../ui/Select';
 export function SaveCard({
@@ -70,6 +70,7 @@ export function SaveCard({
   const live = useRef(true);
   const transport = useRef<ModelTransport | undefined>(undefined);
   const generation = useRef(0);
+  const keywords = useRef<{ title: string; url: string; words: string[] } | undefined>(undefined);
   useEffect(() => {
     live.current = true;
     const authority =
@@ -78,6 +79,7 @@ export function SaveCard({
         : undefined;
     const revoke = () => {
       generation.current++;
+      keywords.current = undefined;
       transport.current?.cancel();
       if (live.current) setDraft(current => invalidateSaveSuggestion(current));
     };
@@ -146,6 +148,7 @@ export function SaveCard({
       return;
     }
     const token = ++generation.current;
+    keywords.current = undefined;
     suggestingLock.current = true;
     setSuggesting(true);
     if (readOnlyTrial) setDraft(current => invalidateSaveSuggestion(current));
@@ -187,6 +190,8 @@ export function SaveCard({
       if (!('assignments' in response.output)) throw Error();
       const assignment = response.output.assignments.find(a => a.itemId === itemId);
       if (!assignment) throw Error();
+      if (!readOnlyTrial && 'keywords' in assignment && assignment.keywords?.length)
+        keywords.current = { title: page.title, url: page.url, words: assignment.keywords };
       const suggestion = saveSuggestionPath(draft, assignment.folderId, response.output.newFolders);
       setDraft(current =>
         current.directoryEdited || current.existingId
@@ -241,6 +246,25 @@ export function SaveCard({
     transport.current?.cancel();
     const response = await submitMutation(request, send);
     if (live.current) setResult(response);
+    const enrichment = keywords.current;
+    if (response.status === 'completed' && enrichment?.title === draft.title && enrichment.url === draft.url) {
+      try {
+        const nativeId = completedSaveBookmark(await reconcile(request.requestId), request.requestId);
+        await chrome.runtime.sendMessage({
+          version: 1,
+          type: 'rememberBookmarkKeywords',
+          record: {
+            installationId: request.installationId,
+            nativeId,
+            title: draft.title,
+            url: draft.url,
+            keywords: enrichment.words,
+          },
+        });
+      } catch {
+        // Search enrichment is advisory; never retry a completed bookmark write to attach it.
+      }
+    }
     if (response.status === 'completed' && draft.rememberRule) {
       let folder = draft.snapshot.nodes.find(n => n.ref.nativeId === draft.parentId)?.ref;
       if (draft.newFolder) {
@@ -396,6 +420,7 @@ export function SaveCard({
               disabled={busy || !!result}
               onChange={event => {
                 generation.current++;
+                keywords.current = undefined;
                 transport.current?.cancel();
                 setDraft(invalidateSaveSuggestion);
                 setBodyEnabled(event.target.checked);
@@ -410,6 +435,7 @@ export function SaveCard({
             onClick={() => {
               automaticEligible.current = false;
               generation.current++;
+              keywords.current = undefined;
               transport.current?.cancel();
               setMessage('已取消AI请求；不会自动重试。');
             }}

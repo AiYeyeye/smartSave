@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "Markora bookmark export v1",
+  "title": "Zhilan bookmark export v1",
   "type": "object",
   "additionalProperties": false,
   "required": ["format", "schemaVersion", "generatedAt", "roots"],

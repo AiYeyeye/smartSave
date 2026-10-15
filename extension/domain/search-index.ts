@@ -1,5 +1,6 @@
 import { pinyin } from 'pinyin-pro';
 import type { TreeSnapshot } from './node-reference';
+import { currentBookmarkKeywords, type BookmarkKeywordRecord } from './bookmark-keywords';
 export interface SearchHit {
   id: string;
   title: string;
@@ -28,7 +29,8 @@ function nearPrefix(a: string, b: string, limit: number): boolean {
 }
 export class SearchIndex {
   private readonly entries: { hit: SearchHit; title: string; fields: string[]; phonetic: string[]; words: string[] }[];
-  constructor(tree: TreeSnapshot) {
+  constructor(tree: TreeSnapshot, records: readonly BookmarkKeywordRecord[] = []) {
+    const keywords = new Map(currentBookmarkKeywords(tree, records).map(record => [record.nativeId, record.keywords]));
     const nodes = new Map(tree.nodes.map(node => [node.ref.nativeId, node]));
     const phonetics = new Map<string, string[]>();
     const transliterate = (text: string) => {
@@ -66,7 +68,9 @@ export class SearchIndex {
           /* Historical unsupported URLs remain searchable, not openable. */
         }
         const title = normalize(node.title);
-        const fields = [node.url!, host, pathname, path.join(' / ')].map(normalize);
+        const fields = [node.url!, host, pathname, path.join(' / '), ...(keywords.get(node.ref.nativeId) ?? [])].map(
+          normalize,
+        );
         const phonetic = [node.title, ...path].flatMap(transliterate);
         const words = [
           ...new Set(

@@ -11,6 +11,7 @@ import shutil
 import sys
 import tempfile
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from playwright.sync_api import expect, sync_playwright
 
@@ -20,6 +21,7 @@ parser.add_argument('--run', action='store_true')
 parser.add_argument('--browser', default='C:/Users/PC/AppData/Local/ms-playwright/chromium-1208/chrome-win64/chrome.exe')
 parser.add_argument('--motion', choices=['reduce', 'no-preference'], default='reduce')
 parser.add_argument('--language', choices=['zh-CN', 'en'], default='zh-CN')
+parser.add_argument('--keywords', action='store_true', help='Also verify native-save keyword enrichment and cleanup')
 args = parser.parse_args()
 if not args.run:
     print('SKIP: pass --run for the isolated fixture')
@@ -53,7 +55,7 @@ class Provider(BaseHTTPRequestHandler):
         raw = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
         payload = json.loads(raw['messages'][1]['content'])
         events.append({'model': raw['model'], 'payload': payload})
-        output = {'assignments': [{'itemId': payload['items'][0]['id'], 'folderId': fixture['folder']}], 'newFolders': []}
+        output = {'assignments': [{'itemId': payload['items'][0]['id'], 'folderId': fixture['folder'], 'keywords': ['diagramming', '流程图', '工作流']}], 'newFolders': []}
         self.reply({'choices': [{'message': {'content': json.dumps(output)}}]})
 
 
@@ -62,6 +64,14 @@ threading.Thread(target=server.serve_forever, daemon=True).start()
 origin = f'http://127.0.0.1:{server.server_port}'
 def ui(chinese, english):
     return english if args.language == 'en' else chinese
+
+def wait_for(check):
+    deadline = time.monotonic() + 20
+    while time.monotonic() < deadline:
+        if check():
+            return
+        time.sleep(0.1)
+    raise AssertionError('keyword fixture condition timed out')
 
 folder_title = '收藏标题' if args.language == 'en' else 'Trial destination'
 manifest = json.loads((extension / 'manifest.json').read_text(encoding='utf-8'))
@@ -154,6 +164,7 @@ with sync_playwright() as playwright:
         assert 'snippet' not in event['payload']
         assert 'must-not-send' not in json.dumps(event)
         assert worker.evaluate('() => chrome.bookmarks.getTree()') == before
+        assert worker.evaluate("async()=> (await chrome.storage.local.get('bookmarkSearchKeywords.v1'))['bookmarkSearchKeywords.v1'] ?? []") == []
         assert frame.get_by_role('button', name=ui('确认收藏保存', 'Confirm bookmark save'), exact=True).count() == 0
         page.screenshot(path=str(root / 'trial-result.png'), full_page=True)
         if args.language == 'en':
@@ -162,8 +173,27 @@ with sync_playwright() as playwright:
             assert len(events) == 1
         page.goto(origin + '/next')
         assert len(events) == 1
+        if args.keywords:
+            bookmark = worker.evaluate("""async()=> {
+              const bar=(await chrome.bookmarks.getTree())[0].children[0].id;
+              return chrome.bookmarks.create({parentId:bar,title:'Synthetic drawing site',url:'https://keyword-fixture.test/site'});
+            }""")
+            wait_for(lambda: worker.evaluate("async id=> (await chrome.storage.local.get('bookmarkSearchKeywords.v1'))['bookmarkSearchKeywords.v1']?.some(record=>record.nativeId===id)", bookmark['id']))
+            assert len(events) == 2, ('keywords must reuse the single native-save model request', events)
+            assert worker.evaluate('async id=>(await chrome.bookmarks.get(id))[0].parentId', bookmark['id']) == fixture['folder']
+            options.goto(f'chrome-extension://{extension_id}/options/index.html#browse')
+            options.get_by_role('searchbox').fill('diagramming')
+            expect(options.locator('.search-hit-list button')).to_have_text(['Synthetic drawing site'])
+            worker.evaluate("async id=>{const bar=(await chrome.bookmarks.getTree())[0].children[0].id; await chrome.bookmarks.move(id,{parentId:bar})}", bookmark['id'])
+            expect(options.locator('.search-hit-list button')).to_have_text(['Synthetic drawing site'])
+            options.set_viewport_size({'width':320,'height':900})
+            options.screenshot(path=str(root/'keyword-search-320.png'),full_page=True)
+            worker.evaluate('id=>chrome.bookmarks.remove(id)', bookmark['id'])
+            expect(options.locator('.search-hit-list button')).to_have_count(0)
+            wait_for(lambda: worker.evaluate("async()=> ((await chrome.storage.local.get('bookmarkSearchKeywords.v1'))['bookmarkSearchKeywords.v1'] ?? []).length===0"))
+            assert len(events) == 2
         result = {'status': 'PASS', 'browser': context.browser.version, 'evidence': str(root), 'widths': widths, 'motion': args.motion, 'language': args.language,
-                  'requests': len(events), 'nativeTreeUnchanged': True,
+                  'requests': len(events), 'trialNativeTreeUnchanged': True, 'keywordNativeSaveMoveSearchDelete': args.keywords,
                   'productionWorkerSHA256': hashlib.sha256(production_worker).hexdigest(),
                   'scope': 'Fresh profile; production UI/HTML/CSS unchanged. Worker toolbar listener captured by a prelude; copied manifest grants loopback only. Local synthetic provider; no actual toolbar gesture or live-provider performance claim.'}
         (root / 'results.json').write_text(json.dumps(result, indent=2), encoding='utf-8')

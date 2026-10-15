@@ -33,6 +33,8 @@ import { OrganizeTaskAuthority } from './organize-task-authority';
 import { actionBadges } from './action-badge';
 import { OrganizeTaskBadge } from './organize-task-badge';
 import { SaveCorrectionOwner, startSaveCorrectionService } from './save-correction';
+import { BookmarkKeywordsStore } from '../persistence/bookmark-keywords';
+import { startBookmarkKeywords } from './bookmark-keywords';
 
 const workerDiagnostics = startWorkerDiagnostics();
 const badges = actionBadges();
@@ -73,7 +75,9 @@ const { validateSaveContext, livePageForSender } = startSaveEntrypoints(
   openSaveSurface,
 );
 const projection = startTreeService();
-startSearchEntrypoints(projection);
+const bookmarkKeywords = new BookmarkKeywordsStore(chrome.storage.local, () => projection.fresh());
+startBookmarkKeywords(bookmarkKeywords, projection);
+startSearchEntrypoints(projection, chrome, () => bookmarkKeywords.read());
 startFileOutput(projection);
 const settings = new SettingsStore(chrome.storage.local);
 // Complete first-install migration before a model task can retain its settings baseline.
@@ -150,6 +154,7 @@ const nativeSaves = startNativeBookmarkIngress({
   guard: ownWrites,
   receipts: saveReceipts,
   rules: siteRules,
+  keywords: bookmarkKeywords,
   badge: nativeSaveBadge,
 });
 startSaveCorrectionService(new SaveCorrectionOwner(projection, coordinator, saveReceipts, siteRules));

@@ -11,6 +11,7 @@ import './search-results.css';
 import { BusyIndicator } from '../ui/BusyIndicator';
 import { useI18n } from '../ui/i18n';
 import { searchStatusText } from './search-status-text';
+import { watchBookmarkKeywords } from '../persistence/bookmark-keywords';
 export function SearchResults({
   query,
   settings,
@@ -50,6 +51,7 @@ export function SearchResults({
         )
       : undefined;
     const owner = new SearchController(setState, authority, transport);
+    const stopKeywords = watchBookmarkKeywords(records => owner.setKeywords(records));
     controller.current = owner;
     owner.setQuery(latestQuery.current);
     let stop =
@@ -63,6 +65,7 @@ export function SearchResults({
       stop = connectTree(chrome.runtime, tree => owner.setTree(tree));
     };
     return () => {
+      stopKeywords();
       stop?.();
       owner.dispose();
       controller.current = undefined;

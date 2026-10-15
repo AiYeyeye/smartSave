@@ -218,7 +218,7 @@ it('English trial switches language during generation and keeps the preview read
   h.settings.dispose();
   h.services?.dispose();
 });
-async function acceptSuggestion(h: Awaited<ReturnType<typeof harness>>) {
+async function acceptSuggestion(h: Awaited<ReturnType<typeof harness>>, keywords?: string[]) {
   await waitFor(() => expect(h.fetcher).toHaveBeenCalledOnce());
   const wire = JSON.parse(String(h.fetcher.mock.calls[0]![1]!.body));
   const item = JSON.parse(wire.messages[1].content).items[0];
@@ -227,7 +227,12 @@ async function acceptSuggestion(h: Awaited<ReturnType<typeof harness>>) {
       JSON.stringify({
         choices: [
           {
-            message: { content: JSON.stringify({ assignments: [{ itemId: item.id, folderId: 'f' }], newFolders: [] }) },
+            message: {
+              content: JSON.stringify({
+                assignments: [{ itemId: item.id, folderId: 'f', ...(keywords ? { keywords } : {}) }],
+                newFolders: [],
+              }),
+            },
           },
         ],
       }),
@@ -277,6 +282,59 @@ it('read-only trial waits for a click, uses the save route and privacy projectio
   h.settings.dispose();
   h.services?.dispose();
 });
+
+it.each(['completed', 'unknown', 'edited-title'] as const)(
+  'attaches keywords only to proven unchanged completed saves: %s',
+  async outcome => {
+    const h = await harness();
+    const completed = (requestId: string) => ({
+      requestId,
+      status: 'completed',
+      needsReconcile: false,
+      completedSteps: 1,
+      remainingSteps: 0,
+      evidence: [{ stepIndex: 0, state: 'checkpointed', nativeId: 'new-native-bookmark', currentMatchesReceipt: true }],
+    });
+    const sendMessage = vi.fn(async (message: { type: string; requestId: string }) =>
+      message.type === 'reconcileMutation' ? completed(message.requestId) : { status: 'ok' },
+    );
+    vi.stubGlobal('chrome', { ...chrome, runtime: { ...chrome.runtime, sendMessage } });
+    h.send.mockImplementation(async request =>
+      outcome === 'unknown'
+        ? {
+            requestId: request.requestId,
+            status: 'unknown',
+            needsReconcile: true,
+            completedSteps: 0,
+            remainingSteps: 1,
+          }
+        : completed(request.requestId),
+    );
+    await acceptSuggestion(h, ['diagramming', '流程图', '工作流']);
+    expect(sendMessage).not.toHaveBeenCalled();
+    if (outcome === 'edited-title')
+      fireEvent.change(screen.getByLabelText('收藏标题'), { target: { value: 'Changed topic' } });
+    fireEvent.click(screen.getByRole('button', { name: '确认收藏保存' }));
+    await waitFor(() => expect(h.send).toHaveBeenCalledOnce());
+    if (outcome === 'completed') {
+      await waitFor(() => expect(sendMessage).toHaveBeenCalledTimes(2));
+      expect(sendMessage).toHaveBeenLastCalledWith({
+        type: 'rememberBookmarkKeywords',
+        version: 1,
+        record: {
+          installationId: 'i',
+          nativeId: 'new-native-bookmark',
+          title: 'Page',
+          url: 'https://page.test/private?secret=hidden',
+          keywords: ['diagramming', '流程图', '工作流'],
+        },
+      });
+    } else expect(sendMessage).not.toHaveBeenCalled();
+    expect(h.fetcher).toHaveBeenCalledOnce();
+    h.view.unmount();
+    h.settings.dispose();
+  },
+);
 
 it('cancelled trial ignores a late successful response and cannot write', async () => {
   const h = await harness(false, true, true);

@@ -2,7 +2,7 @@
 
 [Project overview](../README.en.md) · [中文说明](../README.md)
 
-This is the Manifest V3 extension for 智栏 / Markora. Browser bookmarks are authoritative; model results are validated data. Native changes use the shared mutation coordinator, journal and backup/recovery path. The interface calls the extension Zhilan.
+This is the Manifest V3 extension for 智栏 / Zhilan. Browser bookmarks are authoritative; model results are validated data. Native changes use the shared mutation coordinator, journal and backup/recovery path.
 
 ## Build and check
 
@@ -41,7 +41,9 @@ AI routes support OpenAI Chat Completions and Responses, Anthropic Messages and 
 - `tests/`: unit/component and real-build integration tests. `tests/e2e/` contains explicitly invoked isolated browser fixtures.
 - `scripts/`, `checks/`: build validation and release inventories.
 
-Language and appearance preferences are stored locally and synchronize across open extension documents. Language switching must not remount task owners, trigger model calls or translate native bookmark content. English covers navigation, appearance, search and AI service configuration/onboarding; other workspaces are still being migrated. Opt-in `tests/e2e/ai-services-localization.py --run` checks the quick setup path; add `--advanced` for model selection and feature assignment.
+Language, light/dark mode and accent color retain immediate local caches and synchronize through three allowlisted versioned browser sync keys. All model settings, keys, URLs, directory references/rules and bookmark keywords remain local. Language switching must not remount task owners, trigger model calls or translate native bookmark content. English covers the main workspaces and browser-owned entrypoints; uncommon status paths still need a final audit. Opt-in `tests/e2e/ai-services-localization.py --run` checks the quick setup path; add `--advanced` for model selection and feature assignment.
+
+Save output optionally includes up to5 keywords of32 characters per assignment. One worker serializes the local keyword sidecar, bounded to2000 entries/2MiB, and rechecks installation/ID/title/URL before attaching it. Confirmed panel saves use reconciled final-step identities; read-only trials and unknown writes do not attach metadata. Native edits/removal prune stale entries; local index construction independently filters freshness. Panel search, omnibox and fast candidate retrieval use it locally; keyword text is not added to model search payloads or public exports. `tests/e2e/onboarding-trial.py --run --keywords` verifies an explicit read-only trial, one native-save model call, real local keyword search, movement retention and deletion cleanup with a local fixture provider.
 
 ## Isolated browser acceptance
 

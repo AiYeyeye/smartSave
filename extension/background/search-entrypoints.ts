@@ -3,18 +3,23 @@ import { SearchIndex, type SearchHit } from '../domain/search-index';
 import { canOpenUrl } from '../domain/open-url';
 import { extensionDocumentKind } from '../domain/trusted-sender';
 import type { TreeProjection } from './tree-projection';
+import type { BookmarkKeywordRecord } from '../domain/bookmark-keywords';
 
 type Browser = Pick<typeof chrome, 'omnibox' | 'commands' | 'tabs' | 'runtime'>;
 const escapeXml = (value: string) =>
   value.replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[char]!);
 
 /** Explicit browser gestures only. Queries stay in worker memory; page URLs contain only one-use launch tokens. */
-export function startSearchEntrypoints(projection: Pick<TreeProjection, 'state' | 'fresh'>, browser: Browser = chrome) {
+export function startSearchEntrypoints(
+  projection: Pick<TreeProjection, 'state' | 'fresh'>,
+  browser: Browser = chrome,
+  keywords?: () => Promise<BookmarkKeywordRecord[]>,
+) {
   const launches = new Map<string, { query: string; expires: number }>();
   let generation = 0;
   let query = '';
   const offered = new Map<string, { hit: SearchHit; installationId: string }>();
-  let cached: { snapshot: unknown; index: SearchIndex } | undefined;
+  let cached: { snapshot: unknown; records: BookmarkKeywordRecord[] | undefined; index: SearchIndex } | undefined;
 
   async function navigate(url: string, disposition: string, tabId?: number) {
     if (disposition === 'currentTab' && tabId !== undefined) await browser.tabs.update(tabId, { url });
@@ -64,8 +69,10 @@ export function startSearchEntrypoints(projection: Pick<TreeProjection, 'state' 
     void (async () => {
       try {
         const snapshot = projection.state.status === 'ready' ? projection.state.snapshot : await projection.fresh();
+        const records = await keywords?.().catch(() => undefined);
         if (current !== generation) return;
-        if (cached?.snapshot !== snapshot) cached = { snapshot, index: new SearchIndex(snapshot) };
+        if (cached?.snapshot !== snapshot || cached.records !== records)
+          cached = { snapshot, records, index: new SearchIndex(snapshot, records) };
         const results = text.trim()
           ? cached.index
               .query(text)

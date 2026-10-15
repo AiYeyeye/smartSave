@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { AI_SEARCH_TERMS, AI_SEARCH_TERM_CHARS } from '../domain/search-limits';
+import { bookmarkKeywordsSchema } from '../domain/bookmark-keywords';
 const id = z.string().min(1);
 // urlPath null is an explicit refusal: no field of this shape holds a URL. It must not be paired with a title path.
 const mapping = z.strictObject({ urlPath: z.array(id).min(1).nullable(), titlePath: z.array(id).min(1).nullable() });
@@ -9,7 +10,7 @@ const searchExpansion = z.strictObject({
 });
 const folder = z.strictObject({ id, parentId: id, title: z.string().min(1) });
 const assignments = z.strictObject({
-  assignments: z.array(z.strictObject({ itemId: id, folderId: id })),
+  assignments: z.array(z.strictObject({ itemId: id, folderId: id, keywords: bookmarkKeywordsSchema.optional() })),
   newFolders: z.array(folder),
 });
 const importAssignments = z.strictObject({
