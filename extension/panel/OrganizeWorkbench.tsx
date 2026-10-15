@@ -984,13 +984,30 @@ export function OrganizeWorkbench({
             !state.busy &&
             !state.invalid &&
             ['paused', 'failed'].includes(state.pipeline.status) && (
-              <button
-                className="primary"
-                disabled={state.tree.status !== 'ready' || memoryBusy}
-                onClick={() => void owner.current?.resumeBatches()}
-              >
-                继续未完成批次
-              </button>
+              <>
+                {state.repair && (
+                  <>
+                    <p>
+                      本批暂存 {state.repair.retained} 条有效结果，另有 {state.repair.count}{' '}
+                      条待补问。后台重启后，本批需重新生成。
+                    </p>
+                    <button
+                      className="primary"
+                      disabled={state.tree.status !== 'ready' || memoryBusy}
+                      onClick={() => void owner.current?.repairBatches()}
+                    >
+                      只补问这 {state.repair.count} 条
+                    </button>
+                  </>
+                )}
+                <button
+                  className={state.repair ? undefined : 'primary'}
+                  disabled={state.tree.status !== 'ready' || memoryBusy}
+                  onClick={() => void owner.current?.resumeBatches()}
+                >
+                  {state.repair ? '重新生成未完成批次' : '继续未完成批次'}
+                </button>
+              </>
             )}
           {method === 'ai' && !state.busy && !state.result && (!proposal || state.invalid) && (
             <button

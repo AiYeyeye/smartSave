@@ -23,6 +23,7 @@ import type { ModelTiming } from '../domain/save-performance';
 import { modelThinkingPlan, rejectsThinkingParameter } from '../domain/model-thinking';
 import { abortableDelay } from '../domain/cancellable';
 import { anthropicPromptContent } from '../domain/model-cache';
+import { analyzeOrganizeRepair, type OrganizeRepair } from '../domain/organize-partial-repair';
 export type ModelProgress = ModelStreamProgress & {
   phase: 'waiting' | 'receiving' | 'validating';
   retry?: { attempt: number; delaySeconds: number; httpStatus: number };
@@ -30,6 +31,7 @@ export type ModelProgress = ModelStreamProgress & {
 export { parseModelEndpoint, parseModelListEndpoint } from '../domain/model-route';
 export type ModelResult =
   | { status: 'completed'; output: ReturnType<typeof parseModelOutput> }
+  | { status: 'repairable'; reason: 'partial-invalid-targets'; repair: OrganizeRepair; detail?: never }
   | { status: 'failed' | 'cancelled'; reason: string; detail?: 'output-limit' };
 interface ModelBoundary {
   fetch: typeof fetch;
@@ -268,6 +270,8 @@ export class ModelTransport {
     onTiming?: (timing: ModelTiming) => void;
     /** Diagnostic correlation only; never included in the provider request. */
     diagnosticRunId?: string;
+    /** Organizer-only opt-in. Never persisted or sent to the provider; does not initiate another request. */
+    organizeRepair?: { knownIds: string[] };
   }): Promise<ModelResult> {
     this.cancel('superseded');
     const generation = this.generation;
@@ -632,6 +636,17 @@ export class ModelTransport {
             result = { status: 'completed', output };
           } catch (error) {
             if (controller.signal.aborted) throw error;
+            const repair =
+              frozen.organizeRepair &&
+              analyzeOrganizeRepair(value, context, [
+                ...frozen.tree.nodes.map(node => node.ref.nativeId),
+                ...frozen.organizeRepair.knownIds,
+              ]);
+            if (repair) {
+              check();
+              result = { status: 'repairable', reason: 'partial-invalid-targets', repair };
+              break;
+            }
             const issue =
               error instanceof ModelOutputValidationError ? `${error.path}: ${error.code}` : 'validation-exception';
             throw new ModelParseError('validate', issue);

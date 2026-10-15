@@ -10,6 +10,11 @@ import { normalizeModelJson } from '../adapters/model-transport';
 import { organizeCompilation, organizeProposal } from '../domain/organize-proposal';
 
 const noChanges = { moves: [], newFolders: [], merges: [] };
+const partial: ModelResult = {
+  status: 'repairable',
+  reason: 'partial-invalid-targets',
+  repair: { retained: { ...noChanges, moves: [{ itemId: 'a', folderId: 'new', reason: 'preserve' }] }, itemIds: ['b'] },
+};
 const folderPlan = {
   moves: [],
   newFolders: [{ id: 'new', parentId: 'bar', title: '工具' }],
@@ -60,6 +65,128 @@ function setup() {
   };
   return { controller, context, model, close, active, send, state: () => state, start };
 }
+
+it('waits for explicit one-shot repair, sends only pending identities and checkpoints only the fully revalidated batch', async () => {
+  const h = setup();
+  await h.start(100);
+  h.model.run.mockResolvedValueOnce(partial);
+  await h.controller.confirmFolders();
+  expect(h.state().repair).toEqual({ count: 1, retained: 1 });
+  expect(h.state().pipeline).toMatchObject({ status: 'failed', completed: 0 });
+  expect(h.state().pipeline?.analyzed ?? 0).toBe(0);
+  expect(h.model.run).toHaveBeenCalledTimes(2);
+  const checkpoint = (await h.controller.checkpoint('task', 0))!;
+  expect(checkpoint.batches).toHaveLength(1);
+  expect(checkpoint.batches[0]).toMatchObject({ status: 'pending', itemIds: ['a', 'b'] });
+  expect(checkpoint.batches[0]).not.toHaveProperty('output');
+  expect(JSON.stringify(checkpoint)).not.toContain('preserve');
+  h.model.run.mockResolvedValueOnce({
+    status: 'completed',
+    output: { ...noChanges, moves: [{ itemId: 'b', folderId: 'right' }] },
+  });
+  await h.controller.repairBatches();
+  expect(h.model.run.mock.calls[2]![0].request).toMatchObject({ itemIds: ['b'], stage: 'bookmarks' });
+  expect(h.model.run.mock.calls[2]![0].organizeRepair).toBeUndefined();
+  expect(h.state().pipeline).toMatchObject({ stage: 'complete', completed: 2 });
+  expect(h.state().proposal?.actions.find(action => action.sourceId === 'a')).toMatchObject({
+    targetId: 'new',
+    reason: 'preserve',
+  });
+  expect(h.state().repair).toBeUndefined();
+  const final = (await h.controller.checkpoint('task', 1))!;
+  expect(final.batches[0]).toMatchObject({
+    status: 'merged',
+    output: {
+      moves: [
+        { itemId: 'a', folderId: 'new', reason: 'preserve' },
+        { itemId: 'b', folderId: 'right' },
+      ],
+    },
+  });
+  await h.controller.repairBatches();
+  expect(h.model.run).toHaveBeenCalledTimes(3);
+  expect(h.send).not.toHaveBeenCalled();
+  h.controller.dispose();
+});
+
+it.each(['invalid', 'foreign', 'network', 'changed', 'cancel'] as const)(
+  'a %s repair is not accepted or retried',
+  async failure => {
+    const h = setup();
+    await h.start(100);
+    h.model.run.mockResolvedValueOnce(partial);
+    await h.controller.confirmFolders();
+    if (failure === 'changed') h.context.config.model = 'changed';
+    if (failure === 'cancel') {
+      h.model.run.mockImplementationOnce(() => new Promise(() => {}));
+      const pending = h.controller.repairBatches();
+      await vi.waitFor(() => expect(h.model.run).toHaveBeenCalledTimes(3));
+      h.controller.pauseBatches();
+      await pending;
+    } else {
+      h.model.run.mockResolvedValueOnce(
+        failure === 'network'
+          ? { status: 'failed', reason: 'network-error' }
+          : {
+              status: 'completed',
+              output: {
+                ...noChanges,
+                moves: [{ itemId: failure === 'foreign' ? 'a' : 'b', folderId: 'invalid-again' }],
+              },
+            },
+      );
+      await h.controller.repairBatches();
+    }
+    const count = failure === 'changed' ? 2 : 3;
+    expect(h.model.run).toHaveBeenCalledTimes(count);
+    expect(h.state().pipeline?.completed).toBe(0);
+    expect(h.state().repair).toBeUndefined();
+    await h.controller.repairBatches();
+    expect(h.model.run).toHaveBeenCalledTimes(count);
+    expect(h.send).not.toHaveBeenCalled();
+    h.controller.dispose();
+  },
+);
+
+it('keeps an already validated out-of-order batch while repairing only the failed earlier batch', async () => {
+  const h = setup();
+  Object.assign(h.model, { fork: () => ({ run: h.model.run, cancel: vi.fn(), dispose: vi.fn() }) });
+  await h.start(1);
+  const complete = new Map<string, (result: ModelResult) => void>();
+  h.model.run.mockImplementation(
+    input =>
+      new Promise(resolve => {
+        if ('itemIds' in input.request) complete.set(input.request.itemIds[0]!, resolve);
+      }),
+  );
+  const pending = h.controller.confirmFolders();
+  await vi.waitFor(() => expect(complete.size).toBe(2));
+  complete.get('b')!({ status: 'completed', output: { ...noChanges, moves: [{ itemId: 'b', folderId: 'new' }] } });
+  await vi.waitFor(() => expect(h.state().pipeline?.analyzed).toBe(1));
+  complete.get('a')!({
+    status: 'repairable',
+    reason: 'partial-invalid-targets',
+    repair: { retained: noChanges, itemIds: ['a'] },
+  });
+  await pending;
+  expect(h.state().repair).toEqual({ count: 1, retained: 0 });
+  expect((await h.controller.checkpoint('task', 0))!.batches.map(batch => batch.status)).toEqual([
+    'pending',
+    'accepted',
+  ]);
+  const before = h.model.run.mock.calls.length;
+  h.model.run.mockResolvedValue({
+    status: 'completed',
+    output: { ...noChanges, moves: [{ itemId: 'a', folderId: 'right' }] },
+  });
+  await h.controller.repairBatches();
+  expect(
+    h.model.run.mock.calls.slice(before).map(([input]) => 'itemIds' in input.request && input.request.itemIds),
+  ).toEqual([['a']]);
+  expect(h.state().pipeline).toMatchObject({ stage: 'complete', completed: 2 });
+  expect(h.send).not.toHaveBeenCalled();
+  h.controller.dispose();
+});
 
 it('prefetches independent batches, retains an out-of-order completed batch on pause and merges in order on resume', async () => {
   const h = setup();

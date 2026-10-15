@@ -4,6 +4,7 @@ import type { OrganizeTaskView } from '../background/organize-task-owner';
 import type { OrganizeCheckpointMetadata } from '../persistence/organize-checkpoints';
 import { nodeSchema, treeStateSchema } from './node-reference';
 import { mutationResultSchema } from '../schemas/messages';
+import { ORGANIZE_REPAIR_LIMIT } from './organize-partial-repair';
 
 export const ORGANIZE_TASK_PORT = 'zhilan.organize-task.v1';
 const id = z.string().min(1).max(256);
@@ -25,7 +26,7 @@ export const organizeTaskMessageSchema = z.discriminatedUnion('action', [
   base.extend({ action: z.literal('get'), id, credential: credential.optional() }),
   base.extend({ action: z.literal('list') }),
   task.extend({
-    action: z.enum(['confirmFolders', 'resume', 'pause', 'cancel', 'returnToFolders']),
+    action: z.enum(['confirmFolders', 'resume', 'repair', 'pause', 'cancel', 'returnToFolders']),
     credential: credential.optional(),
   }),
   task.extend({ action: z.literal('select'), ids: z.array(id), selected: z.boolean() }),
@@ -65,6 +66,7 @@ export const organizeTaskViewSchema = z.strictObject({
     invalid: z.boolean(),
     busy: z.boolean(),
     message: z.string(),
+    repair: z.strictObject({ count: count.min(1).max(ORGANIZE_REPAIR_LIMIT), retained: count }).optional(),
     proposal: z
       .strictObject({
         tree,

@@ -30,6 +30,7 @@ export type OrganizeWorkbenchOwner = Pick<
   pauseBatches(): void | Promise<void>;
   confirmFolders(): void | Promise<void>;
   resumeBatches(): void | Promise<void>;
+  repairBatches(): void | Promise<void>;
   returnToFolders(): void | Promise<void>;
   restoreTask?(id: string): Promise<void>;
   refreshTasks?(): Promise<void>;
@@ -307,11 +308,11 @@ export class OrganizeTaskClient implements OrganizeWorkbenchOwner {
       void this.refreshTasks();
     });
   }
-  private command(action: 'confirmFolders' | 'resume' | 'pause' | 'cancel' | 'returnToFolders') {
+  private command(action: 'confirmFolders' | 'resume' | 'repair' | 'pause' | 'cancel' | 'returnToFolders') {
     return this.enqueue(async () => {
       if (!this.current) return;
       const credential =
-        ['resume', 'confirmFolders'].includes(action) && this.current.needsCredential
+        ['resume', 'repair', 'confirmFolders'].includes(action) && this.current.needsCredential
           ? await this.credential(true)
           : undefined;
       const reply = await this.taskRpc({
@@ -388,6 +389,9 @@ export class OrganizeTaskClient implements OrganizeWorkbenchOwner {
   }
   resumeBatches() {
     return this.command('resume');
+  }
+  repairBatches() {
+    return this.command('repair');
   }
   pauseBatches() {
     return this.command('pause');

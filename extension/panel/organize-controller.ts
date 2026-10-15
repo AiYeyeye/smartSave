@@ -6,6 +6,7 @@ import { modelRequestBody, type ModelTransport } from '../adapters/model-transpo
 import { OrganizeBatchExecutor } from './organize-batch-executor';
 import { serializeAiPayload, serializedItemRequestSize } from '../domain/ai-payload';
 import { parseModelOutput } from '../schemas/model-output';
+import { completeOrganizeRepair } from '../domain/organize-partial-repair';
 import {
   exportOrganizeGeneration,
   restoreOrganizeGeneration,
@@ -52,6 +53,8 @@ type OrganizeModel = Pick<ModelTransport, 'run' | 'cancel' | 'dispose'> & {
   fork?: () => Pick<ModelTransport, 'run' | 'cancel' | 'dispose'>;
 };
 const failureMessages: Record<string, string> = {
+  'partial-invalid-targets': '少量书签的目标目录无效。本批有效建议已暂存，可显式补问一次；补问完成前整批不可执行。',
+  'partial-repair-failed': '本次补问未能完成，已停止，不会再次补问。可手动重新生成未完成批次。',
   'organize-credential-required': '本次整理使用的临时密钥已失效。请重新输入密钥后继续；已完成建议保留。',
   'checkpoint-unavailable': '无法保存整理进度，已停止生成。请检查本机存储后重试；未修改书签。',
   'folder-context-too-large': '分类目录连同提示词超过 1 MiB 请求上限，请选择一个子目录后重新整理。',
@@ -207,6 +210,7 @@ export class OrganizeController {
     this.stopAnalysisClock();
     this.record('invalidated', { cause, receivedChars: this.state.progress?.receivedChars });
     this.staged = undefined;
+    this.state.repair = undefined;
     if (this.state.pipeline) this.state.pipeline = { ...this.state.pipeline, status: 'invalid' };
     this.state.failure = undefined;
     this.clearReview();
@@ -723,6 +727,8 @@ export class OrganizeController {
       return;
     const review = this.staged.folderReview;
     this.staged.approved = undefined;
+    this.staged.repair = undefined;
+    this.state.repair = undefined;
     this.staged.queue = [];
     this.staged.acceptedBatches?.clear();
     this.staged.finishedBatches = [];
@@ -747,7 +753,10 @@ export class OrganizeController {
     this.retainReview();
     this.publish();
   }
-  async resumeBatches() {
+  repairBatches() {
+    return this.resumeBatches(true);
+  }
+  async resumeBatches(repairOnce = false) {
     const run = this.staged;
     if (
       this.state.busy ||
@@ -758,6 +767,9 @@ export class OrganizeController {
       this.state.pipeline?.stage !== 'bookmarks'
     )
       return;
+    if (repairOnce && (!run.repair || run.repair.ids !== run.queue[0])) return;
+    if (!repairOnce) run.repair = undefined;
+    this.state.repair = undefined;
     let generation = this.generation;
     const startedAt = Date.now();
     let phase: NonNullable<OrganizeState['failure']>['phase'] = '准备整理';
@@ -791,7 +803,9 @@ export class OrganizeController {
       executor = new OrganizeBatchExecutor(
         run.acceptedBatches,
         async (ids, signal) => {
-          const request: OrganizeRequest = { ...run.request, itemIds: ids };
+          const repair = repairOnce && run.repair?.ids === ids ? run.repair.candidate : undefined;
+          if (repair) run.repair = undefined; // Consume the one-shot consent before any await/fetch.
+          const request: OrganizeRequest = { ...run.request, itemIds: repair?.itemIds ?? ids };
           if (this.requestSize(run, request) > MODEL_BYTE_LIMITS.requestBytes)
             throw Error('bookmark-context-too-large');
           const timeoutMs = Math.max(run.context.config.timeoutMs, MODEL_WAIT_MS);
@@ -802,6 +816,9 @@ export class OrganizeController {
                 diagnosticRunId: this.runId,
                 ...run.context,
                 request,
+                ...(!repair
+                  ? { organizeRepair: { knownIds: run.folderOutput?.newFolders.map(folder => folder.id) ?? [] } }
+                  : {}),
                 signal,
                 timeoutMs,
                 policy: { ...DEFAULT_CLASSIFICATION_POLICY, allowRename: run.options.allowRename ?? true },
@@ -813,7 +830,7 @@ export class OrganizeController {
                     receivedChars: update.receivedChars,
                     preview: [],
                     timeoutSeconds: Math.ceil(timeoutMs / 1000),
-                    bookmarkCount: ids.length,
+                    bookmarkCount: request.itemIds.length,
                     outputTokenLimit: modelOutputTokenLimit(run.context.config),
                   };
                   if (update.retry) {
@@ -829,11 +846,15 @@ export class OrganizeController {
               }),
               signal,
             );
-            if (result.status !== 'completed') return result;
-            const output = parseModelOutput(result.output, {
-              ...JSON.parse(serializeAiPayload(run.context.tree, run.context.privacy, request)),
+            if (result.status !== 'completed')
+              return repair ? { status: 'failed', reason: 'partial-repair-failed' } : result;
+            const context = {
+              ...JSON.parse(serializeAiPayload(run.context.tree, run.context.privacy, { ...request, itemIds: ids })),
               rootId: request.rootId,
-            });
+            };
+            const output = repair
+              ? completeOrganizeRepair(repair, result.output, context)
+              : parseModelOutput(result.output, context);
             return { status: 'completed', output };
           } finally {
             if (model !== this.model) model.dispose();
@@ -861,14 +882,17 @@ export class OrganizeController {
         clearTimeout(operation.timer);
         phase = '模型生成';
         const batchNumber = this.state.pipeline!.finished.length + 1;
-        this.state.message = `正在生成第 ${batchNumber} / ${this.state.pipeline!.batchCount} 批建议（${ids.length} 条书签）…`;
+        const repairCount = repairOnce && run.repair?.ids === ids ? run.repair.candidate.itemIds.length : 0;
+        this.state.message = repairCount
+          ? `正在补问 ${repairCount} 条书签（仅此一轮）；有效建议保持不变，服务繁忙时仍按既有限次策略重试。`
+          : `正在生成第 ${batchNumber} / ${this.state.pipeline!.batchCount} 批建议（${ids.length} 条书签）…`;
         this.state.progress = {
           phase: 'waiting',
           streaming: modelStreaming(run.context.config),
           receivedChars: 0,
           preview: [],
           timeoutSeconds: Math.ceil(timeoutMs / 1000),
-          bookmarkCount: ids.length,
+          bookmarkCount: repairCount || ids.length,
           outputTokenLimit: modelOutputTokenLimit(run.context.config),
         };
         this.publish();
@@ -876,6 +900,14 @@ export class OrganizeController {
         executor.consume(ids);
         if (generation !== this.generation || operation.controller.signal.aborted) return;
         if (result.status !== 'completed') {
+          if (result.status === 'repairable') {
+            run.repair = { ids, candidate: result.repair };
+            this.state.repair = {
+              count: result.repair.itemIds.length,
+              retained: ids.length - result.repair.itemIds.length,
+            };
+            throw Error('partial-invalid-targets');
+          }
           if (
             (result.detail === 'output-limit' ||
               result.reason === 'payload-too-large' ||

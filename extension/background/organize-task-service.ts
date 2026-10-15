@@ -55,7 +55,7 @@ export function startOrganizeTaskService(
               }),
             };
           const task = await owner.command(request.id, request.expectedRevision, request.action, request.credential);
-          if (['confirmFolders', 'resume', 'returnToFolders'].includes(request.action)) badge?.focus(task);
+          if (['confirmFolders', 'resume', 'repair', 'returnToFolders'].includes(request.action)) badge?.focus(task);
           return { ok: true, task };
         };
         void execute().then(respond, error => respond({ ok: false, reason: organizeTaskError(error) }));

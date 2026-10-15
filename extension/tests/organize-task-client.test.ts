@@ -29,6 +29,52 @@ async function review(h: ReturnType<typeof organizeClientRuntime>, page: ReturnT
   await vi.waitFor(() => expect(page.state().busy).toBe(false));
 }
 
+it.each([false, true])(
+  'keeps repair consent explicit across page reopen; worker restart=%s discards unaccepted fragments',
+  async restart => {
+    const h = organizeClientRuntime(),
+      first = observer(h);
+    h.run.mockResolvedValueOnce(folders).mockResolvedValueOnce({
+      status: 'repairable',
+      reason: 'partial-invalid-targets',
+      repair: {
+        retained: { newFolders: [], merges: [], moves: [{ itemId: 'a', folderId: 'right', reason: 'kept-row' }] },
+        itemIds: ['b'],
+      },
+    });
+    await first.client.generate(undefined, { staged: true, batchSize: 100, cleanupEmpty: false });
+    await vi.waitFor(() => expect(first.state().busy).toBe(false));
+    await first.client.confirmFolders();
+    await vi.waitFor(() => expect(first.state().repair).toEqual({ count: 1, retained: 1 }));
+    await vi.waitFor(() => expect(first.state().busy).toBe(false));
+    const id = first.state().task!.id!;
+    const saved = (await h.journal.organizeCheckpoints.get(id))!;
+    expect(saved.batches[0]).toMatchObject({ status: 'pending', itemIds: ['a', 'b'] });
+    expect(JSON.stringify(saved)).not.toContain('kept-row');
+    first.client.dispose();
+    if (restart) h.restart();
+    const next = observer(h);
+    await vi.waitFor(() => expect(next.state().task?.id).toBe(id));
+    expect(h.run).toHaveBeenCalledTimes(2);
+    h.run.mockResolvedValue({ status: 'completed', output: { newFolders: [], merges: [], moves: [] } });
+    if (restart) {
+      expect(next.state().repair).toBeUndefined();
+      await next.client.repairBatches();
+      expect(h.run).toHaveBeenCalledTimes(2);
+      await next.client.resumeBatches();
+    } else {
+      expect(next.state().repair).toEqual({ count: 1, retained: 1 });
+      await next.client.repairBatches();
+    }
+    await vi.waitFor(() => expect(next.state().pipeline?.stage).toBe('complete'));
+    expect(h.run).toHaveBeenCalledTimes(3);
+    expect(h.run.mock.calls.at(-1)![0].request).toMatchObject({ itemIds: restart ? ['a', 'b'] : ['b'] });
+    expect(h.move).not.toHaveBeenCalled();
+    next.client.dispose();
+    h.dispose();
+  },
+);
+
 it('continues with no page observer, restores the same task without model traffic and persists serialized edits', async () => {
   const h = organizeClientRuntime(),
     first = observer(h);

@@ -12,6 +12,50 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it('shows a separate one-shot repair action, keeps apply unavailable and sends only failed identities on click', async () => {
+  const h = organizeClientRuntime();
+  h.run
+    .mockResolvedValueOnce({ status: 'completed', output: { moves: [], newFolders: [], merges: [] } })
+    .mockResolvedValueOnce({
+      status: 'repairable',
+      reason: 'partial-invalid-targets',
+      repair: {
+        retained: { moves: [{ itemId: 'a', folderId: 'right' }], newFolders: [], merges: [] },
+        itemIds: ['b'],
+      },
+    })
+    .mockResolvedValue({
+      status: 'completed',
+      output: { moves: [{ itemId: 'b', folderId: 'right' }], newFolders: [], merges: [] },
+    });
+  const settings = new SettingsStore({
+    get: async () => ({}),
+    set: async () => {},
+    remove: async () => {},
+    setAccessLevel: async () => {},
+  });
+  const page = render(
+    <OrganizeWorkbench visible settings={settings} createController={emit => h.client(emit)} memoryStore={h.memory} />,
+  );
+  await waitFor(() => expect(screen.getByRole('button', { name: '下一步：生成整理方案' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: '下一步：生成整理方案' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: '确认分类，开始分批整理书签' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: '确认分类，开始分批整理书签' }));
+  const repair = await screen.findByRole('button', { name: '只补问这 1 条' });
+  await waitFor(() => expect(repair).toBeEnabled());
+  expect(h.run).toHaveBeenCalledTimes(2);
+  expect(screen.getByRole('button', { name: '下一步：确认操作' })).toBeDisabled();
+  fireEvent.click(repair);
+  await waitFor(() => expect(screen.getByRole('button', { name: '下一步：确认操作' })).toBeEnabled());
+  expect(h.run).toHaveBeenCalledTimes(3);
+  expect(h.run.mock.calls[2]![0].request).toMatchObject({ itemIds: ['b'] });
+  expect(screen.queryByRole('button', { name: '只补问这 1 条' })).not.toBeInTheDocument();
+  expect(h.move).not.toHaveBeenCalled();
+  page.unmount();
+  settings.dispose();
+  h.dispose();
+});
+
 it('acknowledges a task only after its workbench is visible in a visible document', () => {
   const seen = vi.fn();
   const settings = new SettingsStore({

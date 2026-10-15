@@ -447,7 +447,7 @@ export class OrganizeTaskOwner {
   async command(
     id: string,
     revision: number,
-    action: 'confirmFolders' | 'resume' | 'pause' | 'cancel' | 'returnToFolders',
+    action: 'confirmFolders' | 'resume' | 'repair' | 'pause' | 'cancel' | 'returnToFolders',
     credential?: OrganizeCredentialGrant,
   ) {
     const active = this.require(id);
@@ -478,8 +478,13 @@ export class OrganizeTaskOwner {
         await this.persist(task);
       } else {
         if (this.view(task).needsCredential) throw Error('organize-credential-required');
+        if (action === 'repair' && !task.state.repair) throw Error('organize-task-unavailable');
         this.launch(task, () =>
-          action === 'confirmFolders' ? task.controller.confirmFolders() : task.controller.resumeBatches(),
+          action === 'confirmFolders'
+            ? task.controller.confirmFolders()
+            : action === 'repair'
+              ? task.controller.repairBatches()
+              : task.controller.resumeBatches(),
         );
       }
       task.editing = false;

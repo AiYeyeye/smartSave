@@ -7,6 +7,7 @@ import type { OrganizeProposal, OrganizeOptions } from './organize-proposal';
 import type { OrganizePreference } from './organize-preferences';
 import type { OrganizeRequest, approvedOrganizeFolders } from './organize-batches';
 import type { exactDuplicates, DuplicateChoice } from './exact-duplicates';
+import type { OrganizeRepair } from './organize-partial-repair';
 
 export interface OrganizeState {
   task?: {
@@ -49,6 +50,7 @@ export interface OrganizeState {
   invalid: boolean;
   busy: boolean;
   message: string;
+  repair?: { count: number; retained: number };
   failure?: {
     code: string;
     phase: '准备整理' | '模型生成' | '方案校验' | '书签请求准备';
@@ -76,6 +78,8 @@ export type RunContext = Awaited<ReturnType<ModelAuthority['read']>> & {
   config: NonNullable<Awaited<ReturnType<ModelAuthority['read']>>['config']>;
 };
 export type StagedRun = {
+  /** Volatile, unaccepted evidence. Restart requires regenerating this batch. */
+  repair?: { ids: string[]; candidate: OrganizeRepair };
   requiresCredential?: boolean;
   checkpointBaseline?: TreeSnapshot;
   folderOutput?: OrganizeOutput;
