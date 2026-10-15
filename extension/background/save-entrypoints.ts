@@ -1,5 +1,5 @@
 import { validateUrl } from '../domain/preflight';
-import { trustedMutationSender } from '../domain/trusted-sender';
+import { withTrustedSender } from '../domain/trusted-sender';
 import type { ConfirmMutation } from '../schemas/messages';
 
 export const SAVE_PORT = 'zhilan.save.v1';
@@ -150,7 +150,7 @@ export function startSaveEntrypoints(onInvalidated: () => void = () => {}, open:
     sessions.delete(tabId);
   });
   chrome.runtime.onConnect.addListener(port => {
-    if (port.name !== SAVE_PORT || !port.sender || !trustedMutationSender(port.sender, chrome.runtime.id)) return;
+    if (port.name !== SAVE_PORT || !port.sender) return;
     let owner: number | undefined;
     let alive = true;
     const owned = () => owner !== undefined && sessions.get(owner)?.port === port;
@@ -193,18 +193,32 @@ export function startSaveEntrypoints(onInvalidated: () => void = () => {}, open:
       release();
     });
     port.onMessage.addListener((raw: unknown) => {
-      if (!raw || typeof raw !== 'object' || !('type' in raw)) return;
-      if (raw.type === 'register') {
-        void bindActive(false);
-        return;
-      }
-      if (raw.type === 'capture') {
-        void bindActive(true);
-        return;
-      }
-      if (!owned()) return;
-      if (raw.type === 'close') invalidateTab(owner!);
+      withTrustedSender(
+        port.sender!,
+        chrome.runtime.id,
+        () => {
+          if (!alive) return;
+          if (!raw || typeof raw !== 'object' || !('type' in raw)) return;
+          if (raw.type === 'register') {
+            void bindActive(false);
+            return;
+          }
+          if (raw.type === 'capture') {
+            void bindActive(true);
+            return;
+          }
+          if (!owned()) return;
+          if (raw.type === 'close') invalidateTab(owner!);
+        },
+        () => port.disconnect(),
+      );
     });
+    withTrustedSender(
+      port.sender,
+      chrome.runtime.id,
+      () => {},
+      () => port.disconnect(),
+    );
   });
   return {
     validateSaveContext: (request: ConfirmMutation) => {

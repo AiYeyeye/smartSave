@@ -5,6 +5,141 @@ import { OrganizeController } from '../panel/organize-controller';
 import { organizerTree } from './fixtures/organizer-tree';
 import { ThemeProvider, ThemePicker } from '../ui/ThemeProvider';
 import { APPEARANCES } from './appearance';
+import { SettingsStore } from '../persistence/settings';
+it('requires custom instructions, previews streaming suggestions read-only and exposes retry after failure', async () => {
+  let fail!: (value: { status: 'failed'; reason: string; detail?: 'output-limit' }) => void;
+  let disconnect!: () => void;
+  const run = vi.fn<NonNullable<ConstructorParameters<typeof OrganizeController>[2]>['run']>(input => {
+    input.onProgress?.({
+      phase: 'receiving',
+      text: '{"newFolders":[{"id":"new","parentId":"bar","title":"工具"}],',
+      receivedChars: 50,
+      streaming: true,
+    });
+    return new Promise(resolve => {
+      fail = resolve;
+    });
+  });
+  const create = (emit: ConstructorParameters<typeof OrganizeController>[0]) => {
+    const tree = organizerTree();
+    const controller = new OrganizeController(
+      emit,
+      {
+        read: async () => ({
+          tree,
+          version: 1,
+          revision: 'one',
+          sessionRevision: 0,
+          key: '',
+          privacy: { fullUrl: true, bodyEnabled: false, excludedFolders: [] },
+          config: {
+            adapter: 'anthropic',
+            baseUrl: 'https://example.test/v1',
+            model: 'test',
+            timeoutMs: 1000,
+            maxOutputTokens: 64000,
+          },
+        }),
+        subscribe: () => () => {},
+      },
+      { run, cancel: vi.fn(), dispose: vi.fn() },
+      async invalidated => {
+        disconnect = invalidated;
+        return { token: 'lease', close: vi.fn() };
+      },
+    );
+    controller.setTree({ status: 'ready', snapshot: tree });
+    return controller;
+  };
+  const settings = new SettingsStore({
+    get: async () => ({}),
+    set: async () => {},
+    remove: async () => {},
+    setAccessLevel: async () => {},
+  });
+  render(<OrganizeWorkbench visible settings={settings} createController={create} />);
+  expect(screen.getByLabelText('每批最多书签')).toHaveValue(100);
+  fireEvent.change(screen.getByLabelText('整理范围'), { target: { value: 'bar' } });
+  fireEvent.change(screen.getByLabelText('分类方式'), { target: { value: 'custom' } });
+  expect(screen.getByRole('button', { name: '下一步：生成整理方案' })).toBeDisabled();
+  fireEvent.change(screen.getByLabelText('分类要求'), { target: { value: '分成写作、画图' } });
+  await waitFor(() => expect(screen.getByRole('button', { name: '下一步：生成整理方案' })).toBeEnabled());
+  const generate = vi.spyOn(OrganizeController.prototype, 'generate');
+  for (const value of ['', '0', '-1', '1.5']) {
+    fireEvent.change(screen.getByLabelText('每批最多书签'), { target: { value } });
+    expect(screen.getByRole('button', { name: '下一步：生成整理方案' })).toBeDisabled();
+    expect(screen.getByText('请输入大于或等于 1 的有效整数。')).toBeVisible();
+  }
+  fireEvent.change(screen.getByLabelText('每批最多书签'), { target: { value: '200' } });
+  expect(screen.getByRole('button', { name: '下一步：生成整理方案' })).toBeEnabled();
+  fireEvent.click(screen.getByRole('button', { name: '下一步：生成整理方案' }));
+  await screen.findByText('正在生成的建议');
+  expect(generate).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ batchSize: 200 }));
+  generate.mockRestore();
+  expect(screen.getByText(/整理范围共 2 条书签；每批最多 200 条/)).toBeVisible();
+  expect(screen.getByText(/连接或连续无流数据的等待上限 180 秒/)).toBeVisible();
+  expect(screen.getByRole('button', { name: '确认分类，开始分批整理书签' })).toBeDisabled();
+  expect(screen.queryByRole('checkbox')).toBeNull();
+  fail({ status: 'failed', reason: 'incomplete', detail: 'output-limit' });
+  await screen.findByRole('button', { name: '重新生成方案' });
+  const failure = screen.getByRole('alert', { name: '整理未完成' });
+  expect(failure).toHaveTextContent('输出额度上限');
+  expect(failure).toHaveTextContent('最大输出 tokens');
+  expect(failure).toHaveTextContent('整理范围共 2 条书签');
+  expect(failure).toHaveTextContent('失败阶段：文件夹分类 · 模型生成');
+  expect(failure).toHaveTextContent('64,000 tokens');
+  expect(screen.getByRole('link', { name: '调整模型输出上限' })).toHaveAttribute('href', '#ai-services');
+  expect(screen.getByRole('button', { name: '缩小整理范围' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: '确认分类，开始分批整理书签' })).toBeDisabled();
+  expect(screen.queryByText('正在生成的建议')).toBeNull();
+  expect(run.mock.calls[0]![0].request).toMatchObject({
+    preference: { style: 'custom', instructions: '分成写作、画图' },
+  });
+  run.mockResolvedValueOnce({
+    status: 'completed',
+    output: { moves: [], newFolders: [], merges: [] },
+  });
+  fireEvent.click(screen.getByRole('button', { name: '重新生成方案' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: '确认分类，开始分批整理书签' })).toBeEnabled());
+  expect(run).toHaveBeenCalledTimes(2);
+  run.mockResolvedValueOnce({
+    status: 'completed',
+    output: {
+      moves: [{ itemId: 'a', folderId: 'right' }],
+      newFolders: [],
+      merges: [],
+      unchangedIds: ['b'],
+    },
+  });
+  fireEvent.click(screen.getByRole('button', { name: '确认分类，开始分批整理书签' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: '下一步：确认操作' })).toBeEnabled());
+  expect(screen.queryByRole('alert', { name: '整理未完成' })).toBeNull();
+  const footer = screen.getByRole('button', { name: '下一步：确认操作' }).closest('.organize-footer')!;
+  expect(footer).toHaveTextContent('全部 1 批已完成');
+  fireEvent.click(screen.getByLabelText('选择 move:a'));
+  expect(footer).toHaveTextContent('请至少勾选一项建议');
+  expect(screen.getByRole('button', { name: '下一步：确认操作' })).toBeDisabled();
+  fireEvent.click(screen.getByLabelText('选择 move:a'));
+  fireEvent.click(screen.getByRole('button', { name: '下一步：确认操作' }));
+  disconnect();
+  await waitFor(() => expect(screen.getByRole('button', { name: '确认并执行 1 项操作' })).toBeDisabled());
+  expect(screen.getByRole('button', { name: '重新生成方案' }).closest('.organize-footer')).toHaveTextContent(
+    '整理连接已中断',
+  );
+  run.mockResolvedValueOnce({ status: 'completed', output: { moves: [], newFolders: [], merges: [] } });
+  fireEvent.click(screen.getByRole('button', { name: '上一步' }));
+  fireEvent.click(screen.getByRole('button', { name: '上一步' }));
+  fireEvent.click(screen.getByLabelText('建议清理原有空分类和迁移后变空的分类'));
+  fireEvent.click(screen.getByRole('button', { name: '下一步：生成整理方案' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: '确认分类，开始分批整理书签' })).toBeEnabled());
+  run.mockResolvedValueOnce({
+    status: 'completed',
+    output: { moves: [], newFolders: [], merges: [], unchangedIds: ['a', 'b'] },
+  });
+  fireEvent.click(screen.getByRole('button', { name: '确认分类，开始分批整理书签' }));
+  await screen.findByText(/全部 1 批已完成.*没有需要应用的操作/);
+  expect(screen.getByRole('button', { name: '下一步：确认操作' })).toBeDisabled();
+});
 it.each(APPEARANCES)('retains unchecked selection across hidden navigation in %s', async theme => {
   const tree = organizerTree();
   let controller: OrganizeController;
@@ -36,10 +171,10 @@ it.each(APPEARANCES)('retains unchecked selection across hidden navigation in %s
   );
   fireEvent.click(screen.getByLabelText(theme));
   fireEvent.change(screen.getByLabelText('整理范围'), { target: { value: 'bar' } });
-  fireEvent.click(screen.getByText('本地扫描精确重复'));
+  fireEvent.click(screen.getByText('下一步：查找重复书签'));
   fireEvent.change(screen.getByLabelText('a 保留或删除'), { target: { value: 'keep' } });
   fireEvent.change(screen.getByLabelText('b 保留或删除'), { target: { value: 'delete' } });
-  fireEvent.click(screen.getByText('预览所选去重'));
+  fireEvent.click(screen.getByText('生成去重预览'));
   await waitFor(() => expect(screen.getByLabelText('选择 delete:b')).toBeChecked());
   fireEvent.click(screen.getByLabelText('选择 delete:b'));
   view.rerender(
@@ -55,7 +190,7 @@ it.each(APPEARANCES)('retains unchecked selection across hidden navigation in %s
     </ThemeProvider>,
   );
   expect(screen.getByLabelText('选择 delete:b')).not.toBeChecked();
-  expect(screen.getByText('一次确认并应用所选操作')).toBeDisabled();
+  expect(screen.getByRole('button', { name: '下一步：确认操作' })).toBeDisabled();
   expect(controller!).toBeDefined();
 });
 it('renders a sizable frozen preview and updates selection without replacing its snapshots', async () => {
@@ -76,12 +211,39 @@ it('renders a sizable frozen preview and updates selection without replacing its
   };
   render(<OrganizeWorkbench visible createController={create} />);
   fireEvent.change(screen.getByLabelText('整理范围'), { target: { value: 'bar' } });
-  fireEvent.click(screen.getByText('本地扫描精确重复'));
+  fireEvent.click(screen.getByText('下一步：查找重复书签'));
   fireEvent.change(screen.getByLabelText('a 保留或删除'), { target: { value: 'keep' } });
   for (let i = 0; i < 120; i++)
     fireEvent.change(screen.getByLabelText(`render-${i} 保留或删除`), { target: { value: 'delete' } });
-  fireEvent.click(screen.getByText('预览所选去重'));
+  fireEvent.click(screen.getByText('生成去重预览'));
   await waitFor(() => expect(screen.getByLabelText('选择 delete:render-119')).toBeChecked());
   fireEvent.click(screen.getByLabelText('选择 delete:render-119'));
   expect(screen.getByLabelText('选择 delete:render-119')).not.toBeChecked();
 }, 60000); // 120 jsdom select changes without list virtualization: correctness test, not a timing budget.
+
+it('requires an explicit kept duplicate and a separate final confirmation before applying', async () => {
+  const create = (emit: ConstructorParameters<typeof OrganizeController>[0]) => {
+    const controller = new OrganizeController(emit, undefined, undefined, async () => ({
+      token: 'lease',
+      close: vi.fn(),
+    }));
+    controller.setTree({ status: 'ready', snapshot: organizerTree() });
+    return controller;
+  };
+  const apply = vi.spyOn(OrganizeController.prototype, 'apply').mockResolvedValue(undefined);
+  render(<OrganizeWorkbench visible createController={create} />);
+  expect(screen.getByRole('button', { name: '下一步：查找重复书签' })).toBeDisabled();
+  fireEvent.change(screen.getByLabelText('整理范围'), { target: { value: 'bar' } });
+  fireEvent.click(screen.getByRole('button', { name: '下一步：查找重复书签' }));
+  expect(screen.getByRole('button', { name: '生成去重预览' })).toBeDisabled();
+  fireEvent.change(screen.getByLabelText('b 保留或删除'), { target: { value: 'delete' } });
+  expect(screen.getByRole('button', { name: '生成去重预览' })).toBeDisabled();
+  fireEvent.change(screen.getByLabelText('a 保留或删除'), { target: { value: 'keep' } });
+  fireEvent.click(screen.getByRole('button', { name: '生成去重预览' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: '下一步：确认操作' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: '下一步：确认操作' }));
+  expect(apply).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: '确认并执行 1 项操作' }));
+  expect(apply).toHaveBeenCalledOnce();
+  apply.mockRestore();
+});

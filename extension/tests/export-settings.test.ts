@@ -104,6 +104,7 @@ async function setup(app = false) {
   const view = render(app ? createElement(App, { page: 'options' }) : createElement(ExportSettings, { visible: true }));
   if (app) fireEvent.click(screen.getByRole('button', { name: /导出与备份/ }));
   await screen.findByRole('checkbox', { name: '导出 Folder' });
+  fireEvent.click(screen.getByText('自动更新 JSON 文件（可选）'));
   const click = (name: string) => fireEvent.click(screen.getByRole('button', { name }));
   const select = () => {
     fireEvent.click(screen.getByRole('checkbox', { name: '导出 Folder' }));
@@ -208,7 +209,7 @@ it('denied authorization does not configure, reacquisition catches latest snapsh
   h.click('刷新输出状态');
   await screen.findByText(/持久状态：scope-invalid/);
   expect(screen.getByRole('button', { name: '重新授权并补写当前快照' })).toBeDisabled();
-  expect(screen.getByRole('button', { name: '下载 JSON' })).toBeDisabled();
+  expect(screen.getByText('下载 HTML')).toBeDisabled();
   h.cleanup();
 });
 it('manual three formats are user initiated downloads; App navigation and four themes retain drafts and consent', async () => {
@@ -231,7 +232,13 @@ it('manual three formats are user initiated downloads; App navigation and four t
     expect(screen.getByRole('checkbox', { name: '导出 Folder' })).toBeChecked();
     expect(screen.getByRole('checkbox', { name: '我同意专用输出覆盖规则' })).toBeChecked();
   }
-  for (const format of ['JSON', 'HTML', 'Markdown']) h.click(`下载 ${format}`);
+  h.click('下一步：选择格式');
+  for (const format of ['JSON', 'HTML', 'Markdown']) {
+    fireEvent.click(screen.getByRole('radio', { name: new RegExp(format) }));
+    h.click('下一步：确认导出');
+    h.click(`下载 ${format}`);
+    h.click('上一步');
+  }
   expect(download).toHaveBeenCalledTimes(3);
   expect(create).toHaveBeenCalledTimes(3);
   expect(h.a.file.createWritable).not.toHaveBeenCalled();
@@ -243,7 +250,7 @@ it('unsupported capability is honest and manual export remains available', async
   vi.stubGlobal('showSaveFilePicker', undefined);
   h.select();
   expect(screen.getByText(/此环境不支持自动文件选择/)).toBeVisible();
-  expect(screen.getByRole('button', { name: '下载 JSON' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: '下一步：选择格式' })).toBeEnabled();
   h.cleanup();
 });
 it('UI target switch fences an old close and close failure never invents durable lastSuccess', async () => {

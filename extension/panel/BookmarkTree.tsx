@@ -1,17 +1,32 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
-import { ChevronRight, Folder } from 'lucide-react';
+import {
+  ArrowDown,
+  ArrowUp,
+  CheckSquare,
+  ChevronRight,
+  ExternalLink,
+  Folder,
+  FolderInput,
+  SquarePen,
+  Trash2,
+  AppWindow,
+  VenetianMask,
+  Copy,
+  Pin,
+} from 'lucide-react';
 import { BookmarkFavicon } from '../ui/BookmarkFavicon';
 import type { TreeSnapshot, TreeState } from '../domain/node-reference';
 import { StateMessage } from '../ui/StateMessage';
 import { CommandMenu, type CommandMenuItem } from '../ui/CommandMenu';
 import { connectTree } from './tree-client';
 import { expansionKey, saveExpansion } from './expansion-memory';
-import { canOpenUrl, openUrl } from '../domain/open-url';
+import { canOpenUrl, openUrl, openBookmarkUrl, type BookmarkOpenTarget } from '../domain/open-url';
 import { BookmarkActions, MutationFeedback, type Mode } from './BookmarkActions';
 import { prepareMove, resolveDropTarget } from './TreeDragController';
 import { preflight } from '../domain/preflight';
 import { submitMutation } from './mutation-client';
 import type { ConfirmMutation, MutationResult } from '../schemas/messages';
+import { BusyIndicator } from '../ui/BusyIndicator';
 
 export function BookmarkTree({ batchNonce = 0 }: { batchNonce?: number }) {
   const [state, setState] = useState<TreeState>({ status: 'loading' });
@@ -62,15 +77,26 @@ export function TreeRows({
   const [intentMode, setIntentMode] = useState<Mode>();
   const [batch, setBatch] = useState(false);
   const [checked, setChecked] = useState<Set<string>>(new Set());
+  const [openError, setOpenError] = useState('');
+  const [copyStatus, setCopyStatus] = useState('');
+  const [menuId, setMenuId] = useState<string>();
   const drag = useRef<{ snapshot: TreeSnapshot; id: string } | undefined>(undefined);
-  const [move, setMove] = useState<ConfirmMutation>();
   const [moveResult, setMoveResult] = useState<MutationResult>();
   const [dragError, setDragError] = useState('');
   const [placement, setPlacement] = useState<{ id: string; mode: 'before' | 'after' | 'inside' }>();
   const suppressOpen = useRef(false);
   const [moving, setMoving] = useState(false);
   const [formActive, setFormActive] = useState(false);
+  const [formBusy, setFormBusy] = useState(false);
+  const actionsHost = useRef<HTMLElement>(null);
   const moveLock = useRef(false);
+  const mutationBlockReason = !connectionReady
+    ? '书签连接尚未恢复，恢复后才能修改。'
+    : moving || formBusy
+      ? '正在提交书签操作，请等待完成。'
+      : formActive
+        ? '有尚未完成的书签操作，请先完成或取消。'
+        : undefined;
   useEffect(() => {
     if (batchNonce) {
       setBatch(true);
@@ -82,31 +108,33 @@ export function TreeRows({
     drag.current = undefined;
     setPlacement(undefined);
     suppressOpen.current = true;
-    if (!connectionReady || !source || moveLock.current || formActive || move) return;
+    if (!connectionReady || !source || moveLock.current || formActive) return;
     try {
       const request = prepareMove(source.snapshot, source.id, parentId, index);
       preflight(request, snapshot);
-      setMove(request);
-      setDragError('');
-      setMoveResult(undefined);
+      void executeMove(request);
     } catch {
       setDragError('无法移动：目标失效、只读、循环或树已变化，请重新拖拽。');
     }
   }
-  async function confirmMove() {
-    if (!connectionReady || !move || moveLock.current || formActive) return;
+  async function executeMove(request: ConfirmMutation) {
+    if (!connectionReady || moveLock.current || formActive) return;
     try {
-      preflight(move, snapshot);
+      preflight(request, snapshot);
     } catch {
       setDragError('书签已变化，请取消并重新拖拽。');
       return;
     }
     moveLock.current = true;
     setMoving(true);
-    setMoveResult(await submitMutation(move));
-    setMove(undefined);
-    setMoving(false);
-    moveLock.current = false;
+    setDragError('');
+    setMoveResult(undefined);
+    try {
+      setMoveResult(await submitMutation(request));
+    } finally {
+      setMoving(false);
+      moveLock.current = false;
+    }
   }
   const [memoryError, setMemoryError] = useState(false);
   useEffect(() => {
@@ -197,7 +225,7 @@ export function TreeRows({
     void saveExpansion(chrome.storage.local, snapshot.installationId, id, value).catch(() => setMemoryError(true));
   }
   function startDrag(event: DragEvent, id: string, readOnly: boolean) {
-    if (!connectionReady || readOnly || moving || move || formActive) {
+    if (!connectionReady || readOnly || moving || moveLock.current || formActive) {
       event.preventDefault();
       return;
     }
@@ -219,8 +247,8 @@ export function TreeRows({
     if (!parent) return;
     return { parentId: node.parentId, index: node.index, siblings: parent.childrenIds };
   }
-  function moveBy(id: string, delta: -1 | 1) {
-    if (!connectionReady || moving || move || formActive) return;
+  function moveBy(id: string, delta: number) {
+    if (!connectionReady || moving || moveLock.current || formActive) return;
     const info = siblingIndex(id);
     if (!info) return;
     const next = info.index + delta;
@@ -228,9 +256,7 @@ export function TreeRows({
     try {
       const request = prepareMove(snapshot, id, info.parentId, next);
       preflight(request, snapshot);
-      setMove(request);
-      setDragError('');
-      setMoveResult(undefined);
+      void executeMove(request);
     } catch {
       setDragError('无法移动：目标失效、只读、循环或树已变化。');
     }
@@ -239,40 +265,141 @@ export function TreeRows({
     const node = byId.get(id);
     if (!node) return [];
     const items: CommandMenuItem[] = [];
+    if (formActive && !formBusy)
+      items.push({
+        id: 'resume',
+        label: '返回当前操作',
+        icon: <SquarePen aria-hidden="true" />,
+        onSelect: () => {
+          const host = actionsHost.current;
+          host?.scrollIntoView?.({ block: 'nearest' });
+          host
+            ?.querySelector<HTMLElement>(
+              'input:not(:disabled),select:not(:disabled),textarea:not(:disabled),button:not(:disabled)',
+            )
+            ?.focus();
+        },
+      });
+    if (node.ref.kind === 'bookmark') {
+      const targets: { target: BookmarkOpenTarget; label: string; icon: typeof ExternalLink }[] = [
+        { target: 'tab', label: '在新标签页打开', icon: ExternalLink },
+        { target: 'window', label: '在新窗口中打开', icon: AppWindow },
+        { target: 'incognito', label: '在无痕窗口中打开', icon: VenetianMask },
+      ];
+      for (const { target, label, icon: Icon } of targets)
+        items.push({
+          id: `open-${target}`,
+          label,
+          icon: <Icon aria-hidden="true" />,
+          disabled: !canOpenUrl(node.url),
+          onSelect: () => {
+            setOpenError('');
+            if (node.url) void openBookmarkUrl(node.url, target).catch((error: Error) => setOpenError(error.message));
+          },
+        });
+      items.push({
+        id: 'copy',
+        label: '复制链接',
+        icon: <Copy aria-hidden="true" />,
+        separatorBefore: true,
+        disabled: !node.url,
+        onSelect: () => {
+          setCopyStatus('');
+          setOpenError('');
+          if (node.url) {
+            try {
+              void navigator.clipboard.writeText(node.url).then(
+                () => setCopyStatus('已复制链接'),
+                () => setOpenError('无法复制链接，请检查剪贴板权限后重试。'),
+              );
+            } catch {
+              setOpenError('无法复制链接，请检查剪贴板权限后重试。');
+            }
+          }
+        },
+      });
+      items.push({
+        id: 'select',
+        label: checked.has(id) ? '取消选择书签' : '选择书签',
+        icon: <CheckSquare aria-hidden="true" />,
+        onSelect: () => {
+          setBatch(true);
+          toggleCheck(id, !checked.has(id));
+        },
+      });
+    }
     const info = siblingIndex(id);
     const canReorder = !!info && !node.readOnly;
     if (canReorder) {
       items.push({
+        id: 'top',
+        label: '置顶',
+        icon: <Pin aria-hidden="true" />,
+        separatorBefore: items.length > 0,
+        disabled: info!.index <= 0 || !connectionReady || moving || formActive,
+        disabledReason: mutationBlockReason ?? '已在当前目录首位。',
+        onSelect: () => moveBy(id, -info!.index),
+      });
+      items.push({
         id: 'up',
         label: '上移',
-        disabled: info!.index <= 0,
+        icon: <ArrowUp aria-hidden="true" />,
+        disabled: info!.index <= 0 || !connectionReady || moving || formActive,
+        disabledReason: mutationBlockReason ?? '已在当前目录首位。',
         onSelect: () => moveBy(id, -1),
       });
       items.push({
         id: 'down',
         label: '下移',
-        disabled: info!.index >= info!.siblings.length - 1,
+        icon: <ArrowDown aria-hidden="true" />,
+        disabled: info!.index >= info!.siblings.length - 1 || !connectionReady || moving || formActive,
+        disabledReason: mutationBlockReason ?? '已在当前目录末位。',
         onSelect: () => moveBy(id, 1),
       });
     }
-    if (node.ref.kind === 'bookmark') {
+    if (!node.readOnly) {
+      const disabled = !connectionReady || moving || formActive;
       items.push({
-        id: 'open',
-        label: canOpenUrl(node.url) ? '打开' : '此协议不支持打开',
-        disabled: !canOpenUrl(node.url),
-        onSelect: () => {
-          if (node.url) openUrl(node.url);
-        },
+        id: 'edit',
+        label: node.ref.kind === 'bookmark' ? '编辑' : '重命名',
+        icon: <SquarePen aria-hidden="true" />,
+        disabled,
+        disabledReason: mutationBlockReason,
+        onSelect: () => act(id, 'edit'),
+      });
+      items.push({
+        id: 'move',
+        label: '移入…',
+        icon: <FolderInput aria-hidden="true" />,
+        disabled,
+        disabledReason: mutationBlockReason,
+        onSelect: () => act(id, 'move'),
+      });
+      items.push({
+        id: 'delete',
+        label: '删除',
+        icon: <Trash2 aria-hidden="true" />,
+        disabled,
+        disabledReason: mutationBlockReason,
+        onSelect: () => act(id, 'delete'),
       });
     }
-    if (!node.readOnly) {
-      items.push({ id: 'edit', label: '重命名', onSelect: () => act(id, 'edit') });
-      items.push({ id: 'move', label: '移入…', onSelect: () => act(id, 'move') });
-      items.push({ id: 'delete', label: '删除', onSelect: () => act(id, 'delete') });
-    }
     if (node.ref.kind === 'folder' && node.childrenWritable) {
-      items.push({ id: 'bookmark', label: '新建书签', onSelect: () => act(id, 'bookmark') });
-      items.push({ id: 'folder', label: '新建目录', onSelect: () => act(id, 'folder') });
+      const disabled = !connectionReady || moving || formActive;
+      items.push({
+        id: 'bookmark',
+        label: '新建书签',
+        disabled,
+        disabledReason: mutationBlockReason,
+        onSelect: () => act(id, 'bookmark'),
+      });
+      items.push({
+        id: 'folder',
+        label: '新建目录',
+        disabled,
+        disabledReason: mutationBlockReason,
+        onSelect: () => act(id, 'folder'),
+      });
     }
     return items;
   }
@@ -299,32 +426,19 @@ export function TreeRows({
         snapshot={snapshot}
         selectedId={selectedId}
         hideCommands
+        containerRef={actionsHost}
         initialMode={intentMode}
-        interactionBlocked={!connectionReady || !!move || moving}
-        onInteractionChange={active => {
+        interactionBlocked={!connectionReady || moving}
+        onInteractionChange={(active, busy) => {
           setFormActive(active);
+          setFormBusy(busy);
           if (!active) setIntentMode(undefined);
         }}
       />
       {dragError && <p role="alert">{dragError}</p>}
-      {move && (
-        <div className="surface">
-          <p>
-            移动到{' '}
-            {
-              snapshot.nodes.find(n => 'parent' in move.command && n.ref.nativeId === move.command.parent.nativeId)
-                ?.title
-            }
-            ，位置 {'index' in move.command ? move.command.index : ''}
-          </p>
-          <button disabled={moving} onClick={() => setMove(undefined)}>
-            取消移动
-          </button>
-          <button disabled={moving || !connectionReady} onClick={() => void confirmMove()}>
-            确认移动
-          </button>
-        </div>
-      )}
+      {openError && <p role="alert">{openError}</p>}
+      {copyStatus && <p role="status">{copyStatus}</p>}
+      {moving && <BusyIndicator label="正在移动书签…" />}
       {moveResult && <MutationFeedback result={moveResult} />}
       {memoryError && <p role="alert">展开状态无法记忆，本次仍可浏览。</p>}
       {batch && (
@@ -372,6 +486,10 @@ export function TreeRows({
                 suppressOpen.current = false;
               }}
               onKeyDown={event => {
+                if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+                  event.preventDefault();
+                  setMenuId(id);
+                }
                 if (event.key === 'Escape') {
                   drag.current = undefined;
                   setPlacement(undefined);
@@ -406,7 +524,7 @@ export function TreeRows({
               onContextMenu={event => {
                 if (menuItems(id).length === 0) return;
                 event.preventDefault();
-                event.currentTarget.querySelector<HTMLButtonElement>('.command-trigger')?.click();
+                setMenuId(id);
               }}
             >
               {!node.readOnly && node.parentId !== undefined && (
@@ -444,7 +562,7 @@ export function TreeRows({
                 <button
                   className="folder-row"
                   aria-expanded={open}
-                  draggable={!node.readOnly && !moving && !move && !formActive}
+                  draggable={!node.readOnly && !moving && !formActive}
                   onClick={() => toggle(id)}
                   onDragStart={event => startDrag(event, id, !!node.readOnly)}
                   onDragEnd={() => {
@@ -460,7 +578,7 @@ export function TreeRows({
               ) : (
                 <div
                   className="bookmark-label"
-                  draggable={!node.readOnly && !moving && !move && !formActive}
+                  draggable={!node.readOnly && !moving && !formActive}
                   onDragStart={event => startDrag(event, id, !!node.readOnly)}
                   onDragEnd={() => {
                     drag.current = undefined;
@@ -494,7 +612,15 @@ export function TreeRows({
                   {node.childrenIds.length}
                 </span>
               ) : null}
-              {menuItems(id).length > 0 && <CommandMenu label={`${title} 操作`} items={menuItems(id)} />}
+              {menuItems(id).length > 0 && (
+                <CommandMenu
+                  label={`${title} 操作`}
+                  items={menuItems(id)}
+                  description={mutationBlockReason}
+                  open={menuId === id}
+                  onOpenChange={open => setMenuId(current => (open ? id : current === id ? undefined : current))}
+                />
+              )}
               {node.ref.kind === 'folder' && open && !node.childrenIds.length && <p className="hint">空文件夹</p>}
             </li>
           );

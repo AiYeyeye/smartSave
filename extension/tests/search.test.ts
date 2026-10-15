@@ -29,13 +29,13 @@ describe('SearchIndex', () => {
   });
 });
 describe('search rerank projection', () => {
-  it('caps only model candidates, excludes ancestry without hiding local hits', () => {
+  it('offers the whole allowed catalog, including beyond eight results, and excludes ancestry', () => {
     const tree = searchTree(12);
     const hits = new SearchIndex(tree).query('example');
     expect(hits).toHaveLength(12);
-    expect(searchCandidates(tree, { fullUrl: false, bodyEnabled: false, excludedFolders: [] }, hits)).toHaveLength(8);
+    expect(searchCandidates(tree, { fullUrl: false, bodyEnabled: false, excludedFolders: [] })).toHaveLength(12);
     expect(
-      searchCandidates(tree, { fullUrl: true, bodyEnabled: false, excludedFolders: [tree.nodes[0]!.ref] }, hits),
+      searchCandidates(tree, { fullUrl: true, bodyEnabled: false, excludedFolders: [tree.nodes[0]!.ref] }),
     ).toEqual([]);
   });
   it('rejects unknown/duplicate IDs and retains unranked local results', () => {

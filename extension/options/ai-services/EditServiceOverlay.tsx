@@ -2,13 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { Search, X } from 'lucide-react';
 import type { ApiMode, ConnectedService, ModelMeta } from './mock-data';
 import { API_MODE_OPTIONS } from '../../domain/ai-providers';
+import { DEFAULT_MAX_OUTPUT_TOKENS, maxOutputTokensSchema } from '../../domain/model-route';
 import { discoverModels, modelsToCatalog, requestHostPermission, testConnection } from '../../adapters/ai-connection';
-import { ModelTransport } from '../../adapters/model-transport';
-import { browserModelAuthority } from '../../adapters/model-authority';
 import type { SettingsStore } from '../../persistence/settings';
-import { connectTree } from '../../panel/tree-client';
-import type { TreeState } from '../../domain/node-reference';
-import type { AiPrivacy } from '../../domain/ai-payload';
 import { Avatar } from './Avatar';
 import { DialogPortal } from './portal';
 import { useToast } from './toast';
@@ -24,6 +20,8 @@ type Draft = {
   catalog: ModelMeta[];
   enabled: string[];
   timeoutMs: number;
+  streaming: boolean;
+  maxOutputTokens: string;
 };
 
 export function EditServiceOverlay({
@@ -53,8 +51,12 @@ export function EditServiceOverlay({
     catalog: service.catalog.map(m => ({ ...m })),
     enabled: [...service.enabled],
     timeoutMs: service.timeoutMs ?? 60000,
+    streaming: service.streaming ?? true,
+    maxOutputTokens: String(service.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS),
   }));
   const [keyValue, setKeyValue] = useState(initialKey);
+  const outputLimitValid = maxOutputTokensSchema.safeParse(Number(draft.maxOutputTokens)).success;
+  const outputLimit = Number(draft.maxOutputTokens);
   const [remember, setRemember] = useState(Boolean(initialKey));
   const [catalogQ, setCatalogQ] = useState('');
   const [addedQ, setAddedQ] = useState('');
@@ -62,31 +64,31 @@ export function EditServiceOverlay({
   const [testing, setTesting] = useState(false);
   const [listing, setListing] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [tree, setTree] = useState<TreeState>({ status: 'loading' });
-  const transport = useRef<ModelTransport | undefined>(undefined);
+  const [testModel, setTestModel] = useState(service.enabled[0] ?? service.catalog[0]?.id ?? '');
   const listAbort = useRef<AbortController | undefined>(undefined);
-
+  const testAbort = useRef<AbortController | undefined>(undefined);
+  const generation = useRef(0);
+  const mounted = useRef(true);
+  const invalidate = () => {
+    generation.current++;
+    listAbort.current?.abort();
+    testAbort.current?.abort();
+    setListing(false);
+    setTesting(false);
+  };
+  const close = () => {
+    invalidate();
+    onClose();
+  };
   useEffect(() => {
-    let live = true;
-    if (settings && typeof chrome !== 'undefined' && chrome.permissions) {
-      transport.current = new ModelTransport(
-        { fetch: globalThis.fetch.bind(globalThis), contains: request => chrome.permissions.contains(request) },
-        browserModelAuthority(settings),
-      );
-    }
-    const stop =
-      typeof chrome !== 'undefined' && chrome.runtime
-        ? connectTree(chrome.runtime, value => {
-            if (live) setTree(value);
-          })
-        : undefined;
+    mounted.current = true;
     return () => {
-      live = false;
+      mounted.current = false;
+      generation.current++;
       listAbort.current?.abort();
-      transport.current?.dispose();
-      stop?.();
+      testAbort.current?.abort();
     };
-  }, [settings]);
+  }, []);
 
   const catalogFiltered = draft.catalog.filter(
     m => !catalogQ.trim() || m.id.toLowerCase().includes(catalogQ.trim().toLowerCase()),
@@ -96,6 +98,7 @@ export function EditServiceOverlay({
   );
 
   function toggleModel(id: string, checked: boolean) {
+    invalidate();
     setDraft(d => ({
       ...d,
       enabled: checked ? (d.enabled.includes(id) ? d.enabled : [...d.enabled, id]) : d.enabled.filter(x => x !== id),
@@ -108,6 +111,7 @@ export function EditServiceOverlay({
       toast('请输入模型 ID');
       return;
     }
+    invalidate();
     setDraft(d => {
       const catalog = d.catalog.some(m => m.id === id) ? d.catalog : [...d.catalog, { id, ctx: '自定义' }];
       const enabled = d.enabled.includes(id) ? d.enabled : [...d.enabled, id];
@@ -118,11 +122,13 @@ export function EditServiceOverlay({
   }
 
   async function save() {
+    if (!outputLimitValid) return;
     const baseUrl = draft.baseUrl.trim() || service.baseUrl;
     if (!baseUrl) {
       toast('请填写接口地址');
       return;
     }
+    invalidate();
     setSaving(true);
     try {
       await onSave(
@@ -135,6 +141,8 @@ export function EditServiceOverlay({
           catalog: draft.catalog,
           enabled: draft.enabled,
           timeoutMs: draft.timeoutMs,
+          streaming: draft.streaming,
+          maxOutputTokens: outputLimit,
           status: service.status,
         },
         keyValue,
@@ -155,9 +163,12 @@ export function EditServiceOverlay({
       toast('请先填写接口地址');
       return;
     }
+    invalidate();
+    const operation = generation.current;
+    const controller = new AbortController();
+    listAbort.current = controller;
+    const current = () => mounted.current && generation.current === operation && !controller.signal.aborted;
     setListing(true);
-    listAbort.current?.abort();
-    listAbort.current = new AbortController();
     try {
       const draftConn = {
         mode: draft.mode,
@@ -167,11 +178,13 @@ export function EditServiceOverlay({
         timeoutMs: draft.timeoutMs,
       };
       const granted = await requestHostPermission(draftConn);
+      if (!current()) return;
       if (!granted) {
         toast('模型主机权限被拒绝');
         return;
       }
-      const result = await discoverModels(draftConn, { signal: listAbort.current.signal });
+      const result = await discoverModels(draftConn, { signal: controller.signal });
+      if (!current()) return;
       if (result.status !== 'completed') {
         toast(`未能获取模型列表：${result.reason}`);
         return;
@@ -188,65 +201,73 @@ export function EditServiceOverlay({
           enabled: enabled.length ? enabled : catalog.slice(0, 3).map(m => m.id),
         };
       });
-      toast(result.source === 'curated' ? '列表接口不可用，已填入常用模型' : `已获取 ${result.models.length} 个模型`);
+      toast(
+        result.source === 'curated'
+          ? '列表接口不可用，已填入常用模型；尚未验证生成能力'
+          : `已获取 ${result.models.length} 个模型；尚未验证生成能力`,
+      );
     } catch {
-      toast('获取列表失败');
+      if (current()) toast('获取列表失败');
     } finally {
-      setListing(false);
+      if (current()) {
+        setListing(false);
+        listAbort.current = undefined;
+      }
     }
   }
 
   async function test() {
+    if (!outputLimitValid) return;
     const baseUrl = draft.baseUrl.trim();
     if (!baseUrl) {
       toast('请先填写接口地址');
       return;
     }
+    const candidates = [...new Set([...draft.enabled, ...draft.catalog.map(m => m.id)])];
+    const model = candidates.includes(testModel) ? testModel : candidates[0];
+    if (!model) {
+      toast('请先添加并选择测试模型');
+      return;
+    }
+    invalidate();
+    const operation = generation.current;
+    const controller = new AbortController();
+    testAbort.current = controller;
+    const current = () => mounted.current && generation.current === operation && !controller.signal.aborted;
     setTesting(true);
     try {
-      const model = draft.enabled[0] || draft.catalog[0]?.id;
       const draftConn = {
         mode: draft.mode,
         baseUrl,
         key: keyValue,
         vendorId: service.vendorId,
         timeoutMs: draft.timeoutMs,
+        streaming: draft.streaming,
+        maxOutputTokens: outputLimit,
         model,
       };
       const granted = await requestHostPermission(draftConn);
+      if (!current()) return;
       if (!granted) {
         toast('模型主机权限被拒绝');
         return;
       }
-      let privacy: AiPrivacy = { fullUrl: true, bodyEnabled: false, excludedFolders: [] };
-      if (settings) {
-        try {
-          privacy = (await settings.snapshot()).privacy;
-        } catch {
-          /* use defaults */
-        }
-      }
-      const result = await testConnection({
-        draft: draftConn,
-        transport: transport.current,
-        tree: tree.status === 'ready' ? tree.snapshot : undefined,
-        privacy,
-      });
-      if (result.status === 'completed') {
-        toast(result.via === 'synthetic' ? '合成连接测试通过' : '连接测试通过（模型列表可达）');
-      } else {
-        toast(`连接失败：${result.reason}`);
-      }
+      const result = await testConnection({ draft: draftConn, settings, signal: controller.signal });
+      if (!current()) return;
+      toast(result.status === 'completed' ? `合成分类测试通过：${model}` : `分类测试失败：${result.reason}`);
     } catch {
-      toast('连接测试失败');
+      if (current()) toast('分类测试失败');
     } finally {
-      setTesting(false);
+      if (current()) {
+        setTesting(false);
+        testAbort.current = undefined;
+      }
     }
   }
 
   return (
     <DialogPortal>
-      <div className="ai-svc-backdrop" aria-hidden="true" onClick={onClose} />
+      <div className="ai-svc-backdrop" aria-hidden="true" onClick={close} />
       <div
         className="ai-svc-edit-overlay ai-svc-dialog is-large"
         role="dialog"
@@ -262,14 +283,21 @@ export function EditServiceOverlay({
               个模型
             </p>
           </div>
-          <button type="button" className="ai-svc-act ai-svc-act-ghost ai-svc-act-sm" onClick={onChangeService}>
+          <button
+            type="button"
+            className="ai-svc-act ai-svc-act-ghost ai-svc-act-sm"
+            onClick={() => {
+              invalidate();
+              onChangeService();
+            }}
+          >
             更换服务
           </button>
-          <button type="button" className="ai-svc-dialog-close" aria-label="关闭" onClick={onClose}>
+          <button type="button" className="ai-svc-dialog-close" aria-label="关闭" onClick={close}>
             <X aria-hidden="true" />
           </button>
         </header>
-        <div className="ai-svc-edit-body">
+        <div className="ai-svc-edit-body" onChangeCapture={invalidate}>
           <div className="ai-svc-edit-fields">
             <div className="ai-svc-edit-row two">
               <div className="ai-svc-field">
@@ -320,6 +348,71 @@ export function EditServiceOverlay({
                 </select>
               </div>
             </div>
+            <div className="ai-svc-field">
+              <label htmlFor="ai-edit-timeout">请求超时（毫秒）</label>
+              <small>流式响应按连续无事件或心跳的时间计时；持续收到数据会继续等待。非流式响应按总时间计时。</small>
+              <input
+                id="ai-edit-timeout"
+                type="number"
+                min="1"
+                max="2147483647"
+                value={draft.timeoutMs}
+                onChange={e => setDraft(d => ({ ...d, timeoutMs: Number(e.target.value) }))}
+              />
+            </div>
+            {
+              <div className="ai-svc-field">
+                <label htmlFor="ai-edit-output-limit">最大输出 tokens</label>
+                <input
+                  id="ai-edit-output-limit"
+                  type="number"
+                  min={1}
+                  max={Number.MAX_SAFE_INTEGER}
+                  step={1}
+                  value={draft.maxOutputTokens}
+                  aria-invalid={!outputLimitValid}
+                  aria-describedby="ai-edit-output-limit-help"
+                  onChange={e => setDraft(d => ({ ...d, maxOutputTokens: e.target.value }))}
+                />
+                <p id="ai-edit-output-limit-help" className="hint">
+                  默认 128,000，包含推理和正文。请填写所选模型支持的输出额度。
+                </p>
+                {!outputLimitValid && <p role="alert">输出上限请输入大于或等于 1 的有效整数。</p>}
+              </div>
+            }
+            <div className="ai-svc-field">
+              <label htmlFor="ai-test-model">测试模型</label>
+              <select
+                id="ai-test-model"
+                value={
+                  [...draft.enabled, ...draft.catalog.map(m => m.id)].includes(testModel)
+                    ? testModel
+                    : (draft.enabled[0] ?? draft.catalog[0]?.id ?? '')
+                }
+                onChange={e => setTestModel(e.target.value)}
+              >
+                {[...new Set([...draft.enabled, ...draft.catalog.map(m => m.id)])].map(id => (
+                  <option key={id} value={id}>
+                    {id}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <label className="ai-svc-toggle-row">
+              <span>
+                <strong>流式响应</strong>
+                <small>使用所选协议的原生流式接口；关闭后使用 JSON 响应。</small>
+              </span>
+              <span className="switch">
+                <input
+                  type="checkbox"
+                  role="switch"
+                  checked={draft.streaming}
+                  onChange={e => setDraft(d => ({ ...d, streaming: e.target.checked }))}
+                />
+                <span />
+              </span>
+            </label>
             <label className="ai-svc-toggle-row">
               <span>
                 <strong>记住密钥</strong>
@@ -431,7 +524,12 @@ export function EditServiceOverlay({
           </div>
         </div>
         <footer className="ai-svc-dialog-foot">
-          <button type="button" className="ai-svc-act ai-svc-act-ghost" disabled={testing} onClick={() => void test()}>
+          <button
+            type="button"
+            className="ai-svc-act ai-svc-act-ghost"
+            disabled={testing || !outputLimitValid}
+            onClick={() => void test()}
+          >
             {testing ? (
               <>
                 <span className="ai-svc-spinner" />
@@ -442,10 +540,15 @@ export function EditServiceOverlay({
             )}
           </button>
           <span className="ai-svc-dialog-hint" />
-          <button type="button" className="ai-svc-act ai-svc-act-ghost" onClick={onClose}>
+          <button type="button" className="ai-svc-act ai-svc-act-ghost" onClick={close}>
             取消
           </button>
-          <button type="button" className="ai-svc-act ai-svc-act-primary" disabled={saving} onClick={() => void save()}>
+          <button
+            type="button"
+            className="ai-svc-act ai-svc-act-primary"
+            disabled={saving || !outputLimitValid}
+            onClick={() => void save()}
+          >
             {saving ? '保存中…' : '保存服务'}
           </button>
         </footer>

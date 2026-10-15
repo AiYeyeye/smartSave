@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { parseModelEndpoint, parseModelListEndpoint } from '../domain/model-route';
+import { modelConfigSchema, parseModelEndpoint, parseModelListEndpoint } from '../domain/model-route';
 
-const base = { model: 'm', timeoutMs: 1000 };
+const base = { model: 'm', timeoutMs: 1000, streaming: false };
+
+it('validates optional output budgets without adding defaults or changing credential identity', () => {
+  const config = { ...base, adapter: 'openai-responses' as const, baseUrl: 'https://model.test' };
+  expect(modelConfigSchema.parse(config)).not.toHaveProperty('maxOutputTokens');
+  expect(parseModelEndpoint({ ...config, maxOutputTokens: 64000 }).identity).toBe(parseModelEndpoint(config).identity);
+  for (const maxOutputTokens of [0, -1, 1.5, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+    expect(modelConfigSchema.safeParse({ ...config, maxOutputTokens }).success).toBe(false);
+  }
+});
 
 describe('URL join rules for chat and models', () => {
   it.each([
@@ -43,9 +52,9 @@ describe('URL join rules for chat and models', () => {
   });
 
   it('treats /v3 /v4 and /openai bases as already versioned', () => {
-    expect(parseModelListEndpoint({ adapter: 'openai-compatible', baseUrl: 'https://open.bigmodel.cn/api/paas/v4' }).url).toBe(
-      'https://open.bigmodel.cn/api/paas/v4/models',
-    );
+    expect(
+      parseModelListEndpoint({ adapter: 'openai-compatible', baseUrl: 'https://open.bigmodel.cn/api/paas/v4' }).url,
+    ).toBe('https://open.bigmodel.cn/api/paas/v4/models');
     expect(
       parseModelEndpoint({
         adapter: 'openai-compatible',

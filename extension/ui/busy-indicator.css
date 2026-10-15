@@ -1,0 +1,17 @@
+.busy-indicator {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 14px;
+  border-radius: var(--r);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: 13px;
+}
+.busy-indicator span { flex: 1; min-width: 120px; overflow-wrap: anywhere; }
+.busy-indicator small { color: var(--muted); font-variant-numeric: tabular-nums; }
+.busy-spinner { animation: busy-turn 1s linear infinite; }
+@keyframes busy-turn { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .busy-spinner { animation: none; } }

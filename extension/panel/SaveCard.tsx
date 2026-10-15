@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { AiServicesStore } from '../persistence/ai-services';
+import { featureModelSettings } from '../adapters/feature-model-settings';
 import type { TreeSnapshot } from '../domain/node-reference';
 import {
   beginSave,
@@ -27,6 +29,7 @@ export function SaveCard({
   snapshot,
   connectionReady = true,
   settings,
+  aiServices,
   rulesStore,
   onClose,
   send,
@@ -37,12 +40,17 @@ export function SaveCard({
   snapshot: TreeSnapshot;
   connectionReady?: boolean;
   settings?: SettingsStore;
+  aiServices?: AiServicesStore;
   rulesStore: SiteRulesStore;
   onClose: () => void;
   send?: SendMutation;
   reconcile?: ReconcileSave;
   extractBody?: () => Promise<string>;
 }) {
+  const featureSettings = useMemo(
+    () => settings && featureModelSettings(settings, aiServices, 'classify'),
+    [settings, aiServices],
+  );
   const [draft, setDraft] = useState<SaveDraft>(() => beginSave(snapshot, page, []));
   const [message, setMessage] = useState('正在读取规则；不会自动保存。');
   const automaticEligible = useRef(true);
@@ -58,7 +66,9 @@ export function SaveCard({
   useEffect(() => {
     live.current = true;
     const authority =
-      settings && typeof chrome !== 'undefined' && chrome.permissions ? browserModelAuthority(settings) : undefined;
+      featureSettings && typeof chrome !== 'undefined' && chrome.permissions
+        ? browserModelAuthority(featureSettings)
+        : undefined;
     const revoke = () => {
       generation.current++;
       transport.current?.cancel();
@@ -73,7 +83,7 @@ export function SaveCard({
         { fetch: globalThis.fetch.bind(globalThis), contains: request => chrome.permissions.contains(request) },
         authority,
       );
-    const stop = authority?.subscribe(changed) ?? settings?.subscribe(changed);
+    const stop = authority?.subscribe(changed) ?? featureSettings?.subscribe(changed);
     window.addEventListener('pagehide', revoke);
     void rulesStore
       .load()
@@ -95,7 +105,7 @@ export function SaveCard({
       transport.current?.dispose();
       window.removeEventListener('pagehide', revoke);
     };
-  }, [settings, rulesStore, page]);
+  }, [featureSettings, rulesStore, page]);
   // The draft follows the live tree; only a changed or missing destination folder touches an accepted suggestion.
   useEffect(() => {
     setDraft(current => rebaseSaveDraft(current, snapshot));
@@ -121,7 +131,7 @@ export function SaveCard({
   }
   async function suggest() {
     automaticEligible.current = false;
-    if (!connectionReady || !settings || !transport.current || result || lock.current) {
+    if (!connectionReady || !featureSettings || !transport.current || result || lock.current) {
       setMessage('模型未配置；请手动选择目录。');
       return;
     }
@@ -129,7 +139,7 @@ export function SaveCard({
     setMessage('正在请求建议；可继续编辑，迟到建议不会覆盖手改目录。');
     let snippet: string | undefined;
     try {
-      const config = await settings.snapshot();
+      const config = await featureSettings.snapshot();
       if (!config.config) throw Error('configuration');
       if (bodyEnabled && config.privacy.bodyEnabled && extractBody) {
         try {

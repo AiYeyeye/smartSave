@@ -16,10 +16,10 @@ function time(t: number) {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
 }
 
-function detailText(entry: DebugEntry) {
+function detailText(entry: DebugEntry, includeBody = true) {
   if (!entry.detail) return '';
   return Object.entries(entry.detail)
-    .filter(([, value]) => value !== undefined && value !== null && value !== '')
+    .filter(([key, value]) => (includeBody || key !== 'body') && value !== undefined && value !== null && value !== '')
     .map(([key, value]) => `${key}=${String(value)}`)
     .join('  ');
 }
@@ -101,7 +101,11 @@ export function DebugLogPanel() {
       <div className="debug-head">
         <div>
           <h2>Debug 日志</h2>
-          <p>记录每次 AI 调用的路由、耗时、状态码和后台收藏分类的每一步；不记录密钥、请求正文或网页内容。</p>
+          <p>
+            开启后记录 AI
+            请求、脱敏后的请求与响应正文、状态码和解析过程。仅保存在本机，不记录密钥；正文可能包含书签标题和网址，分享前请检查。单份正文最多
+            65536 字符，日志总量最多 1 MiB。
+          </p>
         </div>
         <label className="switch" title={enabled ? '已开启' : '已关闭'}>
           <input
@@ -149,7 +153,18 @@ export function DebugLogPanel() {
               <time>{time(entry.t)}</time>
               <span className="debug-src">{entry.src}</span>
               <span className={`debug-event${tone(entry)}`}>{entry.event}</span>
-              <span className="debug-detail">{detailText(entry)}</span>
+              <div className="debug-detail">
+                <span>{detailText(entry, false)}</span>
+                {typeof entry.detail?.body === 'string' && (
+                  <details>
+                    <summary>
+                      查看{entry.event === 'request-body' ? '请求' : '响应'}正文
+                      {entry.detail.truncated ? '（已截断）' : ''}
+                    </summary>
+                    <pre>{entry.detail.body}</pre>
+                  </details>
+                )}
+              </div>
             </li>
           ))}
         </ol>

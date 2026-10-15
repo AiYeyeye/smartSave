@@ -1,10 +1,78 @@
 import { createElement } from 'react';
-import { render, waitFor } from '@testing-library/react';
+import { fireEvent, render, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, expect, it, vi } from 'vitest';
 import { ModelSettings } from '../options/ModelSettings';
 import { SettingsStore } from '../persistence/settings';
 afterEach(() => vi.unstubAllGlobals());
+it('legacy settings test uses unsaved draft without requiring a real tree or changing primary settings', async () => {
+  const data: Record<string, unknown> = {};
+  const store = new SettingsStore(
+    {
+      get: async key => ({ [key]: data[key] }),
+      set: async patch => {
+        Object.assign(data, patch);
+      },
+      remove: async key => {
+        delete data[key];
+      },
+      setAccessLevel: async () => {},
+    },
+    run => run(),
+  );
+  await store.load();
+  await store.save(
+    {
+      adapter: 'openai-responses',
+      baseUrl: 'https://model.test/v1',
+      model: 'saved',
+      timeoutMs: 1000,
+      streaming: false,
+    },
+    { fullUrl: false, bodyEnabled: false, excludedFolders: [] },
+    'key',
+    false,
+  );
+  const save = vi.spyOn(store, 'save');
+  vi.stubGlobal('chrome', {
+    permissions: { contains: vi.fn(async () => true), onRemoved: { addListener: vi.fn(), removeListener: vi.fn() } },
+  });
+  const fetcher = vi.fn<typeof fetch>(async (_url, init) => {
+    expect(JSON.parse(String(init?.body))).toMatchObject({ model: 'unsaved', stream: false, max_output_tokens: 64000 });
+    return new Response(
+      JSON.stringify({
+        status: 'completed',
+        output_text: JSON.stringify({
+          assignments: [{ itemId: 'test-bookmark', folderId: 'test-docs' }],
+          newFolders: [],
+        }),
+      }),
+    );
+  });
+  vi.stubGlobal('fetch', fetcher);
+  const view = render(createElement(ModelSettings, { store, fields: 'model' }));
+  const user = userEvent.setup();
+  await waitFor(() => expect(view.getByLabelText('模型名称')).toHaveValue('saved'));
+  expect(view.getByLabelText('流式响应')).not.toBeChecked();
+  expect(view.getByLabelText('最大输出 tokens')).toHaveValue(128000);
+  fireEvent.change(view.getByLabelText('最大输出 tokens'), { target: { value: '64000' } });
+  await user.clear(view.getByLabelText('模型名称'));
+  await user.type(view.getByLabelText('模型名称'), 'unsaved');
+  await user.click(view.getByRole('button', { name: '使用合成数据测试连接' }));
+  await waitFor(() => expect(view.getByRole('status')).toHaveTextContent('合成分类测试通过；草稿未保存'));
+  expect(save).not.toHaveBeenCalled();
+  expect((await store.snapshot()).config?.model).toBe('saved');
+  await user.click(view.getByRole('button', { name: '保存模型设置' }));
+  await waitFor(async () =>
+    expect((await store.snapshot()).config).toMatchObject({
+      model: 'unsaved',
+      streaming: false,
+      maxOutputTokens: 64000,
+    }),
+  );
+  view.unmount();
+  store.dispose();
+});
 it('unmounting settings preserves the page-owned session credential and subscribers', async () => {
   const data: Record<string, unknown> = {};
   const store = new SettingsStore(

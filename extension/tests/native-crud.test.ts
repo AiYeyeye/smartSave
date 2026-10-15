@@ -1,5 +1,5 @@
 import { createElement } from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { expect, it, vi } from 'vitest';
 import { openUrl } from '../domain/open-url';
@@ -238,13 +238,12 @@ it('keyboard move requires explicit destination and submits one scoped move', as
   render(createElement(BookmarkActions, { snapshot: tree, selectedId: 'b', send }));
   await user.click(screen.getByRole('button', { name: '移动' }));
   expect(screen.getByRole('combobox')).toHaveValue('');
-  expect(screen.getByRole('button', { name: '确认保存' })).toBeDisabled();
+  expect(screen.queryByRole('button', { name: '确认保存' })).toBeNull();
   await user.selectOptions(screen.getByRole('combobox'), 'g');
-  screen.getByRole('button', { name: '确认保存' }).focus();
-  await user.keyboard('{Enter}');
+  await waitFor(() => expect(send).toHaveBeenCalledOnce());
   expect(send.mock.calls[0]![0].command).toMatchObject({ type: 'move', parent: tree.nodes[2]!.ref, index: 0 });
 });
-it('drag uses private node data only, previews once, and invalidated target cannot submit', async () => {
+it('drag uses private node data only and an invalidated target cannot submit on drop', async () => {
   const { TreeRows } = await import('../panel/BookmarkTree');
   const sendMessage = vi.fn();
   vi.stubGlobal('chrome', {
@@ -254,7 +253,6 @@ it('drag uses private node data only, previews once, and invalidated target cann
       onChanged: { addListener: vi.fn(), removeListener: vi.fn() },
     },
   });
-  const user = userEvent.setup();
   const view = render(createElement(TreeRows, { snapshot: tree }));
   const source = (await screen.findByRole('button', { name: 'Book' })).closest('.bookmark-label')!;
   vi.spyOn(
@@ -265,14 +263,12 @@ it('drag uses private node data only, previews once, and invalidated target cann
   fireEvent.dragStart(source, { dataTransfer: transfer });
   expect(transfer.setData).toHaveBeenCalledExactlyOnceWith('application/x-zhilan-node', 'b');
   fireEvent(screen.getByRole('button', { name: 'Other' }), new MouseEvent('dragover', { bubbles: true, clientY: 20 }));
-  fireEvent.drop(screen.getByRole('button', { name: 'Other' }), { dataTransfer: transfer });
-  expect(screen.getByRole('button', { name: '确认移动' })).toBeVisible();
-  expect(sendMessage).not.toHaveBeenCalled();
   view.rerender(
     createElement(TreeRows, { snapshot: { ...tree, nodes: tree.nodes.filter(n => n.ref.nativeId !== 'g') } }),
   );
-  await user.click(screen.getByRole('button', { name: '确认移动' }));
-  expect(screen.getByText('书签已变化，请取消并重新拖拽。')).toBeVisible();
+  // Drop against the now-invalid destination list; no confirmation or submission can revive it.
+  fireEvent.drop(source, { dataTransfer: transfer });
+  expect(screen.queryByRole('button', { name: '确认移动' })).toBeNull();
   expect(sendMessage).not.toHaveBeenCalled();
   view.unmount();
   vi.unstubAllGlobals();
@@ -299,7 +295,8 @@ it('existing link opens only on click/Enter; unsupported URL has no executable o
   expect(screen.queryByRole('button', { name: 'Book' })).toBeNull();
   expect(view.container.querySelector('[href]')).toBeNull();
   await user.click(screen.getByRole('button', { name: 'Book 操作' }));
-  expect(screen.getByRole('menuitem', { name: '此协议不支持打开' })).toBeDisabled();
+  for (const name of ['在新标签页打开', '在新窗口中打开', '在无痕窗口中打开'])
+    expect(screen.getByRole('menuitem', { name })).toBeDisabled();
   open.mockRestore();
   view.unmount();
   vi.unstubAllGlobals();
@@ -331,7 +328,7 @@ it('rejected preview wrote nothing, so the panel invites a fresh preview instead
   await user.click(screen.getByRole('button', { name: '新建目录' }));
   await user.type(screen.getByRole('textbox', { name: '标题' }), 'New');
   await user.click(screen.getByRole('button', { name: '确认保存' }));
-  expect(await screen.findByRole('alert')).toHaveTextContent('已拒绝，未执行任何写入；请重新预览后再提交');
+  expect(await screen.findByRole('alert')).toHaveTextContent('未执行操作，请检查连接或重新操作');
   expect(screen.getByRole('alert')).not.toHaveTextContent('勿重复提交');
   expect(screen.getByRole('button', { name: '新建目录' })).toBeEnabled();
   await user.click(screen.getByRole('button', { name: '新建目录' }));
@@ -384,7 +381,7 @@ it('form draft and drag confirmation are mutually exclusive panel interactions',
   const view = render(createElement(TreeRows, { snapshot: tree }));
   const source = (await screen.findByRole('button', { name: 'Book' })).closest('.bookmark-label')!;
   await user.click(screen.getByRole('button', { name: 'Book 操作' }));
-  await user.click(screen.getByRole('menuitem', { name: '重命名' }));
+  await user.click(screen.getByRole('menuitem', { name: '编辑' }));
   vi.spyOn(
     screen.getByRole('button', { name: 'Other' }).closest('.bookmark-row')!,
     'getBoundingClientRect',
@@ -399,11 +396,11 @@ it('form draft and drag confirmation are mutually exclusive panel interactions',
   fireEvent.dragStart(source, { dataTransfer: transfer });
   fireEvent(screen.getByRole('button', { name: 'Other' }), new MouseEvent('dragover', { bubbles: true, clientY: 20 }));
   fireEvent.drop(screen.getByRole('button', { name: 'Other' }), { dataTransfer: transfer });
-  expect(screen.getByRole('button', { name: '确认移动' })).toBeVisible();
+  expect(screen.queryByRole('button', { name: '确认移动' })).toBeNull();
   await user.click(screen.getByRole('button', { name: 'Book 操作' }));
-  await user.click(screen.getByRole('menuitem', { name: '重命名' }));
+  await user.click(screen.getByRole('menuitem', { name: '编辑' }));
   expect(screen.queryByRole('textbox', { name: '标题' })).toBeNull();
-  expect(sendMessage).not.toHaveBeenCalled();
+  expect(sendMessage).toHaveBeenCalledOnce();
   view.unmount();
   vi.unstubAllGlobals();
 });

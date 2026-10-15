@@ -56,7 +56,8 @@ it('production App keeps five-format Worker parsing and source diagnostics acros
       ).buffer,
   });
   fireEvent.change(screen.getByLabelText('导入文件'), { target: { files: [file] } });
-  await waitFor(() => expect(screen.getByText(/解析完成/)).toBeVisible());
+  await waitFor(() => expect(screen.getByText(/文件已读取/)).toBeVisible());
+  await user.click(screen.getByText('查看文件中的原始条目'));
   expect(screen.getByText(/unsupported-protocol/)).toBeVisible();
   expect(posted).toHaveBeenCalledOnce();
   expect(terminate).toHaveBeenCalledOnce();
@@ -121,6 +122,7 @@ it('production same-task load retains deselect-all and explicit title edits acro
   );
   const user = userEvent.setup();
   openImportPage();
+  await user.click(screen.getByText('继续以前的导入任务'));
   await user.click(screen.getByRole('button', { name: '读取导入任务列表' }));
   await user.click(await screen.findByRole('button', { name: '加载任务' }));
   const row = await screen.findByRole('checkbox', { name: 'https://example.test/' });

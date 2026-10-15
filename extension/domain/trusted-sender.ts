@@ -35,8 +35,45 @@ function extensionOrigin(url: string, extensionId: string): URL | undefined {
  * one-time token minted for an explicit toolbar click. Unset (tests, pages) means no exception.
  */
 let overlayDocumentTrusted: ((sender: SenderLite) => boolean) | undefined;
-export function setOverlayDocumentTrust(check: ((sender: SenderLite) => boolean) | undefined) {
+let overlayTrustReady: (() => Promise<void>) | undefined;
+export function setOverlayDocumentTrust(
+  check: ((sender: SenderLite) => boolean) | undefined,
+  ready?: () => Promise<void>,
+) {
   overlayDocumentTrusted = check;
+  overlayTrustReady = ready;
+}
+
+/** Register listeners synchronously; a previously claimed frame may wait for worker-session hydration. */
+export function withTrustedSender(
+  sender: SenderLite,
+  extensionId: string,
+  run: () => void,
+  denied: () => void = () => {},
+): boolean {
+  if (trustedMutationSender(sender, extensionId)) {
+    run();
+    return true;
+  }
+  const url = sender.url ? extensionOrigin(sender.url, extensionId) : undefined;
+  if (
+    !overlayTrustReady ||
+    sender.id !== extensionId ||
+    !sender.documentId ||
+    (sender.frameId ?? 0) <= 0 ||
+    !url ||
+    url.search ||
+    url.pathname !== '/panel/index.html' ||
+    (sender.origin && sender.origin !== `chrome-extension://${extensionId}`)
+  ) {
+    denied();
+    return false;
+  }
+  void overlayTrustReady().then(() => {
+    if (trustedMutationSender(sender, extensionId)) run();
+    else denied();
+  }, denied);
+  return true;
 }
 
 /** An extension document can only be hosted inside a web tab through an iframe; that host is never trusted. */

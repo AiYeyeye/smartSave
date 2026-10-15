@@ -1,7 +1,12 @@
 import { expect, it, vi } from 'vitest';
 import { OrganizeController, type OrganizeState } from '../panel/organize-controller';
 import type { ModelAuthority } from '../adapters/model-authority';
+import type { ModelTransport } from '../adapters/model-transport';
 import { organizerTree } from './fixtures/organizer-tree';
+import type { ModelProgress } from '../adapters/model-transport';
+import type { AiPrivacy } from '../domain/ai-payload';
+import type { OpenOrganizerLease } from '../panel/organizer-client';
+import { organizeRejectionKey } from '../domain/organize-review';
 function setup() {
   const tree = organizerTree();
   let state: OrganizeState;
@@ -12,7 +17,7 @@ function setup() {
     revision: 'one',
     sessionRevision: 0,
     key: 'key',
-    privacy: { fullUrl: true, bodyEnabled: false, excludedFolders: [] },
+    privacy: { fullUrl: true, bodyEnabled: false, excludedFolders: [] } as AiPrivacy,
     config: { adapter: 'openai-compatible' as const, baseUrl: 'https://model.test/v1', model: 'test', timeoutMs: 1000 },
   };
   const authority: ModelAuthority = {
@@ -23,7 +28,8 @@ function setup() {
     },
   };
   const close = vi.fn();
-  const open = vi.fn(async () => ({ token: 'lease', close }));
+  const setActive = vi.fn();
+  const open = vi.fn<OpenOrganizerLease>(async () => ({ token: 'lease', close, setActive }));
   const send = vi.fn(async (r: { requestId: string }) => ({
     requestId: r.requestId,
     status: 'completed',
@@ -32,7 +38,7 @@ function setup() {
     remainingSteps: 0,
   }));
   const model = {
-    run: vi.fn(async () => ({
+    run: vi.fn<ModelTransport['run']>(async () => ({
       status: 'completed' as const,
       output: {
         moves: [
@@ -59,8 +65,10 @@ function setup() {
   controller.selectScope('bar');
   return {
     controller,
+    authority,
     context,
     close,
+    setActive,
     open,
     send,
     model,
@@ -68,6 +76,268 @@ function setup() {
     invalidate: () => listeners.forEach(cb => cb()),
   };
 }
+it('retains actionable failure context, no partial proposal, and clears it on retry', async () => {
+  const h = setup();
+  h.model.run.mockResolvedValueOnce({ status: 'failed', reason: 'incomplete', detail: 'output-limit' });
+  await h.controller.generate();
+  expect(h.state().failure).toMatchObject({ code: 'output-limit', phase: '模型生成', bookmarkCount: 2 });
+  expect(h.state().message).toContain('输出额度上限');
+  expect(h.state().message).toContain('未修改书签');
+  expect(h.state().proposal).toBeUndefined();
+  expect(h.state().busy).toBe(false);
+  await h.controller.apply();
+  expect(h.send).not.toHaveBeenCalled();
+  await h.controller.generate();
+  expect(h.state().failure).toBeUndefined();
+  expect(h.state().proposal).toBeDefined();
+  h.controller.dispose();
+});
+it('correlates generation with its lease and cancels a pending folder call on disconnect without a write', async () => {
+  const h = setup();
+  h.model.run.mockImplementationOnce(() => new Promise(() => {}));
+  const pending = h.controller.generate(undefined, { staged: true });
+  await vi.waitFor(() => expect(h.model.run).toHaveBeenCalledOnce());
+  const [disconnect, runId] = h.open.mock.calls[0]!;
+  const input = h.model.run.mock.calls[0]![0];
+  expect(runId).toEqual(expect.any(String));
+  expect(input.diagnosticRunId).toBe(runId);
+  disconnect();
+  await pending;
+  expect(input.signal?.aborted).toBe(true);
+  expect(h.state().message).toContain('整理连接已中断');
+  expect(h.state().pipeline?.status).toBe('invalid');
+  expect(h.state().busy).toBe(false);
+  await h.controller.apply();
+  expect(h.send).not.toHaveBeenCalled();
+  h.controller.dispose();
+});
+it('labels local plan conflicts separately and never shows raw unknown exception text', async () => {
+  const h = setup();
+  h.model.run.mockResolvedValueOnce({
+    status: 'completed',
+    output: {
+      newFolders: [],
+      merges: [{ sourceId: 'left', targetId: 'right' }],
+      moves: [{ itemId: 'a', folderId: 'right' }],
+    },
+  });
+  await h.controller.generate();
+  expect(h.state().failure).toMatchObject({ code: 'overlapping-merge', phase: '方案校验' });
+  expect(h.state().message).toContain('操作存在冲突');
+  h.model.run.mockRejectedValueOnce(Error('secret provider body'));
+  await h.controller.generate();
+  expect(h.state().failure?.code).toBe('unknown-error');
+  expect(h.state().message).not.toContain('secret');
+  expect(h.send).not.toHaveBeenCalled();
+  h.controller.dispose();
+});
+it('selects prerequisites, cancels dependent cleanup and honors remembered refusal on the next generation', async () => {
+  const h = setup();
+  h.model.run.mockResolvedValue({
+    status: 'completed',
+    output: {
+      newFolders: [{ id: 'new', parentId: 'bar', title: '工具' }],
+      moves: [
+        { itemId: 'a', folderId: 'new' },
+        { itemId: 'b', folderId: 'new' },
+      ],
+      merges: [],
+    },
+  });
+  await h.controller.generate(undefined, { cleanupEmpty: true });
+  expect(h.state().selected).toContain('delete:left');
+  h.controller.toggle('create:new', false);
+  expect(h.state().selected).not.toContain('move:a');
+  expect(h.state().selected).not.toContain('delete:left');
+  h.controller.toggle('move:a', true);
+  expect(h.state().selected).toContain('create:new');
+  expect(h.state().selected).toContain('move:a');
+  const p = h.state().proposal!;
+  const signature = organizeRejectionKey(
+    p,
+    p.actions.find(a => a.id === 'move:a')!,
+    {},
+  );
+  await h.controller.generate(undefined, { cleanupEmpty: true, rejectedSignatures: [signature] });
+  expect(h.state().selected).not.toContain('move:a');
+  expect(h.state().selected).not.toContain('delete:left');
+  expect(h.send).not.toHaveBeenCalled();
+  h.controller.dispose();
+});
+it('excludes protected folders from model candidates without altering saved privacy and permits folder rename only for this run', async () => {
+  const h = setup();
+  h.model.run.mockResolvedValueOnce({ status: 'completed', output: { moves: [], newFolders: [], merges: [] } });
+  await h.controller.generate(undefined, { protectedFolderIds: ['left'], allowRename: true });
+  const input = h.model.run.mock.calls[0]![0];
+  expect(input.request).toMatchObject({ itemIds: ['right'], folderIds: ['bar', 'right'] });
+  expect(input.privacy.excludedFolders).toEqual([]);
+  expect(input.policy?.allowRename).toBe(true);
+  h.controller.dispose();
+});
+it.each([
+  [2, 180_000],
+  [100, 180_000],
+  [300, 180_000],
+  [1000, 180_000],
+])('uses a stream inactivity budget of %i bookmarks / %i ms independent of item count', async (count, budget) => {
+  const h = setup();
+  const tree = h.context.tree;
+  const sample = tree.nodes.find(node => node.ref.nativeId === 'a')!;
+  const parent = tree.nodes.find(node => node.ref.nativeId === 'right')!;
+  for (let index = 0; index < count; index++) {
+    const id = `extra-${index}`;
+    tree.nodes.push({ ...sample, ref: { ...sample.ref, nativeId: id }, parentId: 'right', index });
+    parent.childrenIds.push(id);
+  }
+  h.context.privacy.excludedFolders = [tree.nodes.find(node => node.ref.nativeId === 'left')!.ref];
+  h.controller.setTree({ status: 'ready', snapshot: tree });
+  h.model.run.mockImplementationOnce(() => new Promise(() => {}));
+  const pending = h.controller.generate();
+  await vi.waitFor(() => expect(h.model.run).toHaveBeenCalled());
+  expect(h.model.run.mock.calls[0]![0].timeoutMs).toBe(budget);
+  expect(h.state().progress).toMatchObject({ bookmarkCount: count, timeoutSeconds: budget / 1000 });
+  expect(h.context.config.timeoutMs).toBe(1000);
+  h.controller.cancel();
+  await pending;
+  h.controller.dispose();
+});
+it('keeps a completed proposal actionable beyond ten minutes without regenerating or writing early', async () => {
+  vi.useFakeTimers();
+  try {
+    const h = setup();
+    await h.controller.generate();
+    expect(h.state().message).toContain('方案已生成');
+    expect(h.setActive).toHaveBeenLastCalledWith(true);
+    await vi.advanceTimersByTimeAsync(24 * 60 * 60_000);
+    expect(h.state().invalid).toBe(false);
+    expect(h.close).not.toHaveBeenCalled();
+    expect(h.state().message).not.toContain('10 分钟');
+    expect(h.send).not.toHaveBeenCalled();
+    h.controller.toggle('move:a', false);
+    expect(h.state().selected).toEqual(['move:b']);
+    await h.controller.apply();
+    expect(h.send).toHaveBeenCalledOnce();
+    expect(h.model.run).toHaveBeenCalledOnce();
+    expect(h.close).toHaveBeenCalledOnce();
+    h.controller.dispose();
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+it.each(['settings', 'tree', 'disconnect', 'dispose'] as const)(
+  'still revokes long-reviewed proposals on %s without replay or automatic reconnection',
+  async cause => {
+    vi.useFakeTimers();
+    try {
+      const h = setup();
+      await h.controller.generate();
+      await vi.advanceTimersByTimeAsync(30 * 60_000);
+      expect(h.state().invalid).toBe(false);
+      if (cause === 'settings') h.invalidate();
+      else if (cause === 'tree') {
+        h.context.tree.nodes.find(node => node.ref.nativeId === 'a')!.title = 'Changed';
+        h.controller.setTree({ status: 'ready', snapshot: h.context.tree });
+      } else if (cause === 'disconnect') h.open.mock.calls[0]![0]();
+      else h.controller.dispose();
+      expect(h.state().invalid).toBe(true);
+      await h.controller.apply();
+      expect(h.send).not.toHaveBeenCalled();
+      expect(h.open).toHaveBeenCalledOnce();
+      expect(h.close).toHaveBeenCalledOnce();
+      h.controller.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  },
+);
+it('releases review authority after confirmed apply and preserves its result', async () => {
+  vi.useFakeTimers();
+  try {
+    const h = setup();
+    await h.controller.generate();
+    await h.controller.apply();
+    const message = h.state().message;
+    await vi.advanceTimersByTimeAsync(600_000);
+    expect(h.state().message).toBe(message);
+    expect(h.send).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+    h.controller.dispose();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+it('honors a longer configured deadline and releases a completed empty proposal without keeping review alive', async () => {
+  const h = setup();
+  h.context.config.timeoutMs = 950_000;
+  h.model.run.mockResolvedValueOnce({ status: 'completed', output: { moves: [], merges: [], newFolders: [] } });
+  await h.controller.generate();
+  expect(h.model.run.mock.calls[0]![0].timeoutMs).toBe(950_000);
+  expect(h.state().message).toBe('分析已完成，没有需要应用的操作。');
+  expect(h.state().invalid).toBe(false);
+  expect(h.close).toHaveBeenCalledOnce();
+  expect(h.setActive).not.toHaveBeenCalled();
+  h.controller.dispose();
+});
+it('keeps streamed suggestions read-only, freezes custom intent, bounds waiting and ignores late updates', async () => {
+  const h = setup();
+  let progress!: (value: ModelProgress) => void;
+  h.model.run.mockImplementationOnce(input => {
+    progress = input.onProgress!;
+    return new Promise(() => {});
+  });
+  const preference = { style: 'custom' as const, instructions: '分成写作、画图' };
+  const pending = h.controller.generate(preference);
+  preference.instructions = 'changed';
+  await vi.waitFor(() => expect(h.model.run).toHaveBeenCalled());
+  const input = h.model.run.mock.calls[0]![0];
+  expect(input.timeoutMs).toBe(180000);
+  expect(input.config.timeoutMs).toBe(1000);
+  expect(input.request).toMatchObject({ preference: { instructions: '分成写作、画图' } });
+  const update: ModelProgress = {
+    phase: 'receiving',
+    streaming: true,
+    text: '{"moves":[{"itemId":"a","folderId":"right"}],',
+    receivedChars: 50,
+  };
+  progress(update);
+  expect(h.state().progress?.preview).toHaveLength(1);
+  expect(h.state().proposal).toBeUndefined();
+  await h.controller.apply();
+  expect(h.send).not.toHaveBeenCalled();
+  h.controller.cancel();
+  await pending;
+  progress(update);
+  expect(h.state().progress).toBeUndefined();
+  expect(h.state().busy).toBe(false);
+});
+it('has no outer total timer but still cancels ongoing generation without writes', async () => {
+  vi.useFakeTimers();
+  try {
+    const h = setup();
+    h.model.run.mockImplementationOnce(input => {
+      input.onProgress?.({
+        phase: 'receiving',
+        streaming: true,
+        text: '{"moves":[{"itemId":"a","folderId":"right"}],',
+        receivedChars: 50,
+      });
+      return new Promise(() => {});
+    });
+    const pending = h.controller.generate();
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(600_000);
+    expect(h.state().busy).toBe(true);
+    h.controller.cancel();
+    await pending;
+    expect(h.state().busy).toBe(false);
+    expect(h.state().progress).toBeUndefined();
+    expect(h.send).not.toHaveBeenCalled();
+    h.controller.dispose();
+  } finally {
+    vi.useRealTimers();
+  }
+});
 it('retains unchecked proposal but revokes authority on settings/tree change without reopening', async () => {
   const h = setup();
   await h.controller.generate();
@@ -82,6 +352,78 @@ it('retains unchecked proposal but revokes authority on settings/tree change wit
   await h.controller.apply();
   expect(h.send).not.toHaveBeenCalled();
   expect(h.open).toHaveBeenCalledTimes(1);
+});
+
+it('cancels a hanging settings read immediately and late work cannot overwrite a newer run', async () => {
+  const h = setup();
+  let resolveRead!: (value: typeof h.context) => void;
+  vi.spyOn(h.authority, 'read').mockImplementationOnce(
+    () =>
+      new Promise(resolve => {
+        resolveRead = resolve;
+      }),
+  );
+  const first = h.controller.generate();
+  await vi.waitFor(() => expect(resolveRead).toBeDefined());
+  expect(h.state().busy).toBe(true);
+  h.controller.cancel();
+  expect(h.state().busy).toBe(false);
+  await first;
+  await h.controller.generate();
+  const proposal = h.state().proposal;
+  resolveRead(h.context);
+  await Promise.resolve();
+  expect(h.state().proposal).toBe(proposal);
+  expect(h.state().invalid).toBe(false);
+  h.controller.dispose();
+});
+
+it('bounds a never-returning preparation and exposes a useful timeout', async () => {
+  vi.useFakeTimers();
+  try {
+    const h = setup();
+    vi.spyOn(h.authority, 'read').mockImplementation(() => new Promise(() => {}));
+    const run = h.controller.generate();
+    await vi.advanceTimersByTimeAsync(10_000);
+    await run;
+    expect(h.state().busy).toBe(false);
+    expect(h.state().message).toContain('读取设置超时');
+    expect(h.model.run).not.toHaveBeenCalled();
+    expect(h.close).toHaveBeenCalled();
+    h.controller.dispose();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('closes a lease that arrives after cancellation', async () => {
+  const h = setup();
+  let release!: (lease: { token: string; close: typeof h.close }) => void;
+  h.open.mockImplementationOnce(
+    () =>
+      new Promise(resolve => {
+        release = resolve;
+      }),
+  );
+  const run = h.controller.generate();
+  h.controller.cancel();
+  await run;
+  release({ token: 'late', close: h.close });
+  await Promise.resolve();
+  expect(h.state().busy).toBe(false);
+  expect(h.close).toHaveBeenCalledOnce();
+  expect(h.model.run).not.toHaveBeenCalled();
+  h.controller.dispose();
+});
+
+it('shows response size failures instead of an unrelated initial instruction', async () => {
+  const h = setup();
+  h.model.run.mockImplementationOnce(async () => ({ status: 'failed', reason: 'response-too-large' }));
+  await h.controller.generate();
+  expect(h.state().message).toContain('返回的数据超过处理限额');
+  expect(h.state().busy).toBe(false);
+  expect(h.send).not.toHaveBeenCalled();
+  h.controller.dispose();
 });
 it('only explicit generation calls model, applies selected batch once, never replays', async () => {
   const h = setup();

@@ -120,8 +120,13 @@ function PopupApp({ overlay = false }: { overlay?: boolean }) {
       <main id="main" tabIndex={-1}>
         <div hidden={view !== 'browse'}>
           <SaveReceiptCard onOpen={open} />
-          <CurrentPageSave settings={settingsStore} />
-          <SearchResults query={query} settings={settingsStore} onOrganize={() => open('organize')} />
+          <CurrentPageSave settings={settingsStore} aiServices={ai.store} />
+          <SearchResults
+            query={query}
+            settings={settingsStore}
+            services={ai.store}
+            onOrganize={() => open('organize')}
+          />
           <section className="directory" aria-label="书签目录" hidden={query.trim().length > 0}>
             <BookmarkTree batchNonce={batchNonce} />
           </section>
@@ -158,6 +163,7 @@ function OptionsApp() {
   const [query, setQuery] = useState('');
   const [batchNonce, setBatchNonce] = useState(0);
   const [visited, setVisited] = useState<Set<OptionsRoute>>(() => new Set([initial.route]));
+  const [exportRecoveryOpen, setExportRecoveryOpen] = useState(false);
 
   useEffect(() => {
     function onHash() {
@@ -210,21 +216,32 @@ function OptionsApp() {
         <main id="main" tabIndex={-1} className={meta.wide ? 'is-wide' : undefined}>
           <div className="view" hidden={route !== 'browse'}>
             <SearchBox value={query} onChange={setQuery} />
-            <SearchResults query={query} settings={settingsStore} onOrganize={() => go('organize')} />
+            <SearchResults
+              query={query}
+              settings={settingsStore}
+              services={ai.store}
+              onOrganize={() => go('organize')}
+            />
             <section className="directory" aria-label="书签目录" hidden={query.trim().length > 0}>
               <BookmarkTree batchNonce={batchNonce} />
             </section>
           </div>
           <div className="view" hidden={route !== 'organize'}>
-            <OrganizeWorkbench visible={route === 'organize'} settings={settingsStore} />
+            <OrganizeWorkbench visible={route === 'organize'} settings={settingsStore} aiServices={ai.store} />
           </div>
           <div className="view" hidden={route !== 'import'}>
-            <ImportWorkbench visible={route === 'import'} settings={settingsStore} />
+            <ImportWorkbench visible={route === 'import'} settings={settingsStore} aiServices={ai.store} />
           </div>
           {mounted('export') && (
             <div className="view" hidden={route !== 'export'}>
               <ExportSettings visible={route === 'export'} />
-              <RecoveryWorkbench />
+              <details
+                className="surface workflow-help"
+                onToggle={event => setExportRecoveryOpen(event.currentTarget.open)}
+              >
+                <summary>备份与恢复记录</summary>
+                <RecoveryWorkbench visible={route === 'export' && exportRecoveryOpen} />
+              </details>
             </div>
           )}
           <div className="view" hidden={route !== 'ai-services'}>

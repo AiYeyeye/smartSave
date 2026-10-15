@@ -18,7 +18,13 @@ export const sendMutation: SendMutation = request =>
           needsReconcile: false,
           completedSteps: 0,
           remainingSteps: 0,
-          reason: 'preview-unavailable',
+          reason:
+            registered &&
+            typeof registered === 'object' &&
+            'reason' in registered &&
+            registered.reason === 'invalid-sender'
+              ? 'invalid-sender'
+              : 'preview-unavailable',
         } satisfies MutationResult);
         return;
       }

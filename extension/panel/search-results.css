@@ -1,0 +1,19 @@
+/* Match the compact bookmark tree: title only, one readable line per result. */
+.search-results,
+.search-results .search-hit-list,
+.search-results .search-hit-list li {
+  min-width: 0;
+  max-width: 100%;
+}
+.search-results .search-hit-list {
+  grid-template-columns: minmax(0, 1fr);
+}
+.search-results .search-hit-list button {
+  display: block;
+  min-height: 44px;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}

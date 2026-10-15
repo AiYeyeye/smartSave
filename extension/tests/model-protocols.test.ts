@@ -9,9 +9,34 @@ const config = (adapter: ModelConfig['adapter'], baseUrl: string, model = 'm'): 
   baseUrl,
   model,
   timeoutMs: 1000,
+  streaming: false,
 });
 
 describe('request side: endpoint, JSON mode and output budget per protocol', () => {
+  it.each(['openai-compatible', 'openai-responses', 'anthropic', 'google-generative-ai'] as const)(
+    '%s preserves default/custom output budgets for every wire and JSON retry mode',
+    adapter => {
+      for (const streaming of [false, true])
+        for (const jsonMode of [false, true])
+          for (const maxOutputTokens of [undefined, 64000]) {
+            const c = {
+              ...config(adapter, 'https://model.test', 'm'),
+              streaming,
+              ...(maxOutputTokens === undefined ? {} : { maxOutputTokens }),
+            };
+            const body = JSON.parse(modelRequestBody(c, 'organize', '{}', undefined, jsonMode));
+            const actual =
+              adapter === 'google-generative-ai'
+                ? body.generationConfig.maxOutputTokens
+                : adapter === 'anthropic'
+                  ? body.max_tokens
+                  : adapter === 'openai-responses'
+                    ? body.max_output_tokens
+                    : body.max_completion_tokens;
+            expect(actual).toBe(maxOutputTokens ?? 128000);
+          }
+    },
+  );
   it('OpenAI Chat Completions: /v1/chat/completions, messages[], response_format json_object', () => {
     const c = config('openai-compatible', 'https://api.openai.com/v1');
     expect(parseModelEndpoint(c).url).toBe('https://api.openai.com/v1/chat/completions');
@@ -19,6 +44,7 @@ describe('request side: endpoint, JSON mode and output budget per protocol', () 
     const body = JSON.parse(modelRequestBody(c, 'search', '{}'));
     expect(body.messages.map((m: { role: string }) => m.role)).toEqual(['system', 'user']);
     expect(body.response_format).toEqual({ type: 'json_object' });
+    expect(body.max_completion_tokens).toBe(128000);
   });
   it('OpenAI Responses: /v1/responses, instructions + input, text.format json_object, max_output_tokens', () => {
     const c = config('openai-responses', 'https://api.openai.com/v1');
@@ -26,7 +52,16 @@ describe('request side: endpoint, JSON mode and output budget per protocol', () 
     const body = JSON.parse(modelRequestBody(c, 'search', '{}'));
     expect(body).toMatchObject({ text: { format: { type: 'json_object' } }, input: '{}' });
     expect(body.instructions).toContain('JSON');
-    expect(body.max_output_tokens).toBeGreaterThanOrEqual(8000);
+    expect(body.max_output_tokens).toBe(128000);
+    for (const streaming of [false, true]) {
+      for (const jsonMode of [false, true]) {
+        const custom = JSON.parse(
+          modelRequestBody({ ...c, streaming, maxOutputTokens: 64000 }, 'search', '{}', undefined, jsonMode),
+        );
+        expect(custom.max_output_tokens).toBe(64000);
+        expect(custom.stream).toBe(streaming);
+      }
+    }
     expect(body.messages).toBeUndefined();
   });
   it('Anthropic Messages: /v1/messages, top-level system, max_tokens, no response_format', () => {
@@ -34,7 +69,12 @@ describe('request side: endpoint, JSON mode and output budget per protocol', () 
     expect(parseModelEndpoint(c).url).toBe('https://api.anthropic.com/v1/messages');
     const body = JSON.parse(modelRequestBody(c, 'search', '{}'));
     expect(body.system).toContain('JSON');
-    expect(body.max_tokens).toBeGreaterThanOrEqual(8192);
+    expect(body.max_tokens).toBe(128000);
+    for (const streaming of [false, true]) {
+      const custom = JSON.parse(modelRequestBody({ ...c, streaming, maxOutputTokens: 64000 }, 'organize', '{}'));
+      expect(custom.max_tokens).toBe(64000);
+      expect(custom.max_output_tokens).toBeUndefined();
+    }
     expect(body.response_format).toBeUndefined();
   });
   it('Google Generative AI: model in the URL path, systemInstruction, responseMimeType application/json', () => {
@@ -43,7 +83,7 @@ describe('request side: endpoint, JSON mode and output budget per protocol', () 
       'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent',
     );
     const body = JSON.parse(modelRequestBody(c, 'search', '{}'));
-    expect(body.generationConfig).toEqual({ responseMimeType: 'application/json' });
+    expect(body.generationConfig).toEqual({ responseMimeType: 'application/json', maxOutputTokens: 128000 });
     expect(body.systemInstruction.parts[0].text).toContain('JSON');
     expect(body.model).toBeUndefined();
   });

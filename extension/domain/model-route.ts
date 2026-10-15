@@ -9,16 +9,36 @@ export const modelAdapterSchema = z.enum([
   'lm-studio',
 ]);
 export type ModelAdapter = z.infer<typeof modelAdapterSchema>;
+export const DEFAULT_MAX_OUTPUT_TOKENS = 128000;
+export const maxOutputTokensSchema = z.number().int().positive();
 
 export const modelConfigSchema = z.strictObject({
   adapter: modelAdapterSchema,
   baseUrl: z.string().min(1),
   model: z.string().trim().min(1),
   timeoutMs: z.number().int().positive().max(2147483647),
+  streaming: z.boolean().optional(),
+  maxOutputTokens: maxOutputTokensSchema.optional(),
 });
 export type ModelConfig = z.infer<typeof modelConfigSchema>;
 
+/** Application output budget, shared by request generation and user-facing diagnostics. */
+export function modelOutputTokenLimit(config: Pick<ModelConfig, 'adapter' | 'maxOutputTokens'>): number | undefined {
+  return ['openai-compatible', 'openai-responses', 'anthropic', 'google-generative-ai'].includes(config.adapter)
+    ? (config.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS)
+    : undefined;
+}
+
 export type ModelEndpointKind = 'chat' | 'models';
+
+/** Resolve at use time; never inject defaults into persisted settings/freshness identities. */
+export function modelStreaming(config: Pick<ModelConfig, 'adapter' | 'streaming'>): boolean {
+  if (config.adapter === 'ollama') return false;
+  return (
+    config.streaming ??
+    ['openai-compatible', 'openai-responses', 'anthropic', 'google-generative-ai'].includes(config.adapter)
+  );
+}
 
 function parseBase(baseUrl: string) {
   const base = new URL(baseUrl);
@@ -78,9 +98,13 @@ export function parseModelEndpoint(input: ModelConfig, kind: ModelEndpointKind =
     const config = modelConfigSchema.parse(input);
     const { base, path, origin, permission } = parseBase(config.baseUrl);
     const suffix = modelResourceSuffix(config.adapter, path, kind, config.model);
+    const resource =
+      config.adapter === 'google-generative-ai' && kind === 'chat' && modelStreaming(config)
+        ? suffix.replace(':generateContent', ':streamGenerateContent?alt=sse')
+        : suffix;
     return {
       identity: JSON.stringify([config.adapter, base.origin, path]),
-      url: `${origin}${path}${suffix}`,
+      url: `${origin}${path}${resource}`,
       origin,
       permission,
     };

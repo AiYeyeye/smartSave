@@ -97,6 +97,7 @@ describe('Anthropic native chat mapping', () => {
       baseUrl: 'https://api.anthropic.com',
       model: 'claude-sonnet-4-5',
       timeoutMs: 10000,
+      streaming: false,
     };
     const tree = {
       installationId: 'i',
@@ -140,7 +141,7 @@ describe('Anthropic native chat mapping', () => {
     const body = JSON.parse(String(chatCall[1].body));
     expect(body).toMatchObject({
       model: 'claude-sonnet-4-5',
-      max_tokens: 8192,
+      max_tokens: 128000,
       stream: false,
       messages: [{ role: 'user', content: expect.any(String) }],
     });
@@ -167,6 +168,7 @@ describe('OpenAI Responses chat mapping', () => {
       baseUrl: 'https://api.openai.com/v1',
       model: 'gpt-4.1-mini',
       timeoutMs: 10000,
+      streaming: false,
     };
     const tree = {
       installationId: 'i',
@@ -266,6 +268,7 @@ describe('Google Generative AI chat and list mapping', () => {
       baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
       model: 'gemini-2.5-flash',
       timeoutMs: 10000,
+      streaming: false,
     };
     const tree = {
       installationId: 'i',

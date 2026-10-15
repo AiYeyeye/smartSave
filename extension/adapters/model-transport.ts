@@ -1,6 +1,6 @@
-import { parseModelEndpoint, type ModelConfig } from '../domain/model-route';
+import { modelOutputTokenLimit, modelStreaming, parseModelEndpoint, type ModelConfig } from '../domain/model-route';
 import type { ModelAuthority } from './model-authority';
-import { readModelResponse, MODEL_BYTE_LIMITS } from './model-byte-limits';
+import { readModelText, MODEL_BYTE_LIMITS, ModelResponseReadError, type ModelBodyObserver } from './model-byte-limits';
 import { serializeAiPayload, type AiPrivacy, type AiRequest } from '../domain/ai-payload';
 import {
   classificationPolicySchema,
@@ -12,23 +12,24 @@ import { dependencyDigest, settingsIdentity } from '../domain/context-dependenci
 import type { TreeSnapshot } from '../domain/node-reference';
 import {
   modelOutputJsonSchema,
-  outputSchema,
+  ModelOutputValidationError,
   parseModelOutput,
   type ModelOutputContext,
 } from '../schemas/model-output';
-import { traceModel } from '../domain/debug-log';
-import { extractAssistantText, ModelParseError, readModelReply, replyShape } from './model-replies';
+import { modelBodyDiagnostics, modelDiagnosticLog } from './model-diagnostics';
+import { completedReplyText, ModelParseError, replyShape } from './model-replies';
+import { readWireReply, type ModelStreamProgress } from './model-stream';
+export type ModelProgress = ModelStreamProgress & { phase: 'waiting' | 'receiving' | 'validating' };
 export { parseModelEndpoint, parseModelListEndpoint } from '../domain/model-route';
 export type ModelResult =
   | { status: 'completed'; output: ReturnType<typeof parseModelOutput> }
-  | { status: 'failed' | 'cancelled'; reason: string };
+  | { status: 'failed' | 'cancelled'; reason: string; detail?: 'output-limit' };
 interface ModelBoundary {
   fetch: typeof fetch;
   contains: (request: { origins: string[] }) => Promise<boolean>;
 }
 const ANTHROPIC_VERSION = '2023-06-01';
-const ANTHROPIC_MAX_TOKENS = 8192;
-const RESPONSES_MAX_OUTPUT_TOKENS = 16000;
+let modelCallSequence = 0;
 
 function requestHeaders(adapter: ModelConfig['adapter'], key: string): Record<string, string> {
   if (adapter === 'anthropic') {
@@ -68,8 +69,8 @@ export function modelRequestBody(
     // Native Messages API: system is top-level; no chat/completions response_format; JSON via schema in system.
     return JSON.stringify({
       model: config.model,
-      max_tokens: ANTHROPIC_MAX_TOKENS,
-      stream: false,
+      max_tokens: modelOutputTokenLimit(config),
+      stream: modelStreaming(config),
       system,
       messages: [{ role: 'user', content: payload }],
     });
@@ -78,11 +79,11 @@ export function modelRequestBody(
     // OpenAI Responses: instructions + input (not messages); POST …/responses.
     return JSON.stringify({
       model: config.model,
-      stream: false,
+      stream: modelStreaming(config),
       instructions: system,
       input: payload,
       // Reasoning models spend output tokens on thinking first; a small proxy default ends them before the JSON.
-      max_output_tokens: RESPONSES_MAX_OUTPUT_TOKENS,
+      max_output_tokens: modelOutputTokenLimit(config),
       ...(jsonMode ? { text: { format: { type: 'json_object' } } } : {}),
     });
   }
@@ -91,12 +92,13 @@ export function modelRequestBody(
     return JSON.stringify({
       systemInstruction: { parts: [{ text: system }] },
       contents: [{ role: 'user', parts: [{ text: payload }] }],
-      generationConfig: { responseMimeType: 'application/json' },
+      generationConfig: { responseMimeType: 'application/json', maxOutputTokens: modelOutputTokenLimit(config) },
     });
   }
   return JSON.stringify({
     model: config.model,
-    stream: false,
+    stream: modelStreaming(config),
+    ...(config.adapter === 'openai-compatible' ? { max_completion_tokens: modelOutputTokenLimit(config) } : {}),
     messages: [
       { role: 'system', content: system },
       { role: 'user', content: payload },
@@ -145,7 +147,7 @@ export function extractJsonObject(text: string): unknown {
 }
 
 const ID_KEYS = new Set(['id', 'parentId', 'itemId', 'folderId', 'sourceId', 'targetId']);
-const ID_ARRAYS = new Set(['rankedIds', 'urlPath', 'titlePath']);
+const ID_ARRAYS = new Set(['rankedIds', 'unchangedIds', 'urlPath', 'titlePath']);
 /** Commentary keys models add despite instructions; harmless, so dropped before the strict schema check. */
 const COMMENTARY_KEYS = new Set(['reason', 'reasoning', 'rationale', 'confidence', 'explanation', 'note', 'notes']);
 
@@ -160,7 +162,7 @@ export function normalizeModelJson(value: unknown, task: string): unknown {
     if (!node || typeof node !== 'object') return node;
     const out: Record<string, unknown> = {};
     for (const [key, child] of Object.entries(node)) {
-      if (COMMENTARY_KEYS.has(key)) continue;
+      if (COMMENTARY_KEYS.has(key) && !(task === 'organize' && key === 'reason' && node !== value)) continue;
       if (ID_KEYS.has(key) && typeof child === 'number') out[key] = String(child);
       else if (ID_ARRAYS.has(key) && Array.isArray(child))
         out[key] = child.map(item => (typeof item === 'number' ? String(item) : item));
@@ -179,16 +181,18 @@ export function normalizeModelJson(value: unknown, task: string): unknown {
   return normalized;
 }
 
-function zodIssue(task: string, value: unknown): string {
-  const result = outputSchema(task).safeParse(value);
-  if (result.success) return 'ids-or-structure-rejected';
-  const first = result.error.issues[0];
-  return first ? `${first.path.join('.') || '(root)'}: ${first.code}` : 'schema';
+function parseReason(error: ModelParseError): string {
+  return ['empty', 'refused', 'incomplete'].includes(error.stage)
+    ? error.stage
+    : error.stage === 'provider'
+      ? 'provider-error'
+      : 'schema';
 }
 
 export class ModelTransport {
   private generation = 0;
   private active?: AbortController;
+  private cancelTrace?: (source: string) => void;
   private readonly unsubscribe: () => void;
   constructor(
     private readonly boundary: ModelBoundary,
@@ -197,17 +201,19 @@ export class ModelTransport {
   ) {
     // Tree changes are judged per request against its dependency scope in run(); settings/permission changes cancel outright.
     this.unsubscribe = authority.subscribe(change => {
-      if (change !== 'tree') this.cancel();
+      if (change !== 'tree') this.cancel(change === 'permissions' ? 'permissions-changed' : 'settings-changed');
     });
   }
   dispose() {
-    this.cancel();
+    this.cancel('disposed');
     this.unsubscribe();
   }
-  cancel() {
+  cancel(source: 'caller' | 'disposed' | 'superseded' | 'permissions-changed' | 'settings-changed' = 'caller') {
+    if (this.active && !this.active.signal.aborted) this.cancelTrace?.(source);
     this.generation++;
     this.active?.abort();
     this.active = undefined;
+    this.cancelTrace = undefined;
   }
   fits(input: {
     config: ModelConfig;
@@ -227,7 +233,6 @@ export class ModelTransport {
       ).byteLength <= this.limits.requestBytes
     );
   }
-  private lastHttpStatus?: number;
   async run(input: {
     config: ModelConfig;
     key: string;
@@ -235,204 +240,414 @@ export class ModelTransport {
     privacy: AiPrivacy;
     request: AiRequest;
     policy?: ClassificationPolicy;
+    signal?: AbortSignal;
+    /** Request/JSON budget, then inactivity budget for actual SSE; does not alter saved settings. */
+    timeoutMs?: number;
+    onProgress?: (progress: ModelProgress) => void;
+    /** Diagnostic correlation only; never included in the provider request. */
+    diagnosticRunId?: string;
   }): Promise<ModelResult> {
+    this.cancel('superseded');
+    const generation = this.generation;
+    const controller = new AbortController();
+    this.active = controller;
     const started = Date.now();
+    const timeoutMs = input.timeoutMs ?? input.config.timeoutMs;
+    let deadline = started + timeoutMs;
+    let timeoutPhase: 'request' | 'stream-idle' | 'validation' = 'request';
+    let lastActivityAt: number | undefined;
+    let timedOut = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let httpStatus: number | undefined;
+    let attempt = 0;
     let host = '';
     try {
       host = new URL(input.config.baseUrl).host;
     } catch {
-      /* invalid base URL is reported by the call itself */
+      /* reported below */
     }
-    const route = { task: input.request.task, adapter: input.config.adapter, model: input.config.model, host };
-    traceModel('call-start', { ...route, hasKey: input.key.length > 0 });
-    this.lastHttpStatus = undefined;
-    let result = await this.runInner(input, true);
-    // Some gateways return an empty message when the API-level JSON switch is on; the prompt already asks for
-    // JSON, so try once more without the switch.
-    if (
-      result.status === 'failed' &&
-      result.reason === 'empty' &&
-      (input.config.adapter === 'openai-compatible' || input.config.adapter === 'openai-responses')
-    ) {
-      traceModel('retry-without-json-mode', { ...route });
-      result = await this.runInner(input, false);
-    }
-    traceModel('call-end', {
-      ...route,
-      status: result.status,
-      reason: result.status === 'completed' ? undefined : result.reason,
-      httpStatus: this.lastHttpStatus,
-      ms: Date.now() - started,
+    const callId = globalThis.crypto?.randomUUID?.() ?? `${started}-${++modelCallSequence}`;
+    const metadata = {
+      callId,
+      task: input.request.task,
+      adapter: input.config.adapter,
+      model: input.config.model,
+      host,
+      runId: input.diagnosticRunId,
+    };
+    const log = modelDiagnosticLog(metadata, input.key);
+    this.cancelTrace = source => log('cancel-requested', { source, ms: Date.now() - started });
+    const abort = () => {
+      if (!controller.signal.aborted) log('cancel-requested', { source: 'input-signal', ms: Date.now() - started });
+      controller.abort();
+    };
+    input.signal?.addEventListener('abort', abort, { once: true });
+    if (input.signal?.aborted) abort();
+    let rejectAbort: (() => void) | undefined;
+    const cancelled = new Promise<never>((_, reject) => {
+      rejectAbort = () => reject(Error('aborted'));
     });
-    return result;
-  }
-  private async runInner(
-    input: {
-      config: ModelConfig;
-      key: string;
-      tree: TreeSnapshot;
-      privacy: AiPrivacy;
-      request: AiRequest;
-      policy?: ClassificationPolicy;
-    },
-    jsonMode: boolean,
-  ): Promise<ModelResult> {
-    this.cancel();
-    const generation = this.generation;
-    const controller = new AbortController();
-    this.active = controller;
-    let timedOut = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
+    // Attach a handler even if cancellation precedes the first awaited boundary.
+    void cancelled.catch(() => {});
+    controller.signal.addEventListener('abort', rejectAbort!, { once: true });
+    if (controller.signal.aborted) rejectAbort!();
+    const check = () => {
+      if (timedOut) throw Error('timeout');
+      if (controller.signal.aborted || generation !== this.generation) throw Error('aborted');
+      if (Date.now() >= deadline) {
+        timedOut = true;
+        log('timeout', {
+          phase: timeoutPhase,
+          ms: Date.now() - started,
+          idleMs: lastActivityAt === undefined ? undefined : Date.now() - lastActivityAt,
+        });
+        controller.abort();
+      }
+      if (timedOut) throw Error('timeout');
+      if (controller.signal.aborted || generation !== this.generation) throw Error('aborted');
+    };
+    const arm = () => {
+      clearTimeout(timer);
+      timer = setTimeout(
+        () => {
+          if (Date.now() < deadline) {
+            arm();
+            return;
+          }
+          try {
+            check();
+          } catch {
+            /* Abort is handled by the operation race. */
+          }
+        },
+        Math.max(1, deadline - Date.now()),
+      );
+    };
+    const renew = (phase: typeof timeoutPhase) => {
+      check(); // Late events cannot revive an already expired or cancelled call.
+      timeoutPhase = phase;
+      lastActivityAt = Date.now();
+      deadline = lastActivityAt + timeoutMs;
+      arm();
+    };
+    const checked = async <T>(promise: Promise<T>): Promise<T> => {
+      check();
+      const value = await Promise.race([promise, cancelled]);
+      check();
+      return value;
+    };
+    let result: ModelResult;
+    log('call-start', { hasCredential: input.key.length > 0, timeoutMs });
+    let lastProgressAt = 0;
+    let lastProgressChars = 0;
+    let lastProgressPhase: ModelProgress['phase'] | undefined;
+    let lastStreamLogAt: number | undefined;
+    let progressUpdates = 0;
+    let suppressedUpdates = 0;
+    const progress = (update: ModelProgress) => {
+      if (controller.signal.aborted || generation !== this.generation) return;
+      progressUpdates++;
+      if (
+        update.phase === 'receiving' &&
+        update.streaming &&
+        (lastStreamLogAt === undefined || Date.now() - lastStreamLogAt >= 20_000)
+      ) {
+        lastStreamLogAt = Date.now();
+        log('stream-progress', {
+          ms: Date.now() - started,
+          answerChars: update.receivedChars,
+          progressUpdates,
+          suppressedUpdates,
+        });
+      }
+      if (!input.onProgress) return;
+      // Thought/metadata chunks with zero answer characters must not bypass UI throttling.
+      // Still deliver the first receiving notification, first answer and terminal validation immediately.
+      if (
+        update.phase === 'receiving' &&
+        lastProgressPhase === 'receiving' &&
+        !(lastProgressChars === 0 && update.receivedChars > 0) &&
+        Date.now() - lastProgressAt < 150
+      ) {
+        suppressedUpdates++;
+        return;
+      }
+      lastProgressAt = Date.now();
+      lastProgressChars = update.receivedChars;
+      lastProgressPhase = update.phase;
+      try {
+        input.onProgress({
+          ...update,
+          text: input.key ? update.text.split(input.key).join('[redacted]') : update.text,
+        });
+      } catch {
+        /* Display observers do not control result validity. */
+      }
+    };
     try {
-      const frozen = structuredClone(input);
-      // Freshness is scoped to what this request depends on: unrelated bookmark changes never invalidate it.
-      const dependencies = dependencyDigest(frozen.tree, frozen.request);
-      const settings = settingsIdentity(frozen);
-      const same = (current: Awaited<ReturnType<ModelAuthority['read']>>) =>
-        current.tree.installationId === frozen.tree.installationId &&
-        dependencyDigest(current.tree, frozen.request) === dependencies &&
-        settingsIdentity(current) === settings &&
-        current.key === frozen.key;
-      if (!same(await this.authority.read())) return { status: 'failed', reason: 'stale-context' };
-      const fresh = async () => same(await this.authority.read());
+      if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > 2147483647) throw Error('invalid-timeout');
+      const { signal: _signal, onProgress: _progress, ...data } = input;
+      void _signal;
+      void _progress;
+      const frozen = structuredClone(data);
       const route = parseModelEndpoint(frozen.config);
+      check();
+      arm();
+      const dependencies = dependencyDigest(frozen.tree, frozen.request);
+      const identity = settingsIdentity(frozen);
+      const fresh = async () => {
+        check();
+        const current = await checked(this.authority.read());
+        if (
+          current.tree.installationId !== frozen.tree.installationId ||
+          dependencyDigest(current.tree, frozen.request) !== dependencies ||
+          settingsIdentity(current) !== identity ||
+          current.key !== frozen.key
+        )
+          throw Error('stale-context');
+      };
+      const permission = async () => {
+        check();
+        if (!(await checked(this.boundary.contains({ origins: [route.permission] })))) throw Error('permission');
+      };
       const payload = serializeAiPayload(frozen.tree, frozen.privacy, frozen.request);
       const policy = frozen.policy ?? DEFAULT_CLASSIFICATION_POLICY;
-      // The output validator receives the same policy as the prompt plus the target/scope root; search has no root.
       const context: ModelOutputContext = {
         ...JSON.parse(payload),
         policy,
         ...(frozen.request.task === 'search'
           ? {}
-          : { rootId: frozen.request.task === 'organize' ? frozen.request.rootId : frozen.request.targetId }),
+          : {
+              rootId: frozen.request.task === 'organize' ? frozen.request.rootId : frozen.request.targetId,
+            }),
       };
-      if (!(await this.boundary.contains({ origins: [route.permission] })))
-        return { status: 'failed', reason: 'permission' };
-      if (!(await fresh())) return { status: 'failed', reason: 'stale-context' };
-      if (generation !== this.generation) return { status: 'cancelled', reason: 'cancelled' };
-      timer = setTimeout(() => {
-        timedOut = true;
-        controller.abort();
-      }, frozen.config.timeoutMs);
-      const body = modelRequestBody(frozen.config, frozen.request.task, payload, policy, jsonMode);
-      if (new TextEncoder().encode(body).byteLength > this.limits.requestBytes)
-        return { status: 'failed', reason: 'payload-too-large' };
-      const cancelled = new Promise<never>((_, reject) => {
-        controller.signal.addEventListener('abort', () => reject(Error('aborted')), { once: true });
-      });
-      const response = await Promise.race([
-        cancelled,
-        this.boundary.fetch(route.url, {
+      await fresh();
+      result = { status: 'failed', reason: 'empty' };
+      for (const jsonMode of [true, false]) {
+        check();
+        timeoutPhase = 'request';
+        lastActivityAt = undefined;
+        attempt++;
+        const attemptLog = modelDiagnosticLog({ ...metadata, attempt }, frozen.key);
+        await permission();
+        await fresh();
+        const body = modelRequestBody(frozen.config, frozen.request.task, payload, policy, jsonMode);
+        const requestBytes = new TextEncoder().encode(body).byteLength;
+        if (requestBytes > this.limits.requestBytes) throw Error('payload-too-large');
+        const headers = requestHeaders(frozen.config.adapter, frozen.key);
+        progress({ phase: 'waiting', text: '', receivedChars: 0, streaming: modelStreaming(frozen.config) });
+        attemptLog('request', {
           method: 'POST',
-          headers: requestHeaders(frozen.config.adapter, frozen.key),
+          url: route.url,
+          jsonMode,
+          streaming: modelStreaming(frozen.config),
+          requestBytes,
+          headers: JSON.stringify(headers),
+        });
+        attemptLog('request-body', () => modelBodyDiagnostics(body, frozen.key));
+        check();
+        const pendingResponse = this.boundary.fetch(route.url, {
+          method: 'POST',
+          headers,
           body,
           signal: controller.signal,
           credentials: 'omit',
           redirect: 'error',
           cache: 'no-store',
           referrerPolicy: 'no-referrer',
-        }),
-      ]);
-      if (timedOut) return { status: 'failed', reason: 'timeout' };
-      this.lastHttpStatus = response.status;
-      if (generation !== this.generation) return { status: 'cancelled', reason: 'cancelled' };
-      if (response.redirected || (response.url && response.url !== route.url))
-        return { status: 'failed', reason: 'redirect' };
-      if (!response.ok) {
-        traceModel('http-error', { status: response.status, message: await errorMessage(response) });
-        return {
-          status: 'failed',
-          reason: [401, 403, 429].includes(response.status) ? `http-${response.status}` : 'http-error',
-        };
-      }
-      let raw: unknown;
-      try {
-        raw = await Promise.race([
-          cancelled,
-          readModelResponse(response, this.limits.responseBytes, controller.signal),
-        ]);
-      } catch (error) {
-        if (error instanceof Error && error.message === 'response-too-large')
-          return { status: 'failed', reason: 'response-too-large' };
-        return timedOut
-          ? { status: 'failed', reason: 'timeout' }
-          : controller.signal.aborted
-            ? { status: 'cancelled', reason: 'cancelled' }
-            : { status: 'failed', reason: 'schema' };
-      }
-      if (timedOut) return { status: 'failed', reason: 'timeout' };
-      if (generation !== this.generation || controller.signal.aborted)
-        return { status: 'cancelled', reason: 'cancelled' };
-      if (!(await this.boundary.contains({ origins: [route.permission] })))
-        return { status: 'failed', reason: 'permission' };
-      if (generation !== this.generation) return { status: 'cancelled', reason: 'cancelled' };
-      if (!(await fresh())) return { status: 'failed', reason: 'stale-context' };
-      if (generation !== this.generation) return { status: 'cancelled', reason: 'cancelled' };
-      let text = '';
-      try {
-        let reply;
-        try {
-          reply = readModelReply(frozen.config.adapter, raw);
-        } catch (error) {
-          throw error instanceof ModelParseError ? error : new ModelParseError('envelope');
-        }
-        text = reply.text;
-        if (!text.trim()) extractAssistantText(frozen.config.adapter, raw); // throws refused / incomplete / empty
-        let json: unknown;
-        try {
-          json = extractJsonObject(text);
-        } catch {
-          // A reply cut off by the output budget usually ends mid-JSON.
-          throw reply.truncated
-            ? new ModelParseError('incomplete', `finish=${reply.finish ?? '?'}`)
-            : new ModelParseError('json', reply.finish ? `finish=${reply.finish}` : undefined);
-        }
-        const value = normalizeModelJson(json, frozen.request.task);
-        try {
-          return { status: 'completed', output: parseModelOutput(value, context) };
-        } catch {
-          throw new ModelParseError('validate', zodIssue(frozen.request.task, value));
-        }
-      } catch (error) {
-        const parse = error instanceof ModelParseError ? error : new ModelParseError('json');
-        traceModel('parse-failed', {
-          task: frozen.request.task,
-          jsonMode,
-          stage: parse.stage,
-          issue: parse.issue,
-          chars: text.length,
-          // Opt-in local trail only: the start of the reply is the fastest way to see what the model sent back.
-          head: text ? text.slice(0, 160) : replyShape(raw),
         });
-        return {
-          status: 'failed',
-          reason:
-            parse.stage === 'incomplete'
-              ? 'incomplete'
-              : parse.stage === 'refused'
-                ? 'refused'
-                : parse.stage === 'empty'
-                  ? 'empty'
-                  : 'schema',
+        // A boundary that ignores AbortSignal may still resolve; release its unread body.
+        void pendingResponse.then(
+          response => {
+            if (controller.signal.aborted || generation !== this.generation)
+              void response.body?.cancel().catch(() => {});
+          },
+          () => {},
+        );
+        const response = await checked(pendingResponse);
+        httpStatus = response.status;
+        attemptLog('response-headers', {
+          httpStatus,
+          contentType: response.headers.get('content-type'),
+          contentLength: response.headers.get('content-length'),
+          serverRequestId: response.headers.get('x-request-id') ?? response.headers.get('request-id'),
+          redirected: response.redirected,
+        });
+        if (response.redirected || (response.url && response.url !== route.url)) {
+          void response.body?.cancel().catch(() => {});
+          throw Error('redirect');
+        }
+        const onBody: ModelBodyObserver = (text, receivedBytes, complete) => {
+          attemptLog('response-body', () => ({ receivedBytes, complete, ...modelBodyDiagnostics(text, frozen.key) }));
         };
+        if (!response.ok) {
+          const message = await checked(errorMessage(response, onBody, controller.signal, this.limits.responseBytes));
+          attemptLog('http-error', { status: response.status, message });
+          result = {
+            status: 'failed',
+            reason: [401, 403, 429].includes(response.status) ? `http-${response.status}` : 'http-error',
+          };
+          break;
+        }
+        const streaming = /^text\/event-stream(?:\s*;|\s*$)/i.test(response.headers.get('content-type') ?? '');
+        if (streaming) renew('stream-idle');
+        attemptLog('waiting-policy', { mode: streaming ? 'stream-idle' : 'total', timeoutMs });
+        let wire: Awaited<ReturnType<typeof readWireReply>>;
+        progress({
+          phase: 'receiving',
+          text: '',
+          receivedChars: 0,
+          streaming,
+        });
+        try {
+          wire = await checked(
+            readWireReply(
+              response,
+              frozen.config.adapter,
+              this.limits.responseBytes,
+              controller.signal,
+              onBody,
+              input.onProgress ? update => progress({ ...update, phase: 'receiving' }) : undefined,
+              streaming ? () => renew('stream-idle') : undefined,
+            ),
+          );
+        } catch (error) {
+          const readError = error instanceof ModelResponseReadError ? error.cause : error;
+          attemptLog('response-read-failed', {
+            waitingPhase: timeoutPhase,
+            idleMs: lastActivityAt === undefined ? undefined : Date.now() - lastActivityAt,
+            aborted: controller.signal.aborted,
+            stage: error instanceof ModelResponseReadError ? 'body-read' : 'decode-or-protocol',
+            error: readError instanceof Error ? readError.name : 'unknown',
+            message: readError instanceof Error ? readError.message : undefined,
+          });
+          throw error instanceof ModelParseError ||
+            error instanceof ModelResponseReadError ||
+            (error instanceof Error && ['response-too-large', 'aborted'].includes(error.message))
+            ? error
+            : new ModelParseError('envelope');
+        }
+        if (streaming) renew('validation');
+        await permission();
+        await fresh();
+        const reply = wire.reply;
+        progress({
+          phase: 'validating',
+          text: '',
+          receivedChars: reply.text.length,
+          streaming: wire.events !== undefined,
+        });
+        attemptLog('reply-extracted', {
+          chars: reply.text.length,
+          finish: reply.finish,
+          truncated: reply.truncated,
+          refused: Boolean(reply.refused),
+          failed: reply.failed,
+          events: wire.events,
+        });
+        try {
+          const text = completedReplyText(reply);
+          // SSE body prefixes can consist entirely of thinking. Capture the completed answer
+          // independently so long reasoning streams cannot hide a rejected proposal.
+          attemptLog('answer-body', () => modelBodyDiagnostics(text, frozen.key));
+          const value = normalizeModelJson(extractJsonObject(text), frozen.request.task);
+          try {
+            const output = parseModelOutput(value, context);
+            check();
+            attemptLog('output-validated', { status: 'completed' });
+            result = { status: 'completed', output };
+          } catch (error) {
+            if (controller.signal.aborted) throw error;
+            const issue =
+              error instanceof ModelOutputValidationError ? `${error.path}: ${error.code}` : 'validation-exception';
+            throw new ModelParseError('validate', issue);
+          }
+        } catch (error) {
+          check();
+          const parse = error instanceof ModelParseError ? error : new ModelParseError('json');
+          attemptLog('parse-failed', {
+            task: frozen.request.task,
+            jsonMode,
+            stage: parse.stage,
+            detail: parse.detail,
+            issue: parse.issue,
+            organizeStage: context.stage,
+            inputItems: context.items.length,
+            inputFolders: context.folders.length,
+            maxNewDepth: context.policy?.maxNewDepth,
+            chars: reply.text.length,
+            shape: wire.raw === undefined ? 'SSE' : replyShape(wire.raw),
+          });
+          result = { status: 'failed', reason: parseReason(parse), ...(parse.detail ? { detail: parse.detail } : {}) };
+        }
+        if (
+          result.status !== 'failed' ||
+          result.reason !== 'empty' ||
+          !jsonMode ||
+          !['openai-compatible', 'openai-responses'].includes(frozen.config.adapter)
+        )
+          break;
+        check();
+        log('retry-without-json-mode', { attempt: attempt + 1 });
       }
-    } catch {
-      return timedOut
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '';
+      log('request-failed', {
+        error: error instanceof Error ? error.name : 'unknown',
+        message,
+        timedOut,
+        aborted: controller.signal.aborted,
+      });
+      result = timedOut
         ? { status: 'failed', reason: 'timeout' }
-        : generation !== this.generation
+        : controller.signal.aborted || generation !== this.generation
           ? { status: 'cancelled', reason: 'cancelled' }
-          : { status: 'failed', reason: 'connection-or-configuration' };
+          : {
+              status: 'failed',
+              reason:
+                error instanceof ModelParseError
+                  ? parseReason(error)
+                  : [
+                        'network-error',
+                        'payload-too-large',
+                        'response-too-large',
+                        'stale-context',
+                        'permission',
+                        'redirect',
+                      ].includes(message)
+                    ? message
+                    : 'connection-or-configuration',
+            };
     } finally {
       clearTimeout(timer);
-      if (generation === this.generation) this.active = undefined;
+      input.signal?.removeEventListener('abort', abort);
+      controller.signal.removeEventListener('abort', rejectAbort!);
+      if (generation === this.generation) {
+        this.active = undefined;
+        this.cancelTrace = undefined;
+      }
     }
+    log('call-end', {
+      attempts: attempt,
+      status: result.status,
+      reason: result.status === 'completed' ? undefined : result.reason,
+      detail: result.status === 'completed' ? undefined : result.detail,
+      httpStatus,
+      ms: Date.now() - started,
+    });
+    return result;
   }
 }
 
 /** Provider error message (e.g. "response_format is not supported") for the debug trail; bounded, never the request. */
-export async function errorMessage(response: Response): Promise<string> {
+export async function errorMessage(
+  response: Response,
+  onBody?: ModelBodyObserver,
+  signal?: AbortSignal,
+  limit = MODEL_BYTE_LIMITS.responseBytes,
+): Promise<string> {
   try {
-    const body = (await response.text()).slice(0, 2000);
+    const body = (await readModelText(response, limit, signal, onBody)).slice(0, 2000);
     try {
       const parsed = JSON.parse(body) as { error?: { message?: unknown } | string; message?: unknown };
       const message =

@@ -504,7 +504,8 @@ details > summary {
   pointer-events: none;
   z-index: 20;
 }
-.theme-overlay .in-panel-select-list {
+.theme-overlay .in-panel-select-list,
+.theme-overlay .command-menu-list {
   pointer-events: auto;
 }
 .in-panel-select {
@@ -564,12 +565,11 @@ details > summary {
   color: var(--text);
 }
 .command-menu-list {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 4px);
-  z-index: 5;
-  min-width: 168px;
+  position: fixed;
+  z-index: 30;
+  min-width: 220px;
   max-width: calc(100vw - 24px);
+  overflow-y: auto;
   display: grid;
   gap: 1px;
   background: var(--surface);
@@ -583,7 +583,7 @@ details > summary {
 .command-menu-list [role='menuitem'] {
   width: 100%;
   justify-content: flex-start;
-  min-height: 30px;
+  min-height: 44px;
   padding: 0 10px;
   border: 0;
   border-radius: var(--r-xs);
@@ -591,6 +591,23 @@ details > summary {
   box-shadow: none;
   font-size: 13px;
   font-weight: 450;
+}
+.command-menu-hint {
+  margin: 4px 10px 8px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.command-menu-list [role='separator'] {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
+}
+.command-menu-list [role='menuitem'] svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
 }
 .command-menu-list [role='menuitem']:hover,
 .command-menu-list [role='menuitem']:focus-visible {
@@ -1431,6 +1448,11 @@ dialog::backdrop {
 }
 .debug-detail {
   color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.debug-detail pre {
+  margin: 6px 0 0;
+  white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 .receipt-table {

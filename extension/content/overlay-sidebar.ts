@@ -20,7 +20,7 @@ const scope = globalThis as unknown as { __zhilanOverlayInit?: Init; __zhilanOve
 
   const MIN = 300;
   const MAX = 720;
-  let width = Math.min(MAX, Math.max(MIN, init.width || 380));
+  let width = Math.min(MAX, Math.max(MIN, init.width));
   const host = document.createElement('zhilan-sidebar');
   host.style.cssText =
     'all:initial;position:fixed;inset:0;z-index:2147483647;pointer-events:none;display:block;contain:strict;';

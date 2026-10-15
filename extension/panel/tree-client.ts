@@ -3,7 +3,52 @@ import { TREE_PORT, treeStateSchema, type TreeState } from '../domain/node-refer
 const envelope = z.object({ version: z.literal(1), state: treeStateSchema });
 const MAX_RECONNECTS = 3;
 const RESPONSE_TIMEOUT_MS = 10_000;
-export function connectTree(runtime: Pick<typeof chrome.runtime, 'connect'>, receive: (state: TreeState) => void) {
+type Runtime = Pick<typeof chrome.runtime, 'connect'>;
+type SharedTree = {
+  state: TreeState;
+  listeners: Set<(state: TreeState) => void>;
+  stop: () => void;
+};
+// One native subscription per extension document. Cached display data never becomes write authority.
+const sharedTrees = new WeakMap<Runtime, SharedTree>();
+export function connectTree(runtime: Runtime, receive: (state: TreeState) => void) {
+  let shared = sharedTrees.get(runtime);
+  if (!shared) {
+    shared = { state: { status: 'loading' }, listeners: new Set(), stop: () => {} };
+    sharedTrees.set(runtime, shared);
+  }
+  const owner = shared;
+  const start = owner.listeners.size === 0 || owner.state.status === 'error';
+  owner.listeners.add(receive);
+  if (start) {
+    owner.stop();
+    owner.stop = openTreeConnection(runtime, state => {
+      if (state.status === 'ready') {
+        state.snapshot.nodes.forEach(node => {
+          Object.freeze(node.ref);
+          Object.freeze(node.childrenIds);
+          Object.freeze(node);
+        });
+        Object.freeze(state.snapshot.nodes);
+        Object.freeze(state.snapshot.roots);
+        Object.freeze(state.snapshot);
+      }
+      owner.state = Object.freeze(state);
+      for (const listener of owner.listeners) listener(owner.state);
+    });
+  } else receive(owner.state);
+  let subscribed = true;
+  return () => {
+    if (!subscribed) return;
+    subscribed = false;
+    owner.listeners.delete(receive);
+    if (!owner.listeners.size) {
+      owner.stop();
+      sharedTrees.delete(runtime);
+    }
+  };
+}
+function openTreeConnection(runtime: Runtime, receive: (state: TreeState) => void) {
   let closed = false;
   let port: chrome.runtime.Port | undefined;
   let retryTimer: ReturnType<typeof setTimeout> | undefined;

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { parseModelEndpoint, type ModelAdapter } from '../domain/model-route';
+import { maxOutputTokensSchema, parseModelEndpoint, type ModelAdapter } from '../domain/model-route';
 import { apiModeToAdapter, type ApiMode } from '../domain/ai-providers';
 import type { IdentityStorage } from '../background/installation-identity';
 import type { SettingsStore } from './settings';
@@ -24,6 +24,8 @@ const connectedServiceSchema = z.strictObject({
   enabled: z.array(z.string().min(1)),
   vendorId: z.string().min(1).optional(),
   timeoutMs: z.number().int().positive().max(2147483647).optional(),
+  streaming: z.boolean().optional(),
+  maxOutputTokens: maxOutputTokensSchema.optional(),
 });
 
 const featureAssignmentSchema = z.strictObject({
@@ -157,6 +159,17 @@ export class AiServicesStore {
     return '';
   }
 
+  /** Only this owner's successful writes may carry its still-current temporary keys forward. */
+  private acceptLocalWrite(previous: AiServicesEnvelope, next: AiServicesEnvelope) {
+    for (const [id, session] of this.session) {
+      const service = next.services.find(entry => entry.id === id);
+      if (session.revision !== previous.revision || !service || serviceRoute(service) !== session.route)
+        this.session.delete(id);
+      else this.session.set(id, { ...session, revision: next.revision });
+    }
+    this.value = next;
+  }
+
   async upsertService(
     service: ConnectedServiceRecord,
     key: string,
@@ -185,7 +198,7 @@ export class AiServicesStore {
           ...(Object.keys(credentials).length ? { credentials } : {}),
         });
         await this.storage.set({ aiServices: next });
-        this.value = next;
+        this.acceptLocalWrite(envelope, next);
         if (key && route) this.session.set(service.id, { revision: next.revision, route, key });
         else this.session.delete(service.id);
         this.changed();
@@ -223,7 +236,7 @@ export class AiServicesStore {
           ...(Object.keys(credentials).length ? { credentials } : {}),
         });
         await this.storage.set({ aiServices: next });
-        this.value = next;
+        this.acceptLocalWrite(envelope, next);
         this.session.delete(serviceId);
         this.changed();
         return this.snapshotServices();
@@ -245,7 +258,7 @@ export class AiServicesStore {
           features: features.map(f => featureAssignmentSchema.parse(f)),
         });
         await this.storage.set({ aiServices: next });
-        this.value = next;
+        this.acceptLocalWrite(envelope, next);
         this.changed();
         return this.snapshotServices();
       });
@@ -283,7 +296,7 @@ export class AiServicesStore {
     return {
       version: 1 as const,
       services: this.value.services.map(
-        ({ id, name, serviceType, kind, detail, baseUrl, mode, enabled, catalog, vendorId, timeoutMs, letter, avatarClass, status }) => ({
+        ({
           id,
           name,
           serviceType,
@@ -295,6 +308,25 @@ export class AiServicesStore {
           catalog,
           vendorId,
           timeoutMs,
+          streaming,
+          maxOutputTokens,
+          letter,
+          avatarClass,
+          status,
+        }) => ({
+          id,
+          name,
+          serviceType,
+          kind,
+          detail,
+          baseUrl,
+          mode,
+          enabled,
+          catalog,
+          vendorId,
+          timeoutMs,
+          streaming,
+          maxOutputTokens,
           letter,
           avatarClass,
           status,
@@ -331,6 +363,8 @@ export class AiServicesStore {
       baseUrl: primary.baseUrl,
       model: modelId,
       timeoutMs: primary.timeoutMs ?? 60000,
+      ...(primary.streaming === undefined ? {} : { streaming: primary.streaming }),
+      ...(primary.maxOutputTokens === undefined ? {} : { maxOutputTokens: primary.maxOutputTokens }),
     };
     const remembered = Boolean(this.value.credentials?.[primary.id]?.key);
     await settings.save(config, privacy, key, remembered, primary.vendorId);

@@ -1,6 +1,7 @@
 import { expect, it, vi } from 'vitest';
 import { connectTree } from '../panel/tree-client';
 import { saveExpansion } from '../panel/expansion-memory';
+import { searchTree } from './fixtures/search-tree';
 function portHarness() {
   const ports: { message: (value: unknown) => void; disconnect: () => void; postMessage: ReturnType<typeof vi.fn> }[] =
     [];
@@ -30,6 +31,49 @@ function portHarness() {
   });
   return { ports, connect };
 }
+it('shares one immutable tree connection, replays current state and releases only the last subscriber', () => {
+  const { ports, connect } = portHarness();
+  const runtime = { connect };
+  const first = vi.fn();
+  const second = vi.fn();
+  const stopFirst = connectTree(runtime, first);
+  ports[0]!.message({ version: 1, state: { status: 'ready', snapshot: searchTree() } });
+  const stopSecond = connectTree(runtime, second);
+  expect(connect).toHaveBeenCalledOnce();
+  expect(second.mock.calls[0]![0]).toBe(first.mock.calls.at(-1)![0]);
+  expect(Object.isFrozen(second.mock.calls[0]![0].snapshot.nodes[0])).toBe(true);
+  stopFirst();
+  ports[0]!.message({ version: 1, state: { status: 'loading' } });
+  expect(second).toHaveBeenLastCalledWith({ status: 'loading' });
+  stopSecond();
+  const third = vi.fn();
+  const stopThird = connectTree(runtime, third);
+  expect(connect).toHaveBeenCalledTimes(2);
+  expect(third).toHaveBeenLastCalledWith({ status: 'loading' });
+  stopThird();
+});
+
+it('one subscriber retry restarts the exhausted shared connection for every consumer', () => {
+  vi.useFakeTimers();
+  const { ports, connect } = portHarness();
+  const runtime = { connect };
+  const receive = vi.fn();
+  const stop = connectTree(runtime, receive);
+  let stopView = connectTree(runtime, vi.fn());
+  for (let i = 0; i < 4; i++) {
+    ports[i]!.disconnect();
+    vi.advanceTimersByTime(1000);
+  }
+  expect(receive.mock.calls.at(-1)![0].status).toBe('error');
+  stopView();
+  stopView = connectTree(runtime, vi.fn());
+  expect(connect).toHaveBeenCalledTimes(5);
+  ports[4]!.message({ version: 1, state: { status: 'ready', snapshot: searchTree() } });
+  expect(receive.mock.calls.at(-1)![0].status).toBe('ready');
+  stopView();
+  stop();
+  vi.useRealTimers();
+});
 it('requests a fresh tree on reconnect and rejects messages from the disconnected port', () => {
   vi.useFakeTimers();
   const { ports, connect } = portHarness();

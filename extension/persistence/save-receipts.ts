@@ -54,6 +54,21 @@ export class SaveReceiptLog {
     return next;
   }
 
+  /** Run once on worker startup, before any new receipt writes. Never replay native writes. */
+  interruptPending() {
+    return this.enqueue(async () => {
+      const list = await readSaveReceipts(this.storage);
+      let count = 0;
+      const next = list.map(receipt => {
+        if (receipt.status !== 'classifying') return receipt;
+        count++;
+        return { ...receipt, status: 'failed' as const, reason: 'worker-interrupted' };
+      });
+      if (count) await this.storage.set({ [SAVE_RECEIPTS_KEY]: next });
+      return count;
+    });
+  }
+
   upsert(receipt: SaveReceipt) {
     return this.enqueue(async () => {
       const list = await readSaveReceipts(this.storage);
@@ -106,16 +121,24 @@ export function receiptReasonText(reason: string | undefined): string {
       return '模型服务限流（429）';
     case 'http-error':
       return '模型服务返回错误';
+    case 'provider-error':
+      return '模型服务报告生成失败（HTTP 200 也可能包含错误），请查看 Debug 日志';
     case 'schema':
       return '模型返回的内容无法解析（打开 Debug 日志可看到原因）';
     case 'empty':
-      return '模型返回了空内容（已自动重试一次）；可在 Debug 日志查看返回结构，或把接口模式换成 Chat Completions';
+      return '模型响应中没有可用文字；请在 Debug 日志检查返回正文和协议结束状态';
     case 'incomplete':
-      return '模型输出被截断（输出额度用完），请换更快的模型或稍后重试';
+      return '模型输出未完成，可能是额度用完或连接中断；此次没有执行归类';
     case 'refused':
       return '模型拒绝回答或被安全策略拦截';
     case 'stale-context':
-      return '分类过程中书签或设置发生变化，已放弃';
+      return '分类过程中书签或设置发生变化，已停止后续操作';
+    case 'settings-unavailable':
+      return '无法读取隐私或模型设置，未调用 AI';
+    case 'native-write-uncertain':
+      return '书签操作结果未能确认，请检查当前目录；不会自动重复执行';
+    case 'worker-interrupted':
+      return '后台已重启，自动归类结果未能确认；请检查书签位置，不会自动重复执行';
     case 'connection-or-configuration':
       return '无法连接模型服务';
     case 'payload-too-large':

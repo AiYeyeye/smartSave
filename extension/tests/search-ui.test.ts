@@ -47,6 +47,10 @@ it('production App input reaches search without model calls or writes', () => {
   expect(
     within(screen.getByRole('region', { name: '搜索结果' })).getByRole('button', { name: /重庆大学/ }),
   ).toBeVisible();
+  const row = screen.getByRole('button', { name: /^重庆大学$/ });
+  expect(row).toHaveTextContent(/^重庆大学$/);
+  expect(row).not.toHaveTextContent('https://');
+  expect(row).not.toHaveTextContent('学习资料');
   expect(fetcher).not.toHaveBeenCalled();
 });
 it('four themes preserve results, query draft and keyboard/click safe activation', async () => {
@@ -141,7 +145,7 @@ it('explicit UI rerank uses shared settings and actual browser authority; accept
   const view = render(createElement(SearchResults, { query: 'example', settings }));
   expect(fetcher).not.toHaveBeenCalled();
   await act(async () => {});
-  fireEvent.click(screen.getByRole('button', { name: /启用 AI/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'AI 帮我找' }));
   await vi.waitFor(() => expect(fetcher).toHaveBeenCalledOnce());
   expect(screen.getByRole('region')).toHaveAttribute('aria-busy', 'true');
   // A native change outside the candidates reaches both the view and the shared authority mid-flight and is not a cancellation.

@@ -4,10 +4,12 @@ import { ImportPersistenceStore } from '../persistence/import-persistence';
 import { startImportAuthority } from './import-authority';
 import { SettingsStore } from '../persistence/settings';
 import { AiServicesStore } from '../persistence/ai-services';
+import { featureModelSettings } from '../adapters/feature-model-settings';
 import { startOrganizerAuthority } from './organizer-authority';
 import { openSaveUi, startSaveEntrypoints } from './save-entrypoints';
 import {
   isClaimedOverlayDocument,
+  overlayTrustRestored,
   overlayInjectable,
   panelMode,
   startOverlayHost,
@@ -17,15 +19,21 @@ import {
 import { startTreeService } from './tree-service';
 import { startMutationService } from './mutation-service';
 import { extractSaveBodyForUi } from './extract-coordinator';
-import { setOverlayDocumentTrust, trustedMutationSender } from '../domain/trusted-sender';
+import { setOverlayDocumentTrust, withTrustedSender } from '../domain/trusted-sender';
 import { OwnWriteGuard } from './own-write-guard';
 import { nativeSaveBadge, startNativeBookmarkIngress } from './native-bookmark-ingress';
 import { SaveReceiptLog } from '../persistence/save-receipts';
+import { startWorkerDiagnostics } from './worker-diagnostics';
+
+const workerDiagnostics = startWorkerDiagnostics();
 
 // Toolbar click: overlay sidebar sliding in from the left (default) or the browser's native side panel.
 void Promise.resolve(chrome.sidePanel?.setPanelBehavior?.({ openPanelOnActionClick: false })).catch(() => {});
-setOverlayDocumentTrust(sender => isClaimedOverlayDocument(sender as Parameters<typeof isClaimedOverlayDocument>[0]));
 startOverlayHost();
+setOverlayDocumentTrust(
+  sender => isClaimedOverlayDocument(sender as Parameters<typeof isClaimedOverlayDocument>[0]),
+  overlayTrustRestored,
+);
 watchPanelMode();
 chrome.action.onClicked.addListener(tab => {
   if (tab.id === undefined) return;
@@ -63,8 +71,8 @@ const persistence = new ImportPersistenceStore();
 const coordinator = startMutationService(
   projection,
   validateSaveContext,
-  startOrganizerAuthority(settings),
-  startImportAuthority(settings, projection, persistence.importCheckpoints),
+  startOrganizerAuthority(featureModelSettings(settings, aiServices, 'organize'), workerDiagnostics),
+  startImportAuthority(featureModelSettings(settings, aiServices, 'import'), projection, persistence.importCheckpoints),
   persistence,
   writer,
 );
@@ -81,26 +89,26 @@ const nativeSaves = startNativeBookmarkIngress({
 chrome.runtime.onMessage.addListener((message, sender, reply) => {
   if (!message || typeof message !== 'object' || !('type' in message) || message.type !== 'nativeSaveUndo')
     return false;
-  if (!trustedMutationSender(sender, chrome.runtime.id)) return false;
-  const receiptId = 'receiptId' in message && typeof message.receiptId === 'string' ? message.receiptId : '';
-  void nativeSaves
-    .undo(receiptId)
-    .then(reply)
-    .catch(error => reply({ status: 'refused', reason: String(error && (error as Error).message) }));
-  return true;
+  return withTrustedSender(sender, chrome.runtime.id, () => {
+    const receiptId = 'receiptId' in message && typeof message.receiptId === 'string' ? message.receiptId : '';
+    void nativeSaves
+      .undo(receiptId)
+      .then(reply)
+      .catch(error => reply({ status: 'refused', reason: String(error && (error as Error).message) }));
+  });
 });
 
 chrome.runtime.onMessage.addListener((message, sender, reply) => {
   if (!message || typeof message !== 'object' || !('type' in message) || message.type !== 'extractSaveBody')
     return false;
-  if (!trustedMutationSender(sender, chrome.runtime.id)) return false;
-  const page = livePageForSender(sender);
-  if (!page) {
-    reply({ status: 'error', reason: 'no-live-save' });
-    return false;
-  }
-  void extractSaveBodyForUi(sender, page, () => livePageForSender(sender))
-    .then(reply)
-    .catch(error => reply({ status: 'error', reason: String(error && (error as Error).message) }));
-  return true;
+  return withTrustedSender(sender, chrome.runtime.id, () => {
+    const page = livePageForSender(sender);
+    if (!page) {
+      reply({ status: 'error', reason: 'no-live-save' });
+      return false;
+    }
+    void extractSaveBodyForUi(sender, page, () => livePageForSender(sender))
+      .then(reply)
+      .catch(error => reply({ status: 'error', reason: String(error && (error as Error).message) }));
+  });
 });

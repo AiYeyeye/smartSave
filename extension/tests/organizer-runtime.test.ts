@@ -45,6 +45,10 @@ it.each(['success', 'late-child', 'partial', 'backup-failure', 'privacy-race', '
         contains: async () => true,
         fetch: async (_url, init) => {
           expect(String(init?.body)).not.toContain('outside');
+          const input = JSON.parse(JSON.parse(String(init?.body)).messages[1].content) as {
+            stage?: string;
+            items: { id: string }[];
+          };
           return new Response(
             JSON.stringify({
               choices: [
@@ -53,7 +57,8 @@ it.each(['success', 'late-child', 'partial', 'backup-failure', 'privacy-race', '
                     content: JSON.stringify({
                       moves: [],
                       newFolders: [],
-                      merges: [{ sourceId: 'left', targetId: 'right' }],
+                      merges: input.stage === 'bookmarks' ? [] : [{ sourceId: 'left', targetId: 'right' }],
+                      ...(input.stage === 'bookmarks' ? { unchangedIds: input.items.map(i => i.id) } : {}),
                     }),
                   },
                 },
@@ -179,8 +184,12 @@ it.each(['success', 'late-child', 'partial', 'backup-failure', 'privacy-race', '
     );
     controller.setTree({ status: 'ready', snapshot: tree });
     controller.selectScope('bar');
-    await controller.generate();
+    await controller.generate(undefined, { staged: true, batchSize: 1 });
     expect(state!.proposal?.actions[0]?.kind).toBe('merge');
+    expect(writes).toBe(0);
+    await controller.confirmFolders();
+    expect(state!.pipeline).toMatchObject({ stage: 'complete', completed: 2 });
+    expect(writes).toBe(0);
     await controller.apply();
     if (mode === 'success') {
       const preview = await coordinator.recovery(

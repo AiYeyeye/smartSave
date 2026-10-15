@@ -6,7 +6,7 @@ import { importContextCurrent, importContextDigest, importScopeFolders } from '.
 import { dependencyDigest } from '../domain/context-dependencies';
 import { serializeAiPayload } from '../domain/ai-payload';
 import { confirmSchema, type ConfirmMutation } from '../schemas/messages';
-import { trustedMutationSender } from '../domain/trusted-sender';
+import { trustedMutationSender, withTrustedSender } from '../domain/trusted-sender';
 import type { TreeProjection } from './tree-projection';
 import type { TreeSnapshot } from '../domain/node-reference';
 
@@ -216,25 +216,38 @@ export class ImportAuthority {
   }
 }
 export function startImportAuthority(
-  settings: SettingsStore,
+  settings: Pick<SettingsStore, 'snapshot' | 'subscribe'>,
   projection: TreeProjection,
   checkpoints: ImportCheckpointStore,
 ) {
   const authority = new ImportAuthority(settings, projection, checkpoints);
   chrome.runtime.onConnect.addListener(port => {
     if (port.name !== IMPORT_PORT) return;
-    if (!port.sender || !trustedMutationSender(port.sender, chrome.runtime.id)) {
+    if (!port.sender) {
       port.disconnect();
       return;
     }
-    const token = authority.open(port.sender);
-    port.onDisconnect.addListener(() => authority.close(token));
-    try {
-      port.postMessage({ version: 1, importContext: token });
-    } catch {
-      authority.close(token);
-      port.disconnect();
-    }
+    let connected = true;
+    let token: string | undefined;
+    port.onDisconnect.addListener(() => {
+      connected = false;
+      if (token) authority.close(token);
+    });
+    withTrustedSender(
+      port.sender,
+      chrome.runtime.id,
+      () => {
+        if (!connected) return;
+        token = authority.open(port.sender!);
+        try {
+          port.postMessage({ version: 1, importContext: token });
+        } catch {
+          authority.close(token);
+          port.disconnect();
+        }
+      },
+      () => port.disconnect(),
+    );
   });
   return authority;
 }

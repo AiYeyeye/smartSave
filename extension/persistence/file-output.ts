@@ -9,7 +9,11 @@ export interface OutputFileHandle {
   createWritable(): Promise<{ write(data: string): Promise<void>; close(): Promise<void>; abort(): Promise<void> }>;
 }
 const scopeSchema = z
-  .object({ roots: z.array(nodeRefSchema.strict()).min(1), excludedFolders: z.array(nodeRefSchema.strict()) })
+  .object({
+    roots: z.array(nodeRefSchema.strict()).min(1),
+    excludedFolders: z.array(nodeRefSchema.strict()),
+    excludedBookmarks: z.array(nodeRefSchema.strict()).optional(),
+  })
   .strict();
 const metadataSchema = z
   .object({

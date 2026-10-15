@@ -23,7 +23,7 @@ with sync_playwright() as p:
             page.set_viewport_size({'width': width, 'height': 900})
             page.goto((preview / 'index.html').as_uri())
             expect(page.get_by_role('button', name='搜索', exact=True)).to_be_visible()
-            expect(page.locator('.bookmark-open')).to_have_count(2)
+            expect(page.locator('.bookmark-open')).to_have_count(3)
             page.screenshot(path=str(out / f'browse-{width}.png'))
             page.get_by_role('button', name='搜索', exact=True).click()
             field = page.get_by_role('searchbox')

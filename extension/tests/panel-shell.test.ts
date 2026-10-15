@@ -105,9 +105,9 @@ it('popup: brand, always-on search, pinned tool dock; long workbenches open in t
   render(createElement(App, { page: 'panel' }));
   expect(screen.getByRole('heading', { name: '智栏', level: 1 })).toBeVisible();
   expect(screen.getByRole('searchbox')).toBeVisible();
-  // The header carries no persistent CTA; the explicit capture entry lives in the main area.
+  // Browsing has no persistent manual-save CTA in either the header or the main area.
   expect(within(screen.getByRole('banner')).queryByRole('button', { name: '收藏当前页面' })).toBeNull();
-  expect(screen.getByRole('button', { name: '收藏当前页面' })).toBeEnabled();
+  expect(screen.queryByRole('button', { name: '收藏当前页面' })).toBeNull();
   const dock = screen.getByRole('contentinfo', { name: '书签工具' });
   for (const [item, route] of [
     ['整理', 'organize'],
@@ -155,6 +155,8 @@ it('options page: one side navigation hosts every workbench and settings page, r
   location.hash = '#export';
   render(createElement(App, { page: 'options' }));
   expect(await screen.findByRole('region', { name: '导出设置' })).toBeVisible();
+  expect(screen.getByRole('region', { name: '备份与恢复' })).not.toBeVisible();
+  await user.click(screen.getByText('备份与恢复记录'));
   expect(screen.getByRole('region', { name: '备份与恢复' })).toBeVisible();
   expect(screen.getByRole('heading', { name: '导出与备份', level: 1 })).toBeVisible();
 });
@@ -175,6 +177,8 @@ it('settings pages: privacy, records & debug (off by default) and the legacy mod
   expect(screen.getByLabelText('接口协议')).toBeVisible();
   await user.click(within(nav).getByRole('button', { name: '导出与备份' }));
   expect(screen.getByRole('region', { name: '导出设置' })).toBeVisible();
+  expect(screen.getByRole('region', { name: '备份与恢复' })).not.toBeVisible();
+  await user.click(screen.getByText('备份与恢复记录'));
   expect(screen.getByRole('region', { name: '备份与恢复' })).toBeVisible();
 });
 
@@ -193,7 +197,7 @@ it('row overflow and directory context menu start CRUD without select/open/move-
   await user.keyboard('{Escape}');
   expect(screen.queryByRole('menu')).toBeNull();
   await user.click(screen.getByRole('button', { name: 'Book 操作' }));
-  await user.click(screen.getByRole('menuitem', { name: '重命名' }));
+  await user.click(screen.getByRole('menuitem', { name: '编辑' }));
   expect(screen.getByRole('textbox', { name: '标题' })).toHaveValue('Book');
   expect(send).not.toHaveBeenCalled();
 });
@@ -206,6 +210,234 @@ it('folder overflow create names the destination and focuses the form', async ()
   await user.click(screen.getByRole('menuitem', { name: '新建书签' }));
   expect(screen.getByText('目标目录：Folder')).toBeVisible();
   await waitFor(() => expect(screen.getByRole('textbox', { name: '标题' })).toHaveFocus());
+});
+
+it('bookmark right-click exposes explicit targets, selects the clicked row, and supports menu keys', async () => {
+  chromeStub();
+  const tab = vi.fn(async () => ({}));
+  const createWindow = vi.fn(async () => undefined);
+  const send = vi.fn();
+  vi.stubGlobal('chrome', {
+    ...chrome,
+    tabs: { create: tab },
+    windows: { create: createWindow },
+    runtime: { ...chrome.runtime, sendMessage: send },
+  });
+  const user = userEvent.setup();
+  render(createElement(TreeRows, { snapshot: tree }));
+  const row = (await screen.findByRole('button', { name: 'Book' })).closest('.bookmark-row')!;
+  fireEvent.contextMenu(row);
+  expect(screen.getByRole('menuitem', { name: '在新标签页打开' })).toHaveFocus();
+  await user.keyboard('{ArrowDown}{Enter}');
+  expect(createWindow).toHaveBeenCalledExactlyOnceWith({
+    url: 'https://example.test/',
+    type: 'normal',
+    focused: true,
+    incognito: false,
+  });
+  expect(screen.queryByRole('menu')).toBeNull();
+  expect(screen.getByRole('button', { name: 'Book 操作' })).toHaveFocus();
+  fireEvent.contextMenu(row);
+  await user.click(screen.getByRole('menuitem', { name: '在新标签页打开' }));
+  expect(tab).toHaveBeenCalledExactlyOnceWith({ url: 'https://example.test/', active: true });
+  fireEvent.contextMenu(row);
+  await user.click(screen.getByRole('menuitem', { name: '在无痕窗口中打开' }));
+  expect(createWindow).toHaveBeenLastCalledWith({
+    url: 'https://example.test/',
+    type: 'normal',
+    focused: true,
+    incognito: true,
+  });
+  fireEvent.contextMenu(row);
+  fireEvent.contextMenu(row);
+  expect(screen.getAllByRole('menu')).toHaveLength(1);
+  await user.click(screen.getByRole('menuitem', { name: '选择书签' }));
+  expect(screen.getByRole('checkbox', { name: '选择 Book' })).toBeChecked();
+  expect(screen.getByText('已选 1 项')).toBeVisible();
+  expect(send).not.toHaveBeenCalled();
+  expect(tab).toHaveBeenCalledTimes(1);
+  fireEvent.contextMenu(row);
+  await user.click(screen.getByRole('menuitem', { name: '取消选择书签' }));
+  expect(screen.getByRole('checkbox', { name: '选择 Book' })).not.toBeChecked();
+  fireEvent.contextMenu(row);
+  await user.keyboard('{Escape}');
+  expect(screen.queryByRole('menu')).toBeNull();
+  fireEvent.contextMenu(row);
+  await user.click(screen.getByRole('button', { name: 'Other' }));
+  expect(screen.queryByRole('menu')).toBeNull();
+});
+
+it('reports incognito failure and does not fall back to a tab', async () => {
+  chromeStub();
+  const tab = vi.fn();
+  const createWindow = vi.fn(async () => {
+    throw new Error('blocked');
+  });
+  vi.stubGlobal('chrome', { ...chrome, tabs: { create: tab }, windows: { create: createWindow } });
+  const user = userEvent.setup();
+  render(createElement(TreeRows, { snapshot: tree }));
+  await user.click(await screen.findByRole('button', { name: 'Book 操作' }));
+  await user.click(screen.getByRole('menuitem', { name: '在无痕窗口中打开' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('无法打开无痕窗口');
+  expect(tab).not.toHaveBeenCalled();
+  expect(createWindow).toHaveBeenCalledTimes(1);
+});
+
+it('copies the exact URL with feedback, reports clipboard rejection, and never writes a bookmark', async () => {
+  chromeStub();
+  const user = userEvent.setup();
+  const copy = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue();
+  const send = vi.fn();
+  vi.stubGlobal('chrome', { ...chrome, runtime: { ...chrome.runtime, sendMessage: send } });
+  render(createElement(TreeRows, { snapshot: tree }));
+  await user.click(await screen.findByRole('button', { name: 'Book 操作' }));
+  await user.click(screen.getByRole('menuitem', { name: '复制链接' }));
+  expect(copy).toHaveBeenCalledExactlyOnceWith('https://example.test/');
+  expect(await screen.findByText('已复制链接')).toBeVisible();
+  copy.mockRejectedValue(new Error('denied'));
+  await user.click(screen.getByRole('button', { name: 'Book 操作' }));
+  await user.click(screen.getByRole('menuitem', { name: '复制链接' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('无法复制链接');
+  expect(screen.queryByText('已复制链接')).toBeNull();
+  expect(send).not.toHaveBeenCalled();
+  copy.mockRestore();
+});
+
+it('move-to-top submits one move in the same parent; already-first and disconnected rows cannot reorder', async () => {
+  chromeStub();
+  const user = userEvent.setup();
+  const second = structuredClone(tree);
+  const book = second.nodes.find(node => node.ref.nativeId === 'b')!;
+  book.index = 1;
+  second.nodes.find(node => node.ref.nativeId === 'f')!.childrenIds = ['first', 'b'];
+  second.nodes.push({ ...book, ref: { ...book.ref, nativeId: 'first' }, title: 'First', index: 0 });
+  const sent: import('../schemas/messages').ConfirmMutation[] = [];
+  const sendMessage = vi.fn((message, reply) => {
+    if (message.type === 'registerMutationPreview') reply({ proposal: message.request });
+    else {
+      sent.push(message);
+      reply({
+        requestId: message.requestId,
+        status: 'completed',
+        needsReconcile: false,
+        completedSteps: 1,
+        remainingSteps: 0,
+      });
+    }
+  });
+  vi.stubGlobal('chrome', { ...chrome, runtime: { ...chrome.runtime, sendMessage } });
+  const view = render(createElement(TreeRows, { snapshot: second }));
+  await user.click(await screen.findByRole('button', { name: 'First 操作' }));
+  expect(screen.getByRole('menuitem', { name: '置顶' })).toBeDisabled();
+  expect(screen.getByRole('menuitem', { name: '上移' })).toHaveAttribute('title', '已在当前目录首位。');
+  expect(screen.getByRole('menuitem', { name: '下移' })).toBeEnabled();
+  expect(screen.getByRole('menuitem', { name: '删除' })).toBeEnabled();
+  await user.keyboard('{Escape}');
+  await user.click(screen.getByRole('button', { name: 'Book 操作' }));
+  expect(screen.getByRole('menuitem', { name: '下移' })).toHaveAttribute('title', '已在当前目录末位。');
+  await user.click(screen.getByRole('menuitem', { name: '置顶' }));
+  await waitFor(() => expect(sent).toHaveLength(1));
+  expect(sent[0]!.command).toMatchObject({ type: 'move', target: book.ref, parent: second.nodes[1]!.ref, index: 0 });
+  expect(await screen.findByText(/已完成 ·/)).toBeVisible();
+  view.rerender(createElement(TreeRows, { snapshot: second, connectionReady: false }));
+  await user.click(screen.getByRole('button', { name: 'Book 操作' }));
+  for (const name of ['置顶', '编辑', '删除']) expect(screen.getByRole('menuitem', { name })).toBeDisabled();
+  expect(screen.getByRole('menu')).toHaveAccessibleDescription('书签连接尚未恢复，恢复后才能修改。');
+  expect(screen.getByRole('menuitem', { name: '删除' })).toHaveAttribute('title', '书签连接尚未恢复，恢复后才能修改。');
+  expect(sent).toHaveLength(1);
+  view.rerender(createElement(TreeRows, { snapshot: second, connectionReady: true }));
+  expect(screen.getByRole('menu')).not.toHaveAttribute('aria-describedby');
+  expect(screen.getByRole('menuitem', { name: '置顶' })).toBeEnabled();
+  expect(screen.getByRole('menuitem', { name: '删除' })).toBeEnabled();
+});
+
+it.each(['编辑', '移入…'])(
+  'explains the %s draft lock and returns to it without losing edits; cancel releases commands',
+  async command => {
+    chromeStub();
+    const user = userEvent.setup();
+    const send = vi.fn();
+    vi.stubGlobal('chrome', { ...chrome, runtime: { ...chrome.runtime, sendMessage: send } });
+    const middle = structuredClone(tree);
+    const book = middle.nodes.find(node => node.ref.nativeId === 'b')!;
+    book.index = 1;
+    middle.nodes.find(node => node.ref.nativeId === 'f')!.childrenIds = ['first', 'b', 'last'];
+    middle.nodes.push(
+      { ...book, ref: { ...book.ref, nativeId: 'first' }, title: 'First', index: 0 },
+      { ...book, ref: { ...book.ref, nativeId: 'last' }, title: 'Last', index: 2 },
+    );
+    render(createElement(TreeRows, { snapshot: middle }));
+    await user.click(await screen.findByRole('button', { name: 'Book 操作' }));
+    await user.click(screen.getByRole('menuitem', { name: command }));
+    const field =
+      command === '编辑'
+        ? screen.getByRole('textbox', { name: '标题' })
+        : screen.getByRole('combobox', { name: '目标目录' });
+    if (command === '编辑') await user.type(field, ' draft');
+    const scroll = vi.fn();
+    screen.getByRole('region', { name: '书签操作' }).scrollIntoView = scroll;
+    fireEvent.contextMenu(screen.getByRole('button', { name: 'First' }).closest('.bookmark-row')!);
+    expect(screen.getByRole('menu')).toHaveAccessibleDescription('有尚未完成的书签操作，请先完成或取消。');
+    for (const name of ['置顶', '上移', '下移', '删除']) expect(screen.getByRole('menuitem', { name })).toBeDisabled();
+    await user.click(screen.getByRole('menuitem', { name: '返回当前操作' }));
+    expect(scroll).toHaveBeenCalledWith({ block: 'nearest' });
+    expect(field).toHaveFocus();
+    if (command === '编辑') expect(field).toHaveValue('Book draft');
+    expect(screen.queryByRole('menu')).toBeNull();
+    await user.click(screen.getByRole('button', { name: '取消' }));
+    fireEvent.contextMenu(screen.getByRole('button', { name: 'Book' }).closest('.bookmark-row')!);
+    expect(screen.getByRole('menu')).not.toHaveAttribute('aria-describedby');
+    expect(screen.queryByRole('menuitem', { name: '返回当前操作' })).toBeNull();
+    for (const name of ['置顶', '上移', '下移', '删除']) expect(screen.getByRole('menuitem', { name })).toBeEnabled();
+    expect(send).not.toHaveBeenCalled();
+  },
+);
+
+it('shows a pending-write reason and keeps all mutation commands locked until the result arrives', async () => {
+  chromeStub();
+  const user = userEvent.setup();
+  let finish!: () => void;
+  const send = vi.fn((message, reply) => {
+    if (message.type === 'registerMutationPreview') reply({ proposal: message.request });
+    else
+      finish = () =>
+        reply({
+          requestId: message.requestId,
+          status: 'completed',
+          needsReconcile: false,
+          completedSteps: 1,
+          remainingSteps: 0,
+        });
+  });
+  vi.stubGlobal('chrome', { ...chrome, runtime: { ...chrome.runtime, sendMessage: send } });
+  render(createElement(TreeRows, { snapshot: tree }));
+  await user.click(await screen.findByRole('button', { name: 'Book 操作' }));
+  await user.click(screen.getByRole('menuitem', { name: '编辑' }));
+  await user.click(screen.getByRole('button', { name: '确认保存' }));
+  fireEvent.contextMenu(screen.getByRole('button', { name: 'Book' }).closest('.bookmark-row')!);
+  expect(screen.getByRole('menu')).toHaveAccessibleDescription('正在提交书签操作，请等待完成。');
+  expect(screen.queryByRole('menuitem', { name: '返回当前操作' })).toBeNull();
+  await user.click(screen.getByRole('menuitem', { name: '删除' }));
+  expect(send).toHaveBeenCalledTimes(2);
+  finish();
+  await waitFor(() => expect(screen.getByRole('menuitem', { name: '删除' })).toBeEnabled());
+  expect(screen.getByRole('menu')).not.toHaveAttribute('aria-describedby');
+});
+
+it('menu delete requires confirmation and cancellation writes nothing', async () => {
+  chromeStub();
+  const user = userEvent.setup();
+  const send = vi.fn();
+  vi.stubGlobal('chrome', { ...chrome, runtime: { ...chrome.runtime, sendMessage: send } });
+  render(createElement(TreeRows, { snapshot: tree }));
+  await user.click(await screen.findByRole('button', { name: 'Book 操作' }));
+  await user.click(screen.getByRole('menuitem', { name: '删除' }));
+  expect(screen.getByRole('dialog')).toBeVisible();
+  expect(screen.getByRole('button', { name: '确认删除' })).toBeVisible();
+  expect(send).not.toHaveBeenCalled();
+  await user.click(screen.getByRole('button', { name: '取消' }));
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(send).not.toHaveBeenCalled();
 });
 
 it('batch mode shows count and exit without writing on select', async () => {

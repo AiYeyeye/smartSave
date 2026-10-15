@@ -25,6 +25,7 @@ export interface ExportDocument {
 export interface ExportScope {
   readonly roots: readonly NodeRef[];
   readonly excludedFolders: readonly NodeRef[];
+  readonly excludedBookmarks?: readonly NodeRef[];
 }
 export interface ExportProjection {
   readonly document: ExportDocument;
@@ -86,22 +87,30 @@ function project(tree: TreeSnapshot, scope: ExportScope, generatedAt: string): E
     !Number.isFinite(Date.parse(generatedAt))
   )
     reject();
-  if (scope.roots.length + scope.excludedFolders.length > EXPORT_RESOURCE_LIMITS.nodes) resource();
+  if (
+    scope.roots.length + scope.excludedFolders.length + (scope.excludedBookmarks?.length ?? 0) >
+    EXPORT_RESOURCE_LIMITS.nodes
+  )
+    resource();
   validateTree(tree);
   const nodes = new Map(tree.nodes.map(node => [node.ref.nativeId, node]));
-  const resolve = (ref: NodeRef) => {
+  const resolve = (ref: NodeRef, kind?: NodeRef['kind']) => {
     const node = nodes.get(ref.nativeId);
     if (
       ref.installationId !== tree.installationId ||
-      ref.kind !== 'folder' ||
-      node?.ref.kind !== 'folder' ||
+      !node ||
+      ref.kind !== node.ref.kind ||
+      (kind !== undefined && ref.kind !== kind) ||
       node.parentId === undefined
     )
       reject();
     return ref.nativeId;
   };
-  const selected = new Set(scope.roots.map(resolve));
-  const excluded = new Set(scope.excludedFolders.map(resolve));
+  const selected = new Set(scope.roots.map(ref => resolve(ref, 'folder')));
+  const excluded = new Set([
+    ...scope.excludedFolders.map(ref => resolve(ref, 'folder')),
+    ...(scope.excludedBookmarks ?? []).map(ref => resolve(ref, 'bookmark')),
+  ]);
   const ancestorsContain = (id: string, ids: Set<string>) => {
     let parent = nodes.get(id)!.parentId;
     while (parent !== undefined) {
@@ -153,10 +162,17 @@ function project(tree: TreeSnapshot, scope: ExportScope, generatedAt: string): E
 
 /** Pure, explicit selection only. No AI policy, native authority, permission or file handle. */
 export function createExportProjection(tree: TreeSnapshot, scope: ExportScope, generatedAt: string): ExportProjection {
-  if (scope.roots.length + scope.excludedFolders.length > EXPORT_RESOURCE_LIMITS.nodes) resource();
+  if (
+    scope.roots.length + scope.excludedFolders.length + (scope.excludedBookmarks?.length ?? 0) >
+    EXPORT_RESOURCE_LIMITS.nodes
+  )
+    resource();
   const frozenScope = Object.freeze({
     roots: Object.freeze(scope.roots.map(ref => Object.freeze({ ...ref }))),
     excludedFolders: Object.freeze(scope.excludedFolders.map(ref => Object.freeze({ ...ref }))),
+    ...(scope.excludedBookmarks
+      ? { excludedBookmarks: Object.freeze(scope.excludedBookmarks.map(ref => Object.freeze({ ...ref }))) }
+      : {}),
   });
   const projection = Object.freeze({
     document: project(tree, frozenScope, generatedAt),

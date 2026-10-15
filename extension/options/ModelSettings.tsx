@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { SettingsStore, type ModelConfig } from '../persistence/settings';
-import { ModelTransport, parseModelEndpoint } from '../adapters/model-transport';
+import { parseModelEndpoint } from '../adapters/model-transport';
 import { listModels } from '../adapters/model-discovery';
 import type { TreeState } from '../domain/node-reference';
 import { connectTree } from '../panel/tree-client';
-import { browserModelAuthority } from '../adapters/model-authority';
+import { testConnection } from '../adapters/ai-connection';
+import { adapterToApiMode } from '../domain/ai-providers';
+import { DEFAULT_MAX_OUTPUT_TOKENS, maxOutputTokensSchema, modelStreaming } from '../domain/model-route';
 import { Select } from '../ui/Select';
 import type { AiPrivacy } from '../domain/ai-payload';
 import { modelPresets } from '../domain/model-presets';
@@ -27,6 +29,11 @@ export function ModelSettings({
   const [baseUrl, setBaseUrl] = useState('');
   const [model, setModel] = useState('');
   const [timeout, setTimeoutValue] = useState('');
+  const [streaming, setStreaming] = useState<boolean | undefined>(undefined);
+  const [maxOutputTokens, setMaxOutputTokens] = useState(String(DEFAULT_MAX_OUTPUT_TOKENS));
+  const outputLimitValid =
+    !['openai-compatible', 'openai-responses', 'anthropic', 'google-generative-ai'].includes(adapter) ||
+    maxOutputTokensSchema.safeParse(Number(maxOutputTokens)).success;
   const [presetId, setPresetId] = useState('custom');
   const [discoveredModels, setDiscoveredModels] = useState<string[]>([]);
   const [listSource, setListSource] = useState<'remote' | 'curated' | ''>('');
@@ -43,6 +50,8 @@ export function ModelSettings({
     setDiscoveredModels([]);
     setListSource('');
     setPresetId(id);
+    setStreaming(undefined);
+    setMaxOutputTokens(String(DEFAULT_MAX_OUTPUT_TOKENS));
     const next = modelPresets.find(item => item.id === id);
     if (next) {
       setAdapter(next.adapter);
@@ -59,19 +68,25 @@ export function ModelSettings({
   const [status, setStatus] = useState('');
   const [error, setError] = useState(false);
   const [busy, setBusy] = useState(false);
-  const transport = useRef<ModelTransport | undefined>(undefined);
+  const testAbort = useRef<AbortController | undefined>(undefined);
+  const generation = useRef(0);
+  const mounted = useRef(true);
   const listAbort = useRef<AbortController | undefined>(undefined);
   const cancel = () => {
-    transport.current?.cancel();
+    generation.current++;
+    testAbort.current?.abort();
     listAbort.current?.abort();
+    setBusy(false);
   };
   useEffect(() => {
     let live = true;
+    mounted.current = true;
+    const loadGeneration = generation.current;
     if (store)
       void store
         .load()
         .then(value => {
-          if (!live) return;
+          if (!live || generation.current !== loadGeneration) return;
           if (store.legacyCredentialDiscarded) setStatus('旧密钥未绑定服务，已移除；请重新输入。');
           setPrivacy(value.privacy);
           setKey(store.credential());
@@ -81,6 +96,8 @@ export function ModelSettings({
             setBaseUrl(value.config.baseUrl);
             setModel(value.config.model);
             setTimeoutValue(String(value.config.timeoutMs));
+            setStreaming(value.config.streaming);
+            setMaxOutputTokens(String(value.config.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS));
             if (!value.presetId) {
               const matched = modelPresets.find(
                 item => item.adapter === value.config!.adapter && item.baseUrl === value.config!.baseUrl,
@@ -95,18 +112,15 @@ export function ModelSettings({
             setStatus('配置或存储不可用，请重新打开设置重试。');
           }
         });
-    if (store && typeof chrome !== 'undefined' && chrome.permissions)
-      transport.current = new ModelTransport(
-        { fetch: globalThis.fetch.bind(globalThis), contains: request => chrome.permissions.contains(request) },
-        browserModelAuthority(store),
-      );
     const changed = () => {
-      transport.current?.cancel();
+      generation.current++;
+      testAbort.current?.abort();
+      listAbort.current?.abort();
+      if (mounted.current) setBusy(false);
     };
     const stop =
       typeof chrome !== 'undefined' && chrome.runtime
         ? connectTree(chrome.runtime, value => {
-            changed();
             if (live) setTree(value);
           })
         : undefined;
@@ -114,9 +128,9 @@ export function ModelSettings({
     window.addEventListener('pagehide', changed);
     return () => {
       live = false;
+      mounted.current = false;
       changed();
       listAbort.current?.abort();
-      transport.current?.dispose();
       stop?.();
       if (!supplied) store?.dispose();
       chromeSafeListeners(changed, false);
@@ -136,12 +150,29 @@ export function ModelSettings({
     return { adapter: config.adapter, baseUrl: config.baseUrl, timeoutMs: config.timeoutMs };
   }
   function configuration(): ModelConfig {
-    const config = { adapter: adapter as ModelConfig['adapter'], baseUrl, model, timeoutMs: Number(timeout) };
+    const config = {
+      adapter: adapter as ModelConfig['adapter'],
+      baseUrl,
+      model,
+      timeoutMs: Number(timeout),
+      ...(streaming === undefined ? {} : { streaming }),
+      ...(['openai-compatible', 'openai-responses', 'anthropic', 'google-generative-ai'].includes(adapter)
+        ? { maxOutputTokens: Number(maxOutputTokens) }
+        : {}),
+    };
     parseModelEndpoint(config);
     return config;
   }
   async function run(action: 'save' | 'authorize-list' | 'test' | 'delete') {
     cancel();
+    const operation = generation.current;
+    const current = () => mounted.current && generation.current === operation;
+    const updateStatus = (text: string) => {
+      if (current()) setStatus(text);
+    };
+    const updateError = (value: boolean) => {
+      if (current()) setError(value);
+    };
     setError(false);
     setBusy(true);
     try {
@@ -150,12 +181,12 @@ export function ModelSettings({
         await store.clearCredential();
         setKey('');
         setRemember(false);
-        setStatus('已删除保存的密钥。');
+        updateStatus('已删除保存的密钥。');
         return;
       }
       if (action === 'save' && fields === 'privacy') {
         await store.savePrivacy(privacy);
-        setStatus('隐私设置已保存；未配置模型不影响浏览。');
+        updateStatus('隐私设置已保存；未配置模型不影响浏览。');
         return;
       }
       if (action === 'authorize-list') {
@@ -166,10 +197,11 @@ export function ModelSettings({
             ? await chrome.permissions.request({ origins: [permission] })
             : false;
         if (!granted) {
-          setError(true);
-          setStatus('模型主机权限被拒绝。');
+          updateError(true);
+          updateStatus('模型主机权限被拒绝。');
           return;
         }
+        if (!current()) return;
         listAbort.current = new AbortController();
         const result = await listModels({
           ...route,
@@ -179,11 +211,12 @@ export function ModelSettings({
           signal: listAbort.current.signal,
           presetId,
         });
+        if (!current()) return;
         if (result.status !== 'completed') {
-          setError(true);
+          updateError(true);
           setDiscoveredModels([]);
           setListSource('');
-          setStatus(
+          updateStatus(
             `未能获取模型列表：${result.reason}。可手填模型 ID；401检查密钥；403检查服务鉴权/Origin；429稍后重试；permission重新授权；list-unsupported 请手填。`,
           );
           return;
@@ -191,7 +224,7 @@ export function ModelSettings({
         setDiscoveredModels(result.models);
         setListSource(result.source);
         if (result.models.length && !result.models.includes(model)) setModel(result.models[0]!);
-        setStatus(
+        updateStatus(
           result.source === 'curated'
             ? '已授权；列表接口不可用，已填入常用模型，仍可手填自定义 ID。'
             : `已授权并获取 ${result.models.length} 个模型；尚未证明任务能力。`,
@@ -201,35 +234,38 @@ export function ModelSettings({
       const config = configuration();
       if (action === 'save') {
         await store.save(config, privacy, key, remember, presetId);
-        setStatus('模型设置已保存；尚未证明服务能力。');
+        updateStatus('模型设置已保存；尚未证明服务能力。');
       }
       if (action === 'test') {
-        if (!transport.current || tree.status !== 'ready') throw Error();
-        await store.save(config, privacy, key, remember, presetId);
-        const result = await transport.current.run({
-          config,
-          key,
-          privacy,
-          tree: tree.snapshot,
-          request: {
-            task: 'search',
-            query: 'Synthetic connection test: return an empty rankedIds array.',
-            itemIds: [],
-            folderIds: [],
+        const controller = new AbortController();
+        testAbort.current = controller;
+        const result = await testConnection({
+          draft: {
+            mode: adapterToApiMode(config.adapter),
+            adapter: config.adapter,
+            baseUrl: config.baseUrl,
+            model: config.model,
+            timeoutMs: config.timeoutMs,
+            streaming: config.streaming,
+            maxOutputTokens: config.maxOutputTokens,
+            key,
           },
+          settings: store,
+          signal: controller.signal,
+          privacy,
         });
-        setError(result.status !== 'completed');
-        setStatus(
+        updateError(result.status !== 'completed');
+        updateStatus(
           result.status === 'completed'
-            ? '合成连接测试通过；不代表全部模型任务已验收。'
-            : `模型请求未完成：${result.reason}。401检查密钥；403检查服务鉴权/Origin；429稍后手动重试；timeout调整超时；schema检查模型结构化输出；permission重新授权。`,
+            ? '合成分类测试通过；草稿未保存。'
+            : `模型请求未完成：${result.reason}。可展开 Debug 日志查看调用与返回。`,
         );
       }
     } catch {
-      setError(true);
-      setStatus('配置或存储不可用：请选择服务商或协议、模型和超时；远程地址须HTTPS，HTTP仅限回环地址。');
+      updateError(true);
+      updateStatus('配置或存储不可用：请选择服务商或协议、模型和超时；远程地址须HTTPS，HTTP仅限回环地址。');
     } finally {
-      setBusy(false);
+      if (current()) setBusy(false);
     }
   }
   const showModel = fields !== 'privacy';
@@ -308,8 +344,41 @@ export function ModelSettings({
             />
           </label>
           {listSource === 'curated' && <p className="hint">当前列表为常用模型兜底，不是实时发现结果。</p>}
+          <label className="field">
+            <input
+              type="checkbox"
+              aria-label="流式响应"
+              checked={modelStreaming({ adapter: adapter as ModelConfig['adapter'], streaming })}
+              disabled={adapter === 'ollama'}
+              onChange={e => {
+                cancel();
+                setStreaming(e.target.checked);
+              }}
+            />
+            流式响应（关闭后使用 JSON）
+          </label>
           <details className="settings-help">
             <summary>高级：协议、地址与超时</summary>
+            {['openai-compatible', 'openai-responses', 'anthropic', 'google-generative-ai'].includes(adapter) && (
+              <label className="field">
+                最大输出 tokens
+                <input
+                  aria-label="最大输出 tokens"
+                  type="number"
+                  min={1}
+                  max={Number.MAX_SAFE_INTEGER}
+                  step={1}
+                  value={maxOutputTokens}
+                  aria-invalid={!outputLimitValid}
+                  onChange={e => {
+                    cancel();
+                    setMaxOutputTokens(e.target.value);
+                  }}
+                />
+                <span className="hint">默认 128,000，包含推理和正文。请填写所选模型支持的输出额度。</span>
+                {!outputLimitValid && <span role="alert">输出上限请输入大于或等于 1 的有效整数。</span>}
+              </label>
+            )}
             <label className="field">
               接口协议
               <Select
@@ -367,6 +436,9 @@ export function ModelSettings({
                 }}
               />
             </label>
+            <p className="hint">
+              流式响应按连续无事件或心跳的时间计时；持续收到数据会继续等待。非流式响应按总时间计时。
+            </p>
           </details>
         </>
       )}
@@ -432,7 +504,7 @@ export function ModelSettings({
         {status}
       </div>
       <div className="actions">
-        <button disabled={busy} onClick={() => void run('save')}>
+        <button disabled={busy || !outputLimitValid} onClick={() => void run('save')}>
           {fields === 'privacy' ? '保存隐私设置' : '保存模型设置'}
         </button>
         {showModel && (
@@ -440,7 +512,7 @@ export function ModelSettings({
             <button disabled={busy} onClick={() => void run('authorize-list')}>
               授权并获取模型
             </button>
-            <button disabled={busy} onClick={() => void run('test')}>
+            <button disabled={busy || !outputLimitValid} onClick={() => void run('test')}>
               使用合成数据测试连接
             </button>
             <button

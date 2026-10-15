@@ -1,0 +1,327 @@
+/* Guided workbenches share the model setup flow's progress and explicit next action. */
+.workflow-workbench {
+  display: grid;
+  gap: 18px;
+}
+.workflow-steps {
+  display: flex;
+  gap: 10px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+.workflow-steps li {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.workflow-step-number {
+  display: grid;
+  place-items: center;
+  flex: 0 0 30px;
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--sunken);
+}
+.workflow-step-number svg {
+  width: 16px;
+  height: 16px;
+}
+.workflow-steps .is-current {
+  color: var(--accent-text);
+  font-weight: 650;
+}
+.workflow-steps .is-current .workflow-step-number {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+.workflow-steps .is-done .workflow-step-number {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.workflow-stage {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.workflow-stage h3 {
+  font-size: 16px;
+}
+.workflow-stage > label,
+.workflow-review-row > label {
+  display: grid;
+  gap: 8px;
+  font-weight: 550;
+}
+.workflow-stage select,
+.workflow-stage input:not([type='checkbox']):not([type='radio']) {
+  width: 100%;
+  min-height: 44px;
+}
+.workflow-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 14px;
+  border-top: 1px solid var(--divider);
+}
+.workflow-footer > .hint {
+  margin-right: auto;
+}
+.organize-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  padding-bottom: 14px;
+  background: var(--surface);
+}
+.organize-footer-status {
+  flex-basis: 100%;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.organize-failure {
+  padding: 16px;
+  border: 1px solid var(--divider);
+  border-left: 4px solid var(--danger);
+  border-radius: var(--r-lg);
+  background: var(--surface-2);
+  overflow-wrap: anywhere;
+}
+.organize-failure h3 { margin-top: 0; }
+.organize-failure summary { cursor: pointer; }
+.workflow-workbench button,
+.workflow-help > summary {
+  min-height: 44px;
+}
+.workflow-footer button.primary {
+  min-width: 160px;
+  padding: 12px 20px;
+  font-size: 14px;
+}
+.workflow-choices {
+  display: grid;
+  gap: 10px;
+}
+.workflow-choice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  border-radius: var(--r-lg);
+  background: var(--surface-2);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+}
+.workflow-choice:has(:checked) {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent-ring);
+}
+.workflow-choice:has(:focus-visible) {
+  box-shadow: var(--focus-ring);
+}
+.workflow-choice span {
+  display: grid;
+  gap: 4px;
+}
+.workflow-choice small {
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 400;
+}
+.workflow-summary {
+  background: var(--accent-soft);
+  color: var(--text);
+  border-radius: var(--r);
+  padding: 14px 16px;
+  font-weight: 550;
+}
+.workflow-review-row {
+  display: grid;
+  gap: 12px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--divider);
+  min-width: 0;
+}
+.organize-adjustments {
+  margin-top: 32px;
+  padding-top: 24px;
+  border-top: 2px solid var(--accent-ring);
+  min-width: 0;
+}
+.organize-adjustments-heading {
+  padding: 14px 16px;
+  border-radius: var(--r);
+  background: var(--accent-soft);
+}
+.organize-adjustments-heading h3,
+.organize-adjustments-heading p {
+  margin: 0;
+}
+.organize-adjustments-heading p {
+  margin-top: 6px;
+}
+.organize-reason {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+}
+.organize-reason p {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.organize-reason .organize-reject {
+  flex: 0 0 auto;
+  width: auto;
+  padding: 8px;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--muted);
+  background: transparent;
+  box-shadow: none;
+}
+.workflow-review-row > label:has(input[type='checkbox']) {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  overflow-wrap: anywhere;
+}
+.workflow-help {
+  font-size: 13px;
+  color: var(--muted);
+  min-width: 0;
+}
+.workflow-help > summary {
+  display: list-item;
+  padding: 10px 0;
+  cursor: pointer;
+  color: var(--text);
+  font-weight: 550;
+}
+.workflow-help[open] {
+  display: grid;
+  gap: 12px;
+}
+.organize-preferences textarea {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+}
+.organize-progress {
+  padding: 12px;
+  border-radius: var(--r-sm);
+  background: var(--sunken);
+  overflow-wrap: anywhere;
+}
+.organize-progress ul {
+  padding-left: 20px;
+}
+.organize-progress li + li {
+  margin-top: 8px;
+}
+.organize-tree-preview { display: grid; gap: 12px; margin-block: 18px; min-width: 0; }
+.organize-classification-tree { list-style: none; padding: 10px; margin: 0; max-height: 480px; overflow: auto; background: var(--sunken); border-radius: var(--r); }
+.organize-folder-line { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-height: 44px; }
+.organize-folder-line button { flex: 0 0 32px; padding: 4px; background: transparent; box-shadow: none; }
+.organize-folder-line > svg { flex-shrink: 0; color: var(--folder); }
+.organize-folder-line strong { overflow-wrap: anywhere; min-width: 0; }
+.organize-folder-line span { color: var(--muted); font-size: 12px; }
+.organize-folder-line small { border-radius: var(--r-sm); padding: 3px 6px; background: var(--accent-soft); color: var(--accent-text); }
+.organize-folder-bookmarks { margin-left: 32px; font-size: 13px; overflow-wrap: anywhere; }
+.organize-folder-bookmarks summary { min-height: 44px; padding-block: 10px; cursor: pointer; }
+.organize-folder-bookmarks ul { padding-left: 18px; }
+.organize-option { display: flex !important; align-items: center; gap: 8px; min-height: 44px; overflow-wrap: anywhere; }
+.organize-option input { flex-shrink: 0; }
+.organize-flow-details { display: grid; gap: 14px; overflow-wrap: anywhere; }
+.organize-flow-details article { padding-block: 12px; border-bottom: 1px solid var(--divider); }
+.organize-flow-details summary { min-height: 44px; padding-block: 10px; cursor: pointer; }
+.organize-flow-details ul { padding-left: 20px; }
+.workflow-file-input {
+  padding: 12px;
+  background: var(--sunken);
+}
+.workflow-file-input::file-selector-button {
+  padding: 10px 14px;
+  border: 0;
+  border-radius: var(--r-sm);
+  margin-right: 12px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font: inherit;
+  cursor: pointer;
+}
+.export-tree {
+  max-height: 440px;
+  overflow: auto;
+  padding: 4px 0;
+  list-style: none;
+  margin: 0;
+}
+.export-tree .export-tree-row {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  gap: 4px;
+  padding: 0 8px 0 calc(4px + min(var(--depth), 8) * 16px);
+}
+.export-tree-expand,
+.export-tree-spacer {
+  flex: 0 0 32px;
+  width: 32px;
+}
+.export-tree-expand {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.export-tree-row label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+  min-height: 44px;
+}
+.export-tree-row label > svg {
+  color: var(--folder);
+}
+.export-tree-title {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 13px;
+}
+.export-tree-row input {
+  margin: 0;
+}
+@media (max-width: 520px) {
+  .workflow-steps li {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+    font-size: 12px;
+  }
+  .workflow-steps {
+    gap: 6px;
+  }
+  .workflow-footer button.primary {
+    width: 100%;
+  }
+  .workflow-footer > .hint {
+    width: 100%;
+  }
+}

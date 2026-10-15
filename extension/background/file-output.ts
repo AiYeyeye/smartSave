@@ -14,7 +14,7 @@ import {
 import type { TreeSnapshot } from '../domain/node-reference';
 import { serializeExportJSON } from '../export/serializers';
 import { FileOutputStore, type FileOutputMetadata, type FileOutputRecord } from '../persistence/file-output';
-import { trustedMutationSender } from '../domain/trusted-sender';
+import { withTrustedSender } from '../domain/trusted-sender';
 import type { TreeProjection } from './tree-projection';
 
 const identity = (tree: TreeSnapshot) => JSON.stringify([tree.installationId, tree.epoch, tree.observedRevision]);
@@ -321,13 +321,14 @@ export function startFileOutput(tree: TreeProjection, store = new FileOutputStor
   const sink = new FileOutputSink(tree, store);
   chrome.runtime.onMessage.addListener((message: unknown, sender, reply) => {
     const parsed = fileOutputMessageSchema.safeParse(message);
-    if (!parsed.success || !trustedMutationSender(sender, chrome.runtime.id)) return false;
-    if (parsed.data.action === 'status') {
-      reply(sink.status());
-      return false;
-    }
-    void sink.command(parsed.data).then(reply);
-    return true;
+    if (!parsed.success) return false;
+    return withTrustedSender(sender, chrome.runtime.id, () => {
+      if (parsed.data.action === 'status') {
+        reply(sink.status());
+        return false;
+      }
+      void sink.command(parsed.data).then(reply);
+    });
   });
   void sink.control('reload');
   return sink;

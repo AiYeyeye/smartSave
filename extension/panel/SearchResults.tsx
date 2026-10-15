@@ -1,17 +1,23 @@
 import { useEffect, useRef, useState } from 'react';
 import { browserModelAuthority } from '../adapters/model-authority';
+import { searchModelAuthority } from '../adapters/search-model-authority';
+import type { AiServicesStore } from '../persistence/ai-services';
 import { ModelTransport } from '../adapters/model-transport';
 import type { SettingsStore } from '../persistence/settings';
 import { connectTree } from './tree-client';
 import { SearchController, type SearchState } from './search-controller';
 import { canOpenUrl } from '../domain/open-url';
+import './search-results.css';
+import { BusyIndicator } from '../ui/BusyIndicator';
 export function SearchResults({
   query,
   settings,
+  services,
   onOrganize,
 }: {
   query: string;
   settings?: SettingsStore;
+  services?: AiServicesStore;
   onOrganize?: () => void;
 }) {
   const [state, setState] = useState<SearchState>({
@@ -20,12 +26,19 @@ export function SearchResults({
     status: 'loading',
     message: '',
     reranking: false,
+    connectionReady: false,
+    connectionFailed: false,
+    connectionMessage: '',
   });
   const controller = useRef<SearchController | undefined>(undefined);
+  const retry = useRef<() => void>(() => {});
   const latestQuery = useRef(query);
   latestQuery.current = query;
   useEffect(() => {
-    const authority = settings && typeof chrome !== 'undefined' ? browserModelAuthority(settings) : undefined;
+    const authority =
+      settings && typeof chrome !== 'undefined'
+        ? searchModelAuthority(browserModelAuthority(settings), services)
+        : undefined;
     const transport = authority
       ? new ModelTransport(
           { fetch: (...args) => fetch(...args), contains: request => chrome.permissions.contains(request) },
@@ -35,17 +48,23 @@ export function SearchResults({
     const owner = new SearchController(setState, authority, transport);
     controller.current = owner;
     owner.setQuery(latestQuery.current);
-    const stop =
+    let stop =
       typeof chrome !== 'undefined' && typeof chrome.runtime?.connect === 'function'
         ? connectTree(chrome.runtime, tree => owner.setTree(tree))
         : undefined;
     if (!stop) owner.setTree({ status: 'error', message: '书签服务不可用。' });
+    retry.current = () => {
+      if (typeof chrome === 'undefined' || !chrome.runtime?.connect) return;
+      stop?.();
+      stop = connectTree(chrome.runtime, tree => owner.setTree(tree));
+    };
     return () => {
       stop?.();
       owner.dispose();
       controller.current = undefined;
+      retry.current = () => {};
     };
-  }, [settings]);
+  }, [settings, services]);
   useEffect(() => {
     controller.current?.setQuery(query);
   }, [query]);
@@ -55,7 +74,7 @@ export function SearchResults({
     <section
       className="surface search-results"
       aria-label="搜索结果"
-      aria-busy={state.status === 'loading' || state.reranking}
+      aria-busy={!state.connectionReady || state.reranking}
     >
       <h2>
         搜索结果 <small>本地优先</small>
@@ -71,40 +90,49 @@ export function SearchResults({
         </p>
       )}
       {state.status === 'loading' && <p role="status">正在建立本地搜索索引…</p>}
-      {state.status === 'error' && <p role="alert">{state.message}</p>}
+      {state.connectionMessage && <p role={state.connectionFailed ? 'alert' : 'status'}>{state.connectionMessage}</p>}
+      {!state.connectionReady && (
+        <button type="button" onClick={() => retry.current()}>
+          重试读取
+        </button>
+      )}
       {state.status === 'ready' && (
         <>
           <button
             type="button"
-            disabled={!settings || !state.hits.length || state.reranking || writeIntent}
+            disabled={!settings || !state.connectionReady || state.reranking}
             onClick={() => void controller.current?.rerank()}
           >
-            启用 AI 并重排本次搜索（最多 8 条）
+            AI 帮我找
           </button>
+          <p className="hint">描述用途或大致内容，AI 会从允许搜索的书签标题、网址和目录中查找。</p>
           {state.reranking && (
             <>
-              <p role="status">正在重排，仍可打开本地结果…</p>
+              <BusyIndicator label="AI 正在理解描述并查找相关书签…" />
               <button type="button" onClick={() => controller.current?.cancel()}>
-                取消 AI 重排
+                取消 AI 搜索
               </button>
             </>
           )}
           {!state.reranking && state.message && <p role="status">{state.message}</p>}
           {!state.hits.length ? (
-            <p role="status">没有匹配的书签，请尝试其他关键词或拼音。</p>
+            <p role="status">没有匹配的关键词结果。可以点击“AI 帮我找”，或换个描述。</p>
           ) : (
             <>
-              <p className="hint">{state.hits.length} 条结果 · 点击或聚焦后按 Enter 打开</p>
+              <p className="hint">
+                {state.hits.length} 条结果 · {state.connectionReady ? '点击或聚焦后按 Enter 打开' : '连接恢复后可打开'}
+              </p>
               <ul className="search-hit-list">
                 {state.hits.map(hit => (
                   <li key={hit.id}>
                     <button
                       type="button"
-                      disabled={!canOpenUrl(hit.url)}
+                      title={hit.title || '未命名书签'}
+                      disabled={!state.connectionReady || !canOpenUrl(hit.url)}
                       onClick={() => controller.current?.open(hit.id)}
-                    >{`${hit.title || '未命名书签'}
-${hit.path || '根目录'}
-${hit.url}${canOpenUrl(hit.url) ? '' : String.fromCharCode(10) + '此网址协议不支持安全打开'}`}</button>
+                    >
+                      {hit.title || '未命名书签'}
+                    </button>
                   </li>
                 ))}
               </ul>

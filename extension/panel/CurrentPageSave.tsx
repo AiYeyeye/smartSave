@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import { BookmarkPlus } from 'lucide-react';
 import { z } from 'zod';
 import { SAVE_PORT } from '../background/save-entrypoints';
 import { SaveCard } from './SaveCard';
@@ -7,15 +6,15 @@ import { saveBodySchema } from './extract-save-body';
 import { connectTree } from './tree-client';
 import type { TreeSnapshot, TreeState } from '../domain/node-reference';
 import type { SettingsStore } from '../persistence/settings';
+import type { AiServicesStore } from '../persistence/ai-services';
 import { SiteRulesStore } from '../persistence/site-rules';
 const pageSchema = z.object({ tabId: z.number().int(), token: z.string(), title: z.string(), url: z.url() });
 type Page = z.infer<typeof pageSchema>;
-export function CurrentPageSave({ settings }: { settings?: SettingsStore }) {
+export function CurrentPageSave({ settings, aiServices }: { settings?: SettingsStore; aiServices?: AiServicesStore }) {
   const [page, setPage] = useState<Page>();
   const current = useRef<Page | undefined>(undefined);
   const [tree, setTree] = useState<TreeState>({ status: 'loading' });
   const [message, setMessage] = useState('');
-  const [connected, setConnected] = useState(false);
   const [rules] = useState(() =>
     typeof chrome !== 'undefined' && chrome.storage?.local ? new SiteRulesStore(chrome.storage.local) : undefined,
   );
@@ -25,7 +24,6 @@ export function CurrentPageSave({ settings }: { settings?: SettingsStore }) {
     if (typeof chrome === 'undefined' || !chrome.runtime?.connect) return;
     const connection = chrome.runtime.connect({ name: SAVE_PORT });
     port.current = connection;
-    setConnected(true);
     connection.onMessage.addListener((raw: unknown) => {
       if (!raw || typeof raw !== 'object' || !('type' in raw)) return;
       if (raw.type === 'page' && 'page' in raw) {
@@ -48,7 +46,6 @@ export function CurrentPageSave({ settings }: { settings?: SettingsStore }) {
     connection.onDisconnect.addListener(() => {
       current.current = undefined;
       port.current = undefined;
-      setConnected(false);
       setPage(undefined);
       setMessage('收藏入口连接已关闭；请重新打开智栏。');
     });
@@ -80,35 +77,8 @@ export function CurrentPageSave({ settings }: { settings?: SettingsStore }) {
       });
     });
   }
-  function requestCapture() {
-    const connection = port.current;
-    if (!connection) {
-      setMessage('收藏入口连接已关闭；请重新打开智栏。');
-      return;
-    }
-    setMessage('正在读取当前标签页…');
-    try {
-      connection.postMessage({ type: 'capture' });
-    } catch {
-      setMessage('收藏入口连接已关闭；请重新打开智栏。');
-    }
-  }
-  if (!page) {
-    // The popup opens in browse mode; capture is an explicit gesture, never inferred from the page behind it.
-    return (
-      <div className="current-page">
-        <button type="button" className="current-page-capture" disabled={!connected} onClick={requestCapture}>
-          <BookmarkPlus aria-hidden="true" />
-          收藏当前页面
-        </button>
-        {message ? (
-          <p role="status">{message}</p>
-        ) : (
-          <span className="current-page-hint">手动挑目录；直接按 Ctrl+D 则由 AI 自动归类</span>
-        )}
-      </div>
-    );
-  }
+  // Keep explicitly captured shortcut/context-menu sessions, without an idle manual-save CTA.
+  if (!page) return null;
   const snapshot = tree.status === 'ready' ? tree.snapshot : lastSnapshot;
   return (
     <>
@@ -119,6 +89,7 @@ export function CurrentPageSave({ settings }: { settings?: SettingsStore }) {
           snapshot={snapshot}
           connectionReady={tree.status === 'ready'}
           settings={settings}
+          aiServices={aiServices}
           rulesStore={rules}
           extractBody={extractBody}
           onClose={() => {

@@ -7,7 +7,9 @@ import { isSaveFeatureConfigured, startNativeBookmarkIngress } from '../backgrou
 import { AiServicesStore, type ConnectedServiceRecord } from '../persistence/ai-services';
 import { SettingsStore } from '../persistence/settings';
 import { noopDebugLog } from '../domain/debug-log';
-import { SaveReceiptLog, readSaveReceipts } from '../persistence/save-receipts';
+import { SaveReceiptLog, readSaveReceipts, SAVE_RECEIPTS_KEY, type SaveReceipt } from '../persistence/save-receipts';
+import type { ApiMode } from '../domain/ai-providers';
+import { ModelTransport } from '../adapters/model-transport';
 
 function event<T extends (...args: never[]) => unknown>() {
   const listeners = new Set<T>();
@@ -62,7 +64,15 @@ afterEach(() => {
 });
 
 async function harness(
-  opts: { configureSave?: boolean; settlingMs?: number; syncLegacy?: boolean; rememberKey?: boolean } = {},
+  opts: {
+    configureSave?: boolean;
+    settlingMs?: number;
+    syncLegacy?: boolean;
+    rememberKey?: boolean;
+    mode?: ApiMode;
+    streaming?: boolean;
+    initialReceipts?: SaveReceipt[];
+  } = {},
 ) {
   let nextId = 10;
   const tree: chrome.bookmarks.BookmarkTreeNode[] = [
@@ -156,12 +166,21 @@ async function harness(
   }
 
   const { storage } = memoryStorage();
+  if (opts.initialReceipts) await storage.set({ [SAVE_RECEIPTS_KEY]: opts.initialReceipts });
   const ai = new AiServicesStore(storage, run => run());
   const settings = new SettingsStore(storage, run => run());
   await ai.load();
   await settings.load();
   if (opts.configureSave !== false) {
-    await ai.upsertService(sampleService, 'sk-test', opts.rememberKey !== false);
+    await ai.upsertService(
+      {
+        ...sampleService,
+        mode: opts.mode ?? sampleService.mode,
+        ...(opts.streaming === undefined ? {} : { streaming: opts.streaming }),
+      },
+      'sk-test',
+      opts.rememberKey !== false,
+    );
     await ai.saveFeatures([
       { id: 'save', name: '智能收藏', desc: '', connId: 'c1', modelId: 'gpt-4.1-mini' },
       { id: 'import', name: '智能导入', desc: '', connId: '', modelId: '' },
@@ -221,6 +240,300 @@ async function harness(
     storage,
   };
 }
+
+it('recovers abandoned receipts before new saves without replaying any model or bookmark writes', async () => {
+  const pending: SaveReceipt = {
+    id: 'old',
+    bookmarkId: 'old-bookmark',
+    title: 'Old',
+    url: 'https://example.test/',
+    at: 123,
+    status: 'classifying',
+    fromParentId: '1',
+    fromIndex: 0,
+    fromPath: 'Bar',
+    createdFolderIds: ['uncertain-folder'],
+  };
+  const completed: SaveReceipt = { ...pending, id: 'done', status: 'moved', toId: '2' };
+  const h = await harness({ initialReceipts: [pending, completed] });
+  const create = vi.spyOn(h.writer, 'create');
+  const move = vi.spyOn(h.writer, 'move');
+  await vi.waitFor(async () =>
+    expect((await readSaveReceipts(h.storage))[0]).toMatchObject({
+      ...pending,
+      status: 'failed',
+      reason: 'worker-interrupted',
+    }),
+  );
+  expect((await readSaveReceipts(h.storage))[1]).toEqual(completed);
+  expect(h.fetchMock).not.toHaveBeenCalled();
+  expect(create).not.toHaveBeenCalled();
+  expect(move).not.toHaveBeenCalled();
+  h.ingress.dispose();
+});
+
+it.each(['complete', 'timeout', 'dispose'] as const)(
+  'keeps a slow native save alive and releases after %s',
+  async outcome => {
+    vi.useFakeTimers();
+    const h = await harness();
+    const pulse = vi.fn(async () => ({}));
+    vi.stubGlobal('chrome', { runtime: { getPlatformInfo: pulse } });
+    h.find('1').children!.push({
+      syncing: false,
+      id: 'slow',
+      parentId: '1',
+      title: 'Slow',
+      url: 'https://example.test/',
+    });
+    await h.projection.refresh();
+    let reply!: (response: Response) => void;
+    h.fetchMock.mockImplementation(
+      () =>
+        new Promise<Response>(resolve => {
+          reply = resolve;
+        }),
+    );
+    const run = h.ingress.classify('slow');
+    await vi.advanceTimersByTimeAsync(45_000);
+    expect(h.fetchMock).toHaveBeenCalledOnce();
+    expect(pulse).toHaveBeenCalledTimes(3);
+    expect((await readSaveReceipts(h.storage))[0]?.status).toBe('classifying');
+    if (outcome === 'complete') {
+      reply(
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    assignments: [{ itemId: 'slow', folderId: '1' }],
+                    newFolders: [],
+                  }),
+                },
+              },
+            ],
+          }),
+        ),
+      );
+    } else if (outcome === 'dispose') h.ingress.dispose();
+    else await vi.advanceTimersByTimeAsync(20_000);
+    await run;
+    expect((await readSaveReceipts(h.storage))[0]).toMatchObject(
+      outcome === 'complete'
+        ? { status: 'kept' }
+        : { status: 'failed', reason: outcome === 'dispose' ? 'cancelled' : 'timeout' },
+    );
+    const calls = pulse.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(pulse).toHaveBeenCalledTimes(calls);
+    h.ingress.dispose();
+  },
+);
+
+it.each([false, true])('native save respects service streaming=%s without legacy synchronization', async streaming => {
+  const h = await harness({ mode: 'openai-responses', streaming, syncLegacy: false, settlingMs: 5 });
+  const text = JSON.stringify({ assignments: [{ itemId: 'stream-save', folderId: '2' }], newFolders: [] });
+  h.fetchMock.mockImplementation(async (_url, init) => {
+    expect(JSON.parse(String(init?.body)).stream).toBe(streaming);
+    if (!streaming) return new Response(JSON.stringify({ status: 'completed', output_text: text }));
+    return new Response(
+      `data: ${JSON.stringify({ type: 'response.output_text.delta', output_index: 0, content_index: 0, delta: text })}\n\ndata: ${JSON.stringify({ type: 'response.completed', response: { status: 'completed', output: [{ type: 'message', content: [{ type: 'output_text' }] }] } })}\n\n`,
+      { headers: { 'content-type': 'text/event-stream' } },
+    );
+  });
+  const node = { syncing: false, id: 'stream-save', parentId: '1', title: 'Documentation', url: 'https://docs.test/' };
+  h.find('1').children!.push(node);
+  await h.writer.create({ parentId: '2', title: '_touch' });
+  h.onCreated.emit(node.id, node);
+  await vi.waitFor(async () => expect((await readSaveReceipts(h.storage))[0]?.status).toBe('moved'));
+  expect(h.find(node.id).parentId).toBe('2');
+  h.ingress.dispose();
+});
+
+it.each(['privacy', 'metadata', 'dispose'])(
+  'native auto-save rechecks %s after model completion before writing',
+  async change => {
+    const h = await harness();
+    const node = { syncing: false, id: 'race', parentId: '1', title: 'Before', url: 'https://race.test/' };
+    h.find('1').children!.push(node);
+    await h.projection.refresh();
+    h.fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  assignments: [{ itemId: 'race', folderId: '2' }],
+                  newFolders: [],
+                }),
+              },
+            },
+          ],
+        }),
+      ),
+    );
+    const original = ModelTransport.prototype.run;
+    vi.spyOn(ModelTransport.prototype, 'run').mockImplementation(async function (this: ModelTransport, input) {
+      const result = await original.call(this, input);
+      expect(result.status).toBe('completed');
+      if (change === 'dispose') h.ingress.dispose();
+      else if (change === 'metadata') {
+        h.find('race').title = 'Changed by user';
+        await h.projection.refresh();
+      } else {
+        const snapshot = await h.projection.fresh();
+        const current = await h.settings.snapshot();
+        await h.settings.save(
+          current.config!,
+          { ...current.privacy, excludedFolders: [snapshot.nodes.find(n => n.ref.nativeId === '2')!.ref] },
+          current.key,
+          true,
+        );
+      }
+      return result;
+    });
+    const move = vi.spyOn(h.writer, 'move');
+    const create = vi.spyOn(h.writer, 'create');
+    expect(await h.ingress.classify(node.id)).toMatchObject({ status: 'failed', reason: 'stale-context' });
+    expect(move).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
+    expect(h.find('race').parentId).toBe('1');
+    h.ingress.dispose();
+  },
+);
+
+it('stops before later native calls if settings change during folder creation', async () => {
+  const h = await harness();
+  const node = { syncing: false, id: 'create-race', parentId: '1', title: 'Before', url: 'https://race.test/' };
+  h.find('1').children!.push(node);
+  await h.projection.refresh();
+  h.fetchMock.mockResolvedValue(
+    new Response(
+      JSON.stringify({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                assignments: [{ itemId: node.id, folderId: 'nested' }],
+                newFolders: [
+                  { id: 'new', parentId: '2', title: 'New' },
+                  { id: 'nested', parentId: 'new', title: 'Nested' },
+                ],
+              }),
+            },
+          },
+        ],
+      }),
+    ),
+  );
+  const original = h.writer.create;
+  const create = vi.spyOn(h.writer, 'create').mockImplementation(async details => {
+    const created = await original(details);
+    const current = await h.settings.snapshot();
+    await h.settings.save(
+      current.config!,
+      { ...current.privacy, fullUrl: !current.privacy.fullUrl },
+      current.key,
+      true,
+    );
+    return created;
+  });
+  const move = vi.spyOn(h.writer, 'move');
+  expect(await h.ingress.classify(node.id)).toMatchObject({ status: 'failed', reason: 'stale-context' });
+  expect(create).toHaveBeenCalledOnce();
+  expect(move).not.toHaveBeenCalled();
+  expect((await readSaveReceipts(h.storage))[0]).toMatchObject({
+    status: 'failed',
+    createdFolderIds: [expect.any(String)],
+  });
+  h.ingress.dispose();
+});
+
+it('disposing cancels every parallel native classification and prevents late writes', async () => {
+  const h = await harness();
+  for (const id of ['parallel-a', 'parallel-b'])
+    h.find('1').children!.push({ syncing: false, id, parentId: '1', title: id, url: `https://${id}.test/` });
+  await h.projection.refresh();
+  const signals: AbortSignal[] = [];
+  h.fetchMock.mockImplementation(async (_url, init) => {
+    signals.push(init!.signal!);
+    return new Promise<Response>(() => {});
+  });
+  const first = h.ingress.classify('parallel-a');
+  const second = h.ingress.classify('parallel-b');
+  await vi.waitFor(() => expect(signals).toHaveLength(2));
+  h.ingress.dispose();
+  expect(signals.every(signal => signal.aborted)).toBe(true);
+  expect(await Promise.all([first, second])).toEqual([
+    expect.objectContaining({ status: 'failed', reason: 'cancelled' }),
+    expect.objectContaining({ status: 'failed', reason: 'cancelled' }),
+  ]);
+});
+
+it('does not record success when a native move resolves without the expected readback', async () => {
+  const h = await harness();
+  const node = { syncing: false, id: 'readback', parentId: '1', title: 'Before', url: 'https://readback.test/' };
+  h.find('1').children!.push(node);
+  await h.projection.refresh();
+  h.fetchMock.mockResolvedValue(
+    new Response(
+      JSON.stringify({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                assignments: [{ itemId: node.id, folderId: '2' }],
+                newFolders: [],
+              }),
+            },
+          },
+        ],
+      }),
+    ),
+  );
+  const move = vi.spyOn(h.writer, 'move').mockResolvedValue({ ...node, parentId: '2' });
+  expect(await h.ingress.classify(node.id)).toMatchObject({ status: 'failed', reason: 'native-write-uncertain' });
+  expect(move).toHaveBeenCalledOnce();
+  expect((await readSaveReceipts(h.storage))[0]?.status).toBe('failed');
+  h.ingress.dispose();
+});
+
+it.each(['response.failed', 'response.incomplete', 'missing-terminal', 'refusal'])(
+  'native save never moves valid partial classification when stream ends with %s',
+  async terminal => {
+    const h = await harness({ mode: 'openai-responses', settlingMs: 5 });
+    const text = JSON.stringify({ assignments: [{ itemId: 'failed-stream', folderId: '2' }], newFolders: [] });
+    const values: unknown[] = [{ type: 'response.output_text.delta', output_index: 0, content_index: 0, delta: text }];
+    if (terminal === 'refusal') values.push({ type: 'response.refusal.done', refusal: 'no' });
+    else if (terminal !== 'missing-terminal') values.push({ type: terminal, response: { status: terminal.slice(9) } });
+    h.fetchMock.mockImplementation(
+      async () =>
+        new Response(values.map(value => `data: ${JSON.stringify(value)}\n\n`).join(''), {
+          headers: { 'content-type': 'text/event-stream' },
+        }),
+    );
+    const node = {
+      syncing: false,
+      id: 'failed-stream',
+      parentId: '1',
+      title: 'Documentation',
+      url: 'https://docs.test/',
+    };
+    h.find('1').children!.push(node);
+    await h.writer.create({ parentId: '2', title: '_touch' });
+    const move = vi.spyOn(h.writer, 'move');
+    const create = vi.spyOn(h.writer, 'create');
+    h.onCreated.emit(node.id, node);
+    await vi.waitFor(async () => expect((await readSaveReceipts(h.storage))[0]?.status).toBe('failed'));
+    expect(h.find(node.id).parentId).toBe('1');
+    expect(move).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
+    expect(h.fetchMock).toHaveBeenCalledOnce();
+    h.ingress.dispose();
+  },
+);
 
 it('isSaveFeatureConfigured requires save connId+modelId and a service baseUrl', async () => {
   const { storage } = memoryStorage();

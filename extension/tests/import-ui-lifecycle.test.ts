@@ -233,10 +233,12 @@ async function setup(mode: 'completed' | 'rejected' | 'dropped' | 'unknown' | 'p
     const file = new File([text], 'synthetic');
     Object.defineProperty(file, 'arrayBuffer', { value: async () => new TextEncoder().encode(text).buffer });
     fireEvent.change(screen.getByLabelText('导入文件'), { target: { files: [file] } });
-    await screen.findByText(/解析完成/);
+    await screen.findByText(/文件已读取/);
+    await user.click(screen.getByRole('button', { name: '下一步：选择目标目录' }));
     await user.selectOptions(screen.getByLabelText('导入目标根'), 'bar');
-    await user.click(screen.getByRole('button', { name: '明确请求 AI 全量分类' }));
+    await user.click(screen.getByRole('button', { name: '下一步：AI 分类并预览' }));
     if (outcome !== 'pending') await screen.findByText(outcome === 'classified' ? /全量分类完成/ : /已暂停/);
+    if (outcome === 'classified') await user.click(screen.getByText('任务和跳过项详情'));
   };
   return {
     user,
@@ -315,9 +317,9 @@ it.each(['completed', 'rejected', 'dropped', 'unknown'] as const)(
   async mode => {
     const h = await setup(mode);
     await h.upload('https://source.test/');
-    await h.user.click(screen.getByRole('button', { name: '校验所选整批预览' }));
+    await h.user.click(screen.getByText('下一步：确认导入'));
     await screen.findByText(/实际新建书签 1/);
-    await h.user.click(screen.getByRole('button', { name: '一次确认并应用整批' }));
+    await h.user.click(screen.getByRole('button', { name: '确认并导入书签' }));
     await waitFor(() =>
       expect(screen.getByText(new RegExp(`请求 .*：${mode === 'dropped' ? 'unknown' : mode}`))).toBeVisible(),
     );
@@ -325,17 +327,24 @@ it.each(['completed', 'rejected', 'dropped', 'unknown'] as const)(
     const saved = (await h.persistence.importCheckpoints.all())[0]!;
     if (mode === 'rejected') {
       expect(saved.requestId).toBeUndefined();
-      expect(screen.getByRole('button', { name: '校验所选整批预览' })).toBeEnabled();
-      await h.user.click(screen.getByRole('button', { name: '校验所选整批预览' }));
+      expect(screen.getByText('下一步：确认导入')).toBeEnabled();
+      await h.user.click(screen.getByText('下一步：确认导入'));
       await screen.findByText(/实际新建书签 1/);
     } else {
       expect(saved.requestId).toBeTruthy();
-      expect(screen.getByRole('button', { name: '校验所选整批预览' })).toBeDisabled();
+      expect(screen.getByText('下一步：确认导入')).toBeDisabled();
       await h.user.click(screen.getByRole('button', { name: '读取同一请求结果（日志去重，不新建请求）' }));
       await waitFor(() =>
         expect(screen.getByRole('button', { name: '读取同一请求结果（日志去重，不新建请求）' })).toBeEnabled(),
       );
       expect(h.create).toHaveBeenCalledTimes(1);
+      if (mode === 'completed') {
+        await h.user.click(screen.getByRole('button', { name: '导入另一个文件' }));
+        expect(screen.getByRole('button', { name: '下一步：选择目标目录' })).toBeDisabled();
+        expect(screen.getByLabelText('导入文件')).toHaveValue('');
+        expect(h.create).toHaveBeenCalledTimes(1);
+        expect((await h.persistence.importCheckpoints.all())[0]!.requestId).toBe(saved.requestId);
+      }
     }
   },
 );
@@ -345,10 +354,12 @@ it('real UI maps original fields, reloads manually, preserves empty drafts on sa
   expect(h.fetcher).toHaveBeenCalledTimes(2);
   cleanup();
   h.mount();
+  if (!(screen.getByText('继续以前的导入任务').parentElement as HTMLDetailsElement).open)
+    await h.user.click(screen.getByText('继续以前的导入任务'));
   await h.user.click(screen.getByRole('button', { name: '读取导入任务列表' }));
   await h.user.click(await screen.findByRole('button', { name: '加载任务' }));
   expect(h.fetcher).toHaveBeenCalledTimes(2);
-  await screen.findByRole('button', { name: '继续分类' });
+  await screen.findByText(/已加载|此任务已交给/);
   for (const checkbox of screen.getAllByRole('checkbox')) await h.user.click(checkbox);
   await h.user.clear(screen.getByLabelText('明确编辑标题 0'));
   await h.user.selectOptions(screen.getByLabelText('明确调整目标 0'), '');
@@ -357,8 +368,8 @@ it('real UI maps original fields, reloads manually, preserves empty drafts on sa
   expect(screen.getByLabelText('明确编辑标题 0')).toHaveValue('');
   expect(screen.getByLabelText('明确调整目标 0')).toHaveValue('');
   expect(screen.getAllByRole('checkbox').every(node => !(node as HTMLInputElement).checked)).toBe(true);
-  await h.user.click(screen.getByRole('button', { name: '校验所选整批预览' }));
-  await screen.findByText('无新项；零写入。');
+  await h.user.click(screen.getByText('下一步：确认导入'));
+  await screen.findByText('所选内容已存在，无需导入。');
   expect(h.create).not.toHaveBeenCalled();
 });
 
@@ -377,9 +388,11 @@ it('real UI all-duplicate source shows identifiable skip evidence with zero mode
 https://existing.test/
 ftp://unsupported.test/`);
   expect(screen.getAllByText(/https:\/\/existing.test\/ · 原始标题：.*existing-url/)).toHaveLength(2);
-  expect(screen.getByText(/ftp:\/\/unsupported.test\/.*unsupported-protocol/)).toBeVisible();
-  await h.user.click(screen.getByRole('button', { name: '校验所选整批预览' }));
-  await screen.findByText('无新项；零写入。');
+  expect(
+    screen.getAllByText(/ftp:\/\/unsupported.test\/.*unsupported-protocol/).some(node => !node.closest('[hidden]')),
+  ).toBe(true);
+  await h.user.click(screen.getByText('下一步：确认导入'));
+  await screen.findByText('所选内容已存在，无需导入。');
   expect(h.fetcher).not.toHaveBeenCalled();
   expect(h.create).not.toHaveBeenCalled();
 });
@@ -388,10 +401,10 @@ it('selected empty destination visibly blocks preview until chosen or deselected
   const h = await setup();
   await h.upload('https://source.test/');
   await h.user.selectOptions(screen.getByLabelText('明确调整目标 0'), '');
-  expect(screen.getByRole('button', { name: '校验所选整批预览' })).toBeDisabled();
+  expect(screen.getByText('下一步：确认导入')).toBeDisabled();
   expect(screen.getByText(/空目标草稿不会发送预览请求/)).toBeVisible();
   await h.user.selectOptions(screen.getByLabelText('明确调整目标 0'), 'bar');
-  await h.user.click(screen.getByRole('button', { name: '校验所选整批预览' }));
+  await h.user.click(screen.getByText('下一步：确认导入'));
   await screen.findByText(/实际新建书签 1/);
   expect(h.create).not.toHaveBeenCalled();
 });
@@ -433,9 +446,11 @@ const multiBatchSource = () =>
     })),
   );
 async function loadTask(h: Awaited<ReturnType<typeof setup>>) {
+  if (!(screen.getByText('继续以前的导入任务').parentElement as HTMLDetailsElement).open)
+    await h.user.click(screen.getByText('继续以前的导入任务'));
   await h.user.click(screen.getByRole('button', { name: '读取导入任务列表' }));
   await h.user.click(await screen.findByRole('button', { name: '加载任务' }));
-  await screen.findByRole('button', { name: '继续分类' });
+  await screen.findByText(/已加载|此任务已交给/);
 }
 it('real UI completes every byte batch and four actual themes/navigation retain edited empty drafts and unselected entries', async () => {
   const h = await setup();
@@ -491,7 +506,7 @@ it.each(['remount', 'worker-restart'] as const)(
     expect(screen.getByLabelText('明确调整目标 0')).toHaveValue('');
     expect(screen.getAllByRole('checkbox')[1]).not.toBeChecked();
     await h.user.selectOptions(screen.getByLabelText('明确调整目标 0'), 'bar');
-    await h.user.click(screen.getByRole('button', { name: '校验所选整批预览' }));
+    await h.user.click(screen.getByText('下一步：确认导入'));
     await screen.findByText(/实际新建书签 2/);
     await h.settings.save(
       { adapter: 'openai-compatible', baseUrl: 'https://synthetic.test', model: 'changed', timeoutMs: 10000 },
@@ -499,7 +514,7 @@ it.each(['remount', 'worker-restart'] as const)(
       '',
       false,
     );
-    await waitFor(() => expect(screen.getByRole('button', { name: '一次确认并应用整批' })).toBeDisabled());
+    await waitFor(() => expect(screen.getByRole('button', { name: '确认并导入书签' })).toBeDisabled());
     expect(screen.getByText(/模型设置或权限已变化/)).toBeVisible();
     expect(h.create).not.toHaveBeenCalled();
     expect(h.sent).not.toContain('cancelMutation');
@@ -551,14 +566,14 @@ it('real UI: native changes outside the scope neither cancel classification nor 
   await screen.findByText(/全量分类完成/);
   expect(h.fetcher).toHaveBeenCalledTimes(3);
   expect((await h.persistence.importCheckpoints.all())[0]!.classified).toHaveLength(3);
-  await h.user.click(screen.getByRole('button', { name: '校验所选整批预览' }));
+  await h.user.click(screen.getByText('下一步：确认导入'));
   await screen.findByText(/实际新建书签 3/);
   h.native[0]!.children![1]!.title = 'Other renamed';
   h.notify();
   await waitFor(() => expect(screen.getByText(/Other renamed/)).toBeInTheDocument());
   expect(screen.getByText(/实际新建书签 3/)).toBeVisible();
-  expect(screen.getByRole('button', { name: '一次确认并应用整批' })).toBeEnabled();
-  expect(screen.getByText(/整批预览已校验/)).toBeVisible();
+  expect(screen.getByRole('button', { name: '确认并导入书签' })).toBeEnabled();
+  expect(screen.getByText(/预览已核对/)).toBeVisible();
   expect(h.sent).not.toContain('cancelMutation');
   expect(h.create).not.toHaveBeenCalled();
 }, 30000);
@@ -584,7 +599,7 @@ it('real UI: a settings change cancels in-flight classification and keeps commit
 it('real UI: a settings change while applying never sends cancelMutation and the handed-off batch completes', async () => {
   const h = await setup();
   await h.upload('https://source.test/one\nhttps://source.test/two');
-  await h.user.click(screen.getByRole('button', { name: '校验所选整批预览' }));
+  await h.user.click(screen.getByText('下一步：确认导入'));
   await screen.findByText(/实际新建书签 2/);
   h.onCreate(async call => {
     if (call === 1)
@@ -595,12 +610,12 @@ it('real UI: a settings change while applying never sends cancelMutation and the
         false,
       );
   });
-  await h.user.click(screen.getByRole('button', { name: '一次确认并应用整批' }));
+  await h.user.click(screen.getByRole('button', { name: '确认并导入书签' }));
   await screen.findByText(/请求 .*：completed/);
   expect(h.create).toHaveBeenCalledTimes(2);
   expect(h.sent.filter(type => type === 'cancelMutation')).toEqual([]);
   expect((await h.persistence.importCheckpoints.all())[0]!.requestId).toBeTruthy();
-  expect(screen.getByRole('button', { name: '校验所选整批预览' })).toBeDisabled();
+  expect(screen.getByText('下一步：确认导入')).toBeDisabled();
 }, 30000);
 
 it('real UI cancel aborts current batch and manual resume preserves committed prefix', async () => {
@@ -608,7 +623,7 @@ it('real UI cancel aborts current batch and manual resume preserves committed pr
   h.hold(2);
   await h.upload(multiBatchSource(), 'json', 'pending');
   await waitFor(() => expect(h.fetcher).toHaveBeenCalledTimes(2));
-  await h.user.click(screen.getByRole('button', { name: '暂停分类 / 取消授权及未发起写入' }));
+  await h.user.click(screen.getByRole('button', { name: '暂停当前任务' }));
   await screen.findByText(/已暂停：cancelled/);
   expect((await h.persistence.importCheckpoints.all())[0]!.classified).toHaveLength(1);
   await h.user.click(screen.getByRole('button', { name: '继续分类' }));
@@ -634,18 +649,18 @@ it('real UI checkpoint quota stops batching and manual resume repeats only uncom
 it('real UI partial native outcome stays journal-owned and never replays successful creates', async () => {
   const h = await setup('partial');
   await h.upload('https://source.test/one\nhttps://source.test/two');
-  await h.user.click(screen.getByRole('button', { name: '校验所选整批预览' }));
+  await h.user.click(screen.getByText('下一步：确认导入'));
   await screen.findByText(/实际新建书签 2/);
-  await h.user.click(screen.getByRole('button', { name: '一次确认并应用整批' }));
+  await h.user.click(screen.getByRole('button', { name: '确认并导入书签' }));
   await screen.findByText(/请求 .*：partial/);
   expect(h.create).toHaveBeenCalledTimes(1);
-  expect(screen.getByRole('button', { name: '校验所选整批预览' })).toBeDisabled();
+  expect(screen.getByText('下一步：确认导入')).toBeDisabled();
   await h.user.click(screen.getByRole('button', { name: '读取同一请求结果（日志去重，不新建请求）' }));
   expect(h.create).toHaveBeenCalledTimes(1);
   cleanup();
   h.mount();
   await loadTask(h);
-  expect(screen.getByRole('button', { name: '继续分类' })).toBeDisabled();
+  expect(screen.getByText('继续分类', { selector: 'button' })).toBeDisabled();
   expect(h.create).toHaveBeenCalledTimes(1);
 });
 it('real authority privacy rejection appears precisely in UI without handoff or transport outage', async () => {
@@ -671,7 +686,7 @@ it('real authority privacy rejection appears precisely in UI without handoff or 
   h.mount();
   await h.upload('https://source.test/');
   await h.user.selectOptions(screen.getByLabelText('明确调整目标 0'), 'private');
-  await h.user.click(screen.getByRole('button', { name: '校验所选整批预览' }));
+  await h.user.click(screen.getByText('下一步：确认导入'));
   await screen.findByText(/privacy-excluded：/);
   expect(screen.queryByText(/import-transport-unavailable/)).toBeNull();
   expect(h.create).not.toHaveBeenCalled();

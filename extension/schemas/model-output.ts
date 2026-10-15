@@ -13,9 +13,25 @@ const importAssignments = z.strictObject({
   newFolders: z.array(folder),
 });
 const organize = z.strictObject({
-  moves: z.array(z.strictObject({ itemId: id, folderId: id })),
-  newFolders: z.array(folder),
-  merges: z.array(z.strictObject({ sourceId: id, targetId: id })),
+  unchangedIds: z
+    .array(id)
+    .optional()
+    .describe(
+      'In the folders stage, optional existing folder IDs with no direct move, merge-source, rename or removal action; not exhaustive. In the bookmarks stage, every input item must occur exactly once in moves or unchangedIds.',
+    ),
+  moves: z.array(z.strictObject({ itemId: id, folderId: id, reason: z.string().max(500).optional() })),
+  newFolders: z.array(folder.extend({ reason: z.string().max(500).optional() })),
+  merges: z.array(z.strictObject({ sourceId: id, targetId: id, reason: z.string().max(500).optional() })),
+  renames: z
+    .array(
+      z.strictObject({
+        folderId: id,
+        title: z.string().trim().min(1).max(200),
+        reason: z.string().max(500).optional(),
+      }),
+    )
+    .optional(),
+  removeFolders: z.array(z.strictObject({ folderId: id, reason: z.string().max(500).optional() })).optional(),
 });
 export interface ModelOutputContext {
   task: string;
@@ -24,6 +40,7 @@ export interface ModelOutputContext {
   fields?: { path: string[] }[];
   policy?: { maxNewDepth: number; allowRename: boolean };
   rootId?: string;
+  stage?: 'folders' | 'bookmarks';
 }
 export function outputSchema(task: string) {
   return task === 'import-classify'
@@ -39,43 +56,59 @@ export function outputSchema(task: string) {
 export function modelOutputJsonSchema(task: string) {
   return z.toJSONSchema(outputSchema(task));
 }
+/** Safe diagnostic labels only; never retain model values, titles, URLs or credentials. */
+export class ModelOutputValidationError extends Error {
+  constructor(
+    readonly code: string,
+    readonly path: string,
+  ) {
+    super('invalid-output');
+    this.name = 'ModelOutputValidationError';
+  }
+}
+function reject(code: string, path: string): never {
+  throw new ModelOutputValidationError(code, path);
+}
 export function parseModelOutput(value: unknown, context: ModelOutputContext) {
   try {
     const result = outputSchema(context.task).parse(value);
     if ('urlPath' in result) {
       const paths = new Set(context.fields?.map(f => JSON.stringify(f.path)));
       if (result.urlPath === null) {
-        if (result.titlePath !== null) throw Error();
+        if (result.titlePath !== null) reject('title-without-url', 'titlePath');
         return result;
       }
-      if (
-        !paths.has(JSON.stringify(result.urlPath)) ||
-        (result.titlePath !== null && !paths.has(JSON.stringify(result.titlePath)))
-      )
-        throw Error();
+      if (!paths.has(JSON.stringify(result.urlPath))) reject('unknown-field-path', 'urlPath');
+      if (result.titlePath !== null && !paths.has(JSON.stringify(result.titlePath)))
+        reject('unknown-field-path', 'titlePath');
       return result;
     }
-    const unique = (ids: string[]) => {
-      if (new Set(ids).size !== ids.length) throw Error();
+    const unique = (ids: string[], path: string) => {
+      if (new Set(ids).size !== ids.length) reject('duplicate-id', path);
     };
     const items = new Set(context.items.map(i => i.id));
     const folders = new Set(context.folders.map(f => f.id));
     if ('rankedIds' in result) {
-      unique(result.rankedIds);
-      if (result.rankedIds.some(i => !items.has(i))) throw Error();
+      unique(result.rankedIds, 'rankedIds');
+      result.rankedIds.forEach((id, index) => {
+        if (!items.has(id)) reject('unknown-item', `rankedIds.${index}`);
+      });
       return result;
     }
-    unique(result.newFolders.map(f => f.id));
+    unique(
+      result.newFolders.map(f => f.id),
+      'newFolders.id',
+    );
     const parents = new Map(result.newFolders.map(f => [f.id, f.parentId]));
-    for (const f of result.newFolders) {
-      if (folders.has(f.id) || items.has(f.id)) throw Error();
+    for (const [index, f] of result.newFolders.entries()) {
+      if (folders.has(f.id) || items.has(f.id)) reject('existing-id', `newFolders.${index}.id`);
       let parent = f.parentId;
       const seen = new Set([f.id]);
       while (!folders.has(parent)) {
-        if (seen.has(parent)) throw Error();
+        if (seen.has(parent)) reject('folder-parent-cycle', `newFolders.${index}.parentId`);
         seen.add(parent);
         const next = parents.get(parent);
-        if (!next) throw Error();
+        if (!next) reject('unknown-parent', `newFolders.${index}.parentId`);
         parent = next;
       }
     }
@@ -84,20 +117,21 @@ export function parseModelOutput(value: unknown, context: ModelOutputContext) {
       const rootId = context.rootId;
       const max = context.policy.maxNewDepth;
       const known = new Map(context.folders.map(f => [f.id, f]));
-      const depth = (id: string) => {
+      const depth = (id: string, path: string) => {
         if (id === rootId) return 0;
         const index = known.get(id)?.ancestorIds?.indexOf(rootId) ?? -1;
-        if (index < 0) throw Error();
+        if (index < 0) reject('parent-outside-root', path);
         return index + 1;
       };
-      for (const f of result.newFolders) {
+      for (const [index, f] of result.newFolders.entries()) {
         let parent = f.parentId;
         let length = 1;
         while (parents.has(parent)) {
           parent = parents.get(parent)!;
           length++;
         }
-        if (depth(parent) + length > max) throw Error();
+        const path = `newFolders.${index}.parentId`;
+        if (depth(parent, path) + length > max) reject('max-new-depth', path);
       }
     }
     const targets = new Set([...folders, ...parents.keys()]);
@@ -112,15 +146,80 @@ export function parseModelOutput(value: unknown, context: ModelOutputContext) {
       return current === source || context.folders.find(f => f.id === current)?.ancestorIds?.includes(source) === true;
     };
     const actions = 'assignments' in result ? result.assignments : result.moves;
-    unique(actions.map(a => a.itemId));
-    if (actions.some(a => !items.has(a.itemId) || !targets.has(a.folderId) || descendant(a.itemId, a.folderId)))
-      throw Error();
-    if ('assignments' in result && actions.length !== items.size) throw Error();
+    const actionPath = 'assignments' in result ? 'assignments' : 'moves';
+    unique(
+      actions.map(a => a.itemId),
+      `${actionPath}.itemId`,
+    );
+    actions.forEach((action, index) => {
+      if (!items.has(action.itemId)) reject('unknown-item', `${actionPath}.${index}.itemId`);
+      if (!targets.has(action.folderId)) reject('unknown-target', `${actionPath}.${index}.folderId`);
+      if (descendant(action.itemId, action.folderId))
+        reject('target-is-self-or-descendant', `${actionPath}.${index}.folderId`);
+    });
+    if ('assignments' in result && actions.length !== items.size) reject('missing-items', 'assignments');
     if ('merges' in result) {
+      if (context.stage === 'bookmarks') {
+        for (const field of ['newFolders', 'merges', 'renames', 'removeFolders'] as const)
+          if (result[field]?.length) reject('taxonomy-change-in-bookmark-stage', field);
+        const accounted = [...result.moves.map(m => m.itemId), ...(result.unchangedIds ?? [])];
+        unique(accounted, 'moves+unchangedIds');
+        if (accounted.some(id => !items.has(id))) reject('unknown-item', 'unchangedIds');
+        if (accounted.length !== items.size) reject('missing-items', 'moves+unchangedIds');
+      }
+      if (context.stage === 'folders') {
+        // Informational no-ops are allowed by the shared output schema. Check
+        // their identity and consistency before discarding them, never actions.
+        const unchanged = result.unchangedIds ?? [];
+        unique(unchanged, 'unchangedIds');
+        const changed = new Set([
+          ...result.moves.map(m => m.itemId),
+          ...result.merges.map(m => m.sourceId),
+          ...(result.renames ?? []).map(r => r.folderId),
+          ...(result.removeFolders ?? []).map(r => r.folderId),
+        ]);
+        unchanged.forEach((id, index) => {
+          if (!folders.has(id)) reject('unknown-folder', `unchangedIds.${index}`);
+          if (changed.has(id)) reject('unchanged-folder-has-action', `unchangedIds.${index}`);
+        });
+        delete result.unchangedIds;
+      }
+      const renames = result.renames ?? [];
+      const removals = result.removeFolders ?? [];
+      unique(
+        renames.map(r => r.folderId),
+        'renames.folderId',
+      );
+      unique(
+        removals.map(r => r.folderId),
+        'removeFolders.folderId',
+      );
+      unique(
+        result.merges.map(m => m.sourceId),
+        'merges.sourceId',
+      );
+      for (const [field, entries] of [
+        ['renames', renames],
+        ['removeFolders', removals],
+      ] as const)
+        entries.forEach((entry, index) => {
+          if (!folders.has(entry.folderId)) reject('unknown-folder', `${field}.${index}.folderId`);
+        });
+      const removed = new Set([...removals.map(r => r.folderId), ...result.merges.map(m => m.sourceId)]);
+      renames.forEach((entry, index) => {
+        if (removed.has(entry.folderId)) reject('rename-removed-folder', `renames.${index}.folderId`);
+      });
+      result.moves.forEach((entry, index) => {
+        if (removed.has(entry.itemId)) reject('move-removed-folder', `moves.${index}.itemId`);
+      });
+      if (context.policy?.allowRename === false && result.renames) result.renames = [];
       // Both action kinds write the same identity; reject overlap before Map can erase an edge.
-      unique([...result.moves.map(m => m.itemId), ...result.merges.map(m => m.sourceId)]);
-      for (const m of result.merges)
-        if (!folders.has(m.sourceId) || !folders.has(m.targetId) || descendant(m.sourceId, m.targetId)) throw Error();
+      unique([...result.moves.map(m => m.itemId), ...result.merges.map(m => m.sourceId)], 'moves+merges');
+      for (const [index, m] of result.merges.entries()) {
+        if (!folders.has(m.sourceId)) reject('unknown-merge-source', `merges.${index}.sourceId`);
+        if (!targets.has(m.targetId)) reject('unknown-merge-target', `merges.${index}.targetId`);
+        if (descendant(m.sourceId, m.targetId)) reject('target-is-self-or-descendant', `merges.${index}.targetId`);
+      }
       const edges = new Map([
         ...result.moves.map(m => [m.itemId, m.folderId] as const),
         ...result.merges.map(m => [m.sourceId, m.targetId] as const),
@@ -130,10 +229,17 @@ export function parseModelOutput(value: unknown, context: ModelOutputContext) {
         const seen = new Set<string>();
         let cursor: string | undefined = start;
         while (cursor !== undefined) {
-          if (seen.has(cursor)) throw Error();
+          if (seen.has(cursor)) reject('action-cycle', 'moves+merges+newFolders');
           seen.add(cursor);
           cursor = edges.get(cursor);
         }
+      }
+      // Merge already removes its source after moving all children. Canonicalize
+      // only that redundant cleanup, after validating every original action.
+      // A separate removal must not survive deselection of its owning merge.
+      if (result.removeFolders) {
+        const merged = new Set(result.merges.map(m => m.sourceId));
+        result.removeFolders = removals.filter(r => !merged.has(r.folderId));
       }
     }
     if (context.policy?.allowRename === false && 'assignments' in result) {
@@ -142,7 +248,12 @@ export function parseModelOutput(value: unknown, context: ModelOutputContext) {
       for (const a of result.assignments) if ('title' in a && titled.has(a.itemId)) delete a.title;
     }
     return result;
-  } catch {
-    throw Error('invalid-output');
+  } catch (error) {
+    if (error instanceof ModelOutputValidationError) throw error;
+    if (error instanceof z.ZodError) {
+      const first = error.issues[0];
+      reject(first?.code ?? 'schema', first?.path.join('.') || '(root)');
+    }
+    reject('validation-exception', '(root)');
   }
 }

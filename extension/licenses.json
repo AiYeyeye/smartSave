@@ -1,6 +1,15 @@
 {
   "MIT": [
     {
+      "name": "eventsource-parser",
+      "versions": ["4.1.1"],
+      "paths": ["node_modules/eventsource-parser"],
+      "license": "MIT",
+      "author": "Espen Hovlandsdal",
+      "homepage": "https://github.com/rexxars/eventsource-parser",
+      "description": "Streaming parser for Server-Sent Events"
+    },
+    {
       "name": "@adobe/css-tools",
       "versions": [
         "4.5.0"

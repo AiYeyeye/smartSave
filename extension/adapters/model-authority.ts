@@ -8,7 +8,7 @@ export interface ModelAuthority {
   subscribe(listener: (change?: ModelAuthorityChange) => void): () => void;
 }
 // Every consumer uses the same settings owner and authoritative tree port; UI state is not authority.
-export function browserModelAuthority(store: SettingsStore): ModelAuthority {
+export function browserModelAuthority(store: Pick<SettingsStore, 'snapshot' | 'subscribe'>): ModelAuthority {
   let tree: TreeSnapshot | undefined;
   const listeners = new Set<(change?: ModelAuthorityChange) => void>();
   let stop: (() => void) | undefined;

@@ -69,7 +69,7 @@ it('uses actual transport and privacy projection; explicit request only, no auto
   const body = JSON.parse(String(call[1].body));
   const payload = JSON.parse(body.messages[1].content);
   expect(payload.query).toBe('example');
-  expect(payload.items).toHaveLength(8);
+  expect(payload.items).toHaveLength(12);
   expect(payload.folders).toEqual([]);
   expect(body.messages).toHaveLength(2);
   expect(body.messages[0].content).toContain('rank the given items by relevance to the query');
@@ -136,7 +136,7 @@ it('a tree change outside the candidates during rerank still delivers the order 
   ).toEqual(['2', '1']);
   expect(f.state().hits).toHaveLength(13);
   expect(f.state().reranking).toBe(false);
-  expect(f.state().message).toContain('已重排');
+  expect(f.state().message).toContain('AI 找到');
   f.controller.dispose();
 });
 it('a candidate removed locally before the answer arrives is ignored rather than failing the order', async () => {
@@ -206,5 +206,185 @@ it('optional model settings failure retains local results and local safe opening
   expect(f.state().hits).toHaveLength(12);
   f.controller.setTree({ status: 'ready', snapshot: searchTree() });
   expect(f.controller.open('1', vi.fn())).toBe(true);
+  f.controller.dispose();
+});
+
+it('finds a semantic match absent from keyword results and beyond the old eight-item limit', async () => {
+  const f = setup();
+  f.context.tree.nodes[12]!.title = 'diagrams.net';
+  f.context.tree.nodes[12]!.url = 'https://app.diagrams.net/?secret=private#part';
+  f.controller.setTree({ status: 'ready', snapshot: f.context.tree });
+  f.controller.setQuery('之前收藏的那个做流程图的网站');
+  expect(f.state().hits).toEqual([]);
+  const pending = f.controller.rerank();
+  await vi.waitFor(() => expect(f.fetcher).toHaveBeenCalledOnce());
+  const call = f.fetcher.mock.calls[0] as unknown as [string, RequestInit];
+  const body = JSON.parse(String(call[1].body));
+  const payload = JSON.parse(body.messages[1].content);
+  expect(payload.items.find((item: { id: string }) => item.id === '12')).toEqual({
+    id: '12',
+    title: 'diagrams.net',
+    url: 'https://app.diagrams.net/',
+    path: ['学习资料'],
+  });
+  f.respond(['12']);
+  await pending;
+  expect(f.state().hits.map(hit => hit.id)).toEqual(['12']);
+  expect(f.controller.open('12', vi.fn())).toBe(true);
+  f.controller.setTree({ status: 'loading' });
+  f.controller.setTree({ status: 'ready', snapshot: structuredClone(f.context.tree) });
+  expect(f.state().hits.map(hit => hit.id)).toEqual(['12']);
+  const removed = structuredClone(f.context.tree);
+  removed.nodes = removed.nodes.filter(node => node.ref.nativeId !== '12');
+  f.controller.setTree({ status: 'ready', snapshot: removed });
+  expect(f.state().hits).toEqual([]);
+  expect(f.controller.open('12', vi.fn())).toBe(false);
+  f.controller.setQuery('another description');
+  expect(f.state().hits).toEqual([]);
+  f.controller.dispose();
+});
+
+it('retains a searchable snapshot during disconnect but cannot open stale or deleted results', () => {
+  const f = setup();
+  f.controller.setTree({ status: 'loading' });
+  expect(f.state().hits).toHaveLength(12);
+  expect(f.state().connectionReady).toBe(false);
+  f.controller.setQuery('重庆');
+  expect(f.state().hits.map(hit => hit.id)).toEqual(['1']);
+  expect(f.controller.open('1', vi.fn())).toBe(false);
+  f.controller.setTree({ status: 'error', message: 'disconnected' });
+  expect(f.state().hits).toHaveLength(1);
+  const next = searchTree();
+  next.nodes = next.nodes.filter(node => node.ref.nativeId !== '1');
+  f.controller.setTree({ status: 'ready', snapshot: next });
+  expect(f.state().hits).toEqual([]);
+  expect(f.controller.open('1', vi.fn())).toBe(false);
+  f.controller.dispose();
+});
+
+it('a first load without a snapshot cannot invent searchable data', () => {
+  let state!: SearchState;
+  const controller = new SearchController(value => {
+    state = value;
+  });
+  controller.setQuery('画图');
+  controller.setTree({ status: 'error', message: 'failed' });
+  expect(state.status).toBe('error');
+  expect(state.hits).toEqual([]);
+  controller.dispose();
+});
+
+it('bounds stalled preparation and ignores its late completion', async () => {
+  vi.useFakeTimers();
+  const f = setup();
+  let finish!: (context: typeof f.context) => void;
+  vi.spyOn(f.authority, 'read').mockImplementation(
+    () =>
+      new Promise(resolve => {
+        finish = resolve;
+      }),
+  );
+  const pending = f.controller.rerank();
+  await vi.advanceTimersByTimeAsync(10_000);
+  await pending;
+  expect(f.state().reranking).toBe(false);
+  expect(f.state().message).toContain('读取书签或模型设置超时');
+  finish(f.context);
+  await Promise.resolve();
+  expect(f.fetcher).not.toHaveBeenCalled();
+  f.controller.dispose();
+  vi.useRealTimers();
+});
+
+it('cancellation releases preparation immediately and a newer search owns the UI', async () => {
+  const f = setup();
+  let finish!: (context: typeof f.context) => void;
+  vi.spyOn(f.authority, 'read').mockImplementationOnce(
+    () =>
+      new Promise(resolve => {
+        finish = resolve;
+      }),
+  );
+  const old = f.controller.rerank();
+  f.controller.cancel();
+  await old;
+  expect(f.state().reranking).toBe(false);
+  const current = f.controller.rerank();
+  await vi.waitFor(() => expect(f.fetcher).toHaveBeenCalledOnce());
+  finish(f.context);
+  await Promise.resolve();
+  expect(f.state().reranking).toBe(true);
+  f.respond(['12']);
+  await current;
+  expect(f.state().hits[0]?.id).toBe('12');
+  f.controller.dispose();
+});
+
+it('charges preparation time against the configured total deadline', async () => {
+  vi.useFakeTimers();
+  const f = setup();
+  vi.spyOn(f.authority, 'read').mockImplementationOnce(
+    () =>
+      new Promise(resolve => {
+        setTimeout(() => resolve(structuredClone(f.context)), 4000);
+      }),
+  );
+  const pending = f.controller.rerank();
+  await vi.advanceTimersByTimeAsync(4000);
+  expect(f.fetcher).toHaveBeenCalledOnce();
+  await vi.advanceTimersByTimeAsync(6000);
+  await pending;
+  expect(f.state().message).toContain('模型搜索超时');
+  expect(f.state().hits).toHaveLength(12);
+  f.controller.dispose();
+  vi.useRealTimers();
+});
+
+it('keeps a live semantic-search stream past the former outer total deadline', async () => {
+  vi.useFakeTimers();
+  const f = setup();
+  let source!: ReadableStreamDefaultController<Uint8Array>;
+  f.fetcher.mockImplementationOnce(
+    async () =>
+      new Response(
+        new ReadableStream({
+          start(c) {
+            source = c;
+          },
+        }),
+        { headers: { 'content-type': 'text/event-stream' } },
+      ),
+  );
+  const pending = f.controller.rerank();
+  await vi.advanceTimersByTimeAsync(0);
+  for (let i = 0; i < 3; i++) {
+    await vi.advanceTimersByTimeAsync(7000);
+    source.enqueue(new TextEncoder().encode(': heartbeat\n\n'));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(f.state().reranking).toBe(true);
+  }
+  const chunk = {
+    choices: [{ index: 0, delta: { content: JSON.stringify({ rankedIds: ['12'] }) }, finish_reason: 'stop' }],
+  };
+  source.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(chunk)}\n\ndata: [DONE]\n\n`));
+  source.close();
+  await pending;
+  expect(f.state().hits[0]?.id).toBe('12');
+  expect(f.state().reranking).toBe(false);
+  f.controller.dispose();
+  expect(vi.getTimerCount()).toBe(0);
+  vi.useRealTimers();
+});
+
+it('a renamed folder path invalidates semantic results through the actual transport', async () => {
+  const f = setup();
+  const pending = f.controller.rerank();
+  await vi.waitFor(() => expect(f.fetcher).toHaveBeenCalledOnce());
+  f.context.tree.nodes[0]!.title = 'different topic';
+  f.controller.setTree({ status: 'ready', snapshot: f.context.tree });
+  f.respond(['12']);
+  await pending;
+  expect(f.state().message).toContain('书签或设置已变化');
+  expect(f.state().hits[0]?.id).toBe('1');
   f.controller.dispose();
 });

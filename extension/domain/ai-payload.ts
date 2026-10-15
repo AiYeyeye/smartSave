@@ -1,4 +1,5 @@
 import type { NodeRef, TreeSnapshot } from './node-reference';
+import { organizePreference, type OrganizePreference } from './organize-preferences';
 export interface AiPrivacy {
   fullUrl: boolean;
   bodyEnabled: boolean;
@@ -10,9 +11,20 @@ export type AiItem =
 export type AiSample =
   | { source: 'bookmark'; contextId: string; field: 'title' | 'url' }
   | { source: 'new-import'; value: string; kind: 'url' | 'text' };
+export type OrganizeDestination = { id: string; parentId?: string; title: string };
 export type AiRequest =
   | { task: 'search'; query: string; itemIds: string[]; folderIds: string[] }
-  | { task: 'organize'; rootId: string; itemIds: string[]; folderIds: string[] }
+  | {
+      task: 'organize';
+      rootId: string;
+      itemIds: string[];
+      folderIds: string[];
+      preference?: OrganizePreference;
+      stage?: 'folders' | 'bookmarks';
+      destinations?: OrganizeDestination[];
+      placements?: Record<string, string>;
+      sampleLimit?: number;
+    }
   | { task: 'save'; targetId: string; item: AiItem; folderIds: string[]; snippet?: string }
   | { task: 'import-map'; targetId: string; fields: { path: string[]; samples: AiSample[] }[]; folderIds: string[] }
   | {
@@ -52,9 +64,15 @@ export function serializeAiPayload(tree: TreeSnapshot, privacy: AiPrivacy, reque
   if (request.task === 'search' || request.task === 'organize') {
     if (request.task === 'organize' && !allowed(request.rootId)) throw Error('privacy-excluded');
     const ids = request.itemIds.filter(allowed);
-    const items = ids.slice(0, request.task === 'search' ? 8 : ids.length).map(id => {
+    const items = ids.map(id => {
       const chain = ancestors(id);
       const node = chain[0]!;
+      if (
+        request.task === 'organize' &&
+        request.stage &&
+        node.ref.kind !== (request.stage === 'folders' ? 'folder' : 'bookmark')
+      )
+        throw Error('invalid-organize-stage');
       if (request.task === 'organize' && !chain.some(n => n.ref.nativeId === request.rootId))
         throw Error('outside-scope');
       return {
@@ -69,11 +87,63 @@ export function serializeAiPayload(tree: TreeSnapshot, privacy: AiPrivacy, reque
     });
     if (request.task === 'organize' && folders.some(f => !ancestors(f.id).some(n => n.ref.nativeId === request.rootId)))
       throw Error('outside-scope');
+    let destinations = folders;
+    let folderSummaries: { folderId: string; bookmarkCount: number; sampleTitles: string[] }[] | undefined;
+    if (request.task === 'organize' && request.stage === 'folders') {
+      const summaries = new Map(
+        folders.map(f => [f.id, { folderId: f.id, bookmarkCount: 0, sampleTitles: [] as string[] }]),
+      );
+      const limit = Math.min(2, Math.max(0, request.sampleLimit ?? 2));
+      for (const node of tree.nodes) {
+        if (node.ref.kind !== 'bookmark' || !allowed(node.ref.nativeId)) continue;
+        const summary = summaries.get(node.parentId ?? '');
+        if (!summary) continue;
+        summary.bookmarkCount++;
+        if (summary.sampleTitles.length < limit)
+          summary.sampleTitles.push(Array.from(node.title).slice(0, 160).join(''));
+      }
+      folderSummaries = [...summaries.values()];
+    }
+    if (request.task === 'organize' && request.stage === 'bookmarks') {
+      const planned = new Map(request.destinations?.map(f => [f.id, f]));
+      if (!planned.has(request.rootId) || planned.size !== request.destinations?.length)
+        throw Error('invalid-organize-plan');
+      const offered = new Set(folders.map(f => f.id));
+      destinations = [...planned.values()].map(folder => {
+        const chain: OrganizeDestination[] = [];
+        const seen = new Set<string>();
+        let current: OrganizeDestination | undefined = folder;
+        while (current) {
+          if (
+            seen.has(current.id) ||
+            !current.id ||
+            (!nodes.has(current.id) && !current.title.trim()) ||
+            (nodes.has(current.id) && !offered.has(current.id))
+          )
+            throw Error('invalid-organize-plan');
+          seen.add(current.id);
+          chain.push(current);
+          if (current.id === request.rootId) break;
+          current = planned.get(current.parentId ?? '');
+          if (!current) throw Error('invalid-organize-plan');
+        }
+        return { id: folder.id, ancestorIds: chain.slice(1).map(f => f.id), path: chain.reverse().map(f => f.title) };
+      });
+      for (const item of items) {
+        const current = request.placements?.[item.id];
+        if (request.placements && (!current || !planned.has(current))) throw Error('invalid-organize-plan');
+        if (current) Object.assign(item, { currentFolderId: current });
+      }
+    }
     return JSON.stringify({
       task: request.task,
+      ...(request.task === 'organize' && request.stage ? { stage: request.stage, folderSummaries } : {}),
       ...(request.task === 'search' ? { query: request.query } : {}),
+      ...(request.task === 'organize' && request.preference
+        ? { preference: organizePreference(request.preference) }
+        : {}),
       items,
-      folders,
+      folders: destinations,
     });
   }
   if (!allowed(request.targetId)) throw Error('privacy-excluded');

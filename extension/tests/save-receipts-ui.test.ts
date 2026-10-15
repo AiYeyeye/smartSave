@@ -3,7 +3,8 @@ import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, expect, it, vi } from 'vitest';
 import { SaveReceiptCard } from '../panel/SaveReceiptCard';
-import { SAVE_RECEIPTS_KEY, type SaveReceipt } from '../persistence/save-receipts';
+import { DebugLogPanel } from '../options/DebugLogPanel';
+import { SaveReceiptLog, SAVE_RECEIPTS_KEY, type SaveReceipt } from '../persistence/save-receipts';
 import {
   createDebugLog,
   DEBUG_SETTINGS_KEY,
@@ -51,6 +52,21 @@ const base: SaveReceipt = {
 afterEach(() => {
   vi.unstubAllGlobals();
   resetDebugLogForTests();
+});
+
+it('replaces a pending spinner with an honest interruption notice after worker recovery', async () => {
+  const send = vi.fn();
+  stubStorage({ [SAVE_RECEIPTS_KEY]: [{ ...base, status: 'classifying', reason: undefined }] }, send);
+  render(createElement(SaveReceiptCard, { onOpen: vi.fn() }));
+  expect(await screen.findByText('AI 正在选择目录…')).toBeVisible();
+  await act(async () => {
+    await new SaveReceiptLog(chrome.storage.local).interruptPending();
+  });
+  expect(screen.getByText('自动归类已中断')).toBeVisible();
+  expect(screen.getByText(/请检查书签位置，不会自动重复执行/)).toBeVisible();
+  expect(screen.queryByText('AI 正在选择目录…')).toBeNull();
+  expect(screen.queryByText(/书签留在原处/)).toBeNull();
+  expect(send).not.toHaveBeenCalled();
 });
 
 it('says plainly when a native save did not call AI and links to the model assignment', async () => {
@@ -126,4 +142,30 @@ it('debug trail stays empty by default and records sanitized entries once enable
   expect(JSON.stringify(trail)).not.toContain('sk-secret');
   debug.mockRestore();
   vi.useRealTimers();
+});
+
+it('expands captured bodies and copies their full diagnostic text from the Debug panel', async () => {
+  const body = JSON.stringify({
+    output: [{ type: 'message', content: [{ type: 'output_text', text: 'answer'.repeat(100) }] }],
+  });
+  stubStorage({
+    [DEBUG_SETTINGS_KEY]: { enabled: true },
+    [DEBUG_TRAIL_KEY]: [
+      {
+        t: Date.now(),
+        src: 'model',
+        event: 'response-body',
+        detail: { callId: 'call-1', attempt: 2, format: 'json', body, truncated: false },
+      },
+    ],
+  });
+  const user = userEvent.setup();
+  const copy = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue();
+  render(createElement(DebugLogPanel));
+  await user.click(await screen.findByText('查看响应正文'));
+  expect(screen.getByText(body)).toBeVisible();
+  await user.click(screen.getByRole('button', { name: '复制全部' }));
+  expect(copy).toHaveBeenCalledWith(expect.stringContaining(body));
+  expect(copy).toHaveBeenCalledWith(expect.stringContaining('callId=call-1  attempt=2'));
+  copy.mockRestore();
 });

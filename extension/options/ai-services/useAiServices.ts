@@ -46,9 +46,17 @@ export function useAiServices(settings?: SettingsStore) {
         setReady(true);
       });
     const unsub = store.subscribe(() => {
-      void store.load().then(snap => {
-        if (live) applySnap(snap);
-      });
+      void store
+        .load()
+        .then(snap => {
+          if (live) {
+            applySnap(snap);
+            setError(null);
+          }
+        })
+        .catch(() => {
+          if (live) setError('AI 服务配置不可用');
+        });
     });
     return () => {
       live = false;
@@ -106,8 +114,10 @@ export function useAiServices(settings?: SettingsStore) {
   const assignFeature = useCallback(
     async (featureId: string, connId: string, modelId: string) => {
       const next = features.map(f => (f.id === featureId ? { ...f, connId, modelId } : f));
-      setFeaturesState(next);
-      if (!store) return;
+      if (!store) {
+        setFeaturesState(next);
+        return;
+      }
       const snap = await store.saveFeatures(next);
       applySnap(snap);
       try {
@@ -127,8 +137,10 @@ export function useAiServices(settings?: SettingsStore) {
         const change = byId.get(f.id);
         return change ? { ...f, connId: change.connId, modelId: change.modelId } : f;
       });
-      setFeaturesState(next);
-      if (!store) return;
+      if (!store) {
+        setFeaturesState(next);
+        return;
+      }
       const snap = await store.saveFeatures(next);
       applySnap(snap);
       try {
@@ -149,8 +161,9 @@ export function useAiServices(settings?: SettingsStore) {
       }
       const snap = await store.replaceAll(payload.services, feats);
       applySnap(snap);
+      await store.syncPrimaryToSettings(settings);
     },
-    [store, features, applySnap],
+    [store, settings, features, applySnap],
   );
 
   const exportConfig = useCallback(() => {
@@ -170,6 +183,8 @@ export function useAiServices(settings?: SettingsStore) {
           catalog,
           vendorId,
           timeoutMs,
+          streaming,
+          maxOutputTokens,
           letter,
           avatarClass,
           status,
@@ -185,6 +200,8 @@ export function useAiServices(settings?: SettingsStore) {
           catalog,
           vendorId,
           timeoutMs,
+          streaming,
+          maxOutputTokens,
           letter,
           avatarClass,
           status,

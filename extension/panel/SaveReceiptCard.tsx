@@ -125,7 +125,7 @@ export function ReceiptView({
       sub = reason;
       break;
     default:
-      title = 'AI 归类失败，书签留在原处';
+      title = receipt.reason === 'worker-interrupted' ? '自动归类已中断' : 'AI 归类未完成';
       sub = reason;
   }
 

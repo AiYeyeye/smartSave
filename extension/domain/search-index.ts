@@ -84,6 +84,9 @@ export class SearchIndex {
         };
       });
   }
+  all(): SearchHit[] {
+    return this.entries.map(entry => ({ ...entry.hit }));
+  }
   query(query: string): SearchHit[] {
     const tokens = normalize(query).trim().split(/\s+/).filter(Boolean);
     if (!tokens.length) return [];

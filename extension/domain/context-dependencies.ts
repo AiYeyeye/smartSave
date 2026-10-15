@@ -40,10 +40,22 @@ export function dependencyIds(tree: TreeSnapshot, request: AiRequest): string[] 
       request.folderIds.forEach(id => ids.add(id));
       if (request.item.source === 'bookmark') ids.add(request.item.id);
       break;
-    case 'search':
+    case 'search': {
       request.itemIds.forEach(id => ids.add(id));
       request.folderIds.forEach(id => ids.add(id));
+      // Folder paths are part of the semantic search input too.
+      const nodes = new Map(tree.nodes.map(node => [node.ref.nativeId, node]));
+      for (const id of [...ids]) {
+        const seen = new Set<string>();
+        let parent = nodes.get(id)?.parentId;
+        while (parent !== undefined && !seen.has(parent)) {
+          seen.add(parent);
+          ids.add(parent);
+          parent = nodes.get(parent)?.parentId;
+        }
+      }
       break;
+    }
     case 'organize': {
       ids.add(request.rootId);
       const nodes = new Map(tree.nodes.map(n => [n.ref.nativeId, n]));

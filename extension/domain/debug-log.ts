@@ -3,17 +3,19 @@
  *
  * Off by default. When the user enables「Debug 日志」in settings, events are kept in a bounded ring
  * buffer in chrome.storage.local so the settings page can show the call trail. Detail values must
- * never contain API keys, request/response bodies or page text — only routing facts, sizes, statuses
- * and timings.
+ * never contain API keys. Opt-in model diagnostics include redacted request/response bodies, so
+ * they may contain bookmark titles/URLs. Both individual bodies and the whole trail are bounded.
  */
 export type DebugDetail = Record<string, string | number | boolean | undefined | null>;
-export type DebugLog = (event: string, detail?: DebugDetail) => void;
+export type DebugLog = (event: string, detail?: DebugDetail | (() => DebugDetail)) => void;
 
 export type DebugEntry = { t: number; src: string; event: string; detail?: DebugDetail };
 
 export const DEBUG_SETTINGS_KEY = 'debugSettings';
 export const DEBUG_TRAIL_KEY = 'debugTrail';
 export const DEBUG_TRAIL_LIMIT = 400;
+export const DEBUG_BODY_CHAR_LIMIT = 64 * 1024;
+export const DEBUG_TRAIL_BYTE_LIMIT = 1024 * 1024;
 
 type LocalArea = {
   get(key: string): Promise<Record<string, unknown>>;
@@ -68,6 +70,16 @@ async function flush(storage: LocalArea) {
       const data = await storage.get(DEBUG_TRAIL_KEY);
       const current = Array.isArray(data[DEBUG_TRAIL_KEY]) ? (data[DEBUG_TRAIL_KEY] as DebugEntry[]) : [];
       const next = [...current, ...batch].slice(-DEBUG_TRAIL_LIMIT);
+      const encoder = new TextEncoder();
+      let bytes = 2; // JSON array brackets; the storage budget includes multibyte text.
+      let start = next.length;
+      while (start > 0) {
+        const size = encoder.encode(JSON.stringify(next[start - 1])).byteLength + 1;
+        if (bytes + size > DEBUG_TRAIL_BYTE_LIMIT) break;
+        bytes += size;
+        start--;
+      }
+      next.splice(0, start);
       await storage.set({ [DEBUG_TRAIL_KEY]: next });
     });
   } catch {
@@ -80,27 +92,35 @@ function sanitize(detail?: DebugDetail): DebugDetail | undefined {
   const out: DebugDetail = {};
   for (const [key, value] of Object.entries(detail)) {
     if (/key|token|secret|authorization|password/i.test(key)) continue;
-    out[key] = typeof value === 'string' && value.length > 300 ? `${value.slice(0, 300)}…` : value;
+    const limit = key === 'body' ? DEBUG_BODY_CHAR_LIMIT : 300;
+    out[key] = typeof value === 'string' && value.length > limit ? `${value.slice(0, limit)}…` : value;
   }
   return out;
 }
 
 /** Records an event when the user enabled the debug trail; a no-op (aside from the cached flag read) otherwise. */
 export function createDebugLog(src = 'worker'): DebugLog {
+  let pending = Promise.resolve();
   return (event, detail) => {
     const storage = localArea();
     if (!storage) return;
-    void isEnabled(storage).then(on => {
-      if (!on) return;
-      const entry: DebugEntry = { t: Date.now(), src, event, ...(detail ? { detail: sanitize(detail) } : {}) };
-      try {
-        console.debug(`[zhilan:${src}:${event}]`, entry.detail ?? '');
-      } catch {
-        /* console may be unavailable */
-      }
-      queue.push(entry);
-      flushTimer ??= setTimeout(() => void flush(storage), 250);
-    });
+    const t = Date.now();
+    pending = pending
+      .then(async () => {
+        if (!(await isEnabled(storage))) return;
+        const resolved = typeof detail === 'function' ? detail() : detail;
+        const entry: DebugEntry = { t, src, event, ...(resolved ? { detail: sanitize(resolved) } : {}) };
+        try {
+          console.debug(`[zhilan:${src}:${event}]`, entry.detail ?? '');
+        } catch {
+          /* console may be unavailable */
+        }
+        queue.push(entry);
+        flushTimer ??= setTimeout(() => void flush(storage), 250);
+      })
+      .catch(() => {
+        /* Diagnostics must never change the operation's result. */
+      });
   };
 }
 

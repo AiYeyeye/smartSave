@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type Ref } from 'react';
 import type { TreeSnapshot } from '../domain/node-reference';
 import { preflight } from '../domain/preflight';
 import type { Command, ConfirmMutation, MutationResult } from '../schemas/messages';
 import { ImpactConfirmDialog } from '../ui/ImpactConfirmDialog';
 import { Select } from '../ui/Select';
+import { BusyIndicator } from '../ui/BusyIndicator';
 import { prepareMove, prepareMutation } from './TreeDragController';
 import { submitMutation, type SendMutation } from './mutation-client';
 
@@ -22,7 +23,7 @@ type Draft = {
 export function MutationFeedback({ result }: { result: MutationResult }) {
   const labels = {
     completed: '已完成',
-    rejected: '已拒绝，未执行任何写入；请重新预览后再提交',
+    rejected: '未执行操作，请检查连接或重新操作',
     failed: '失败，未完成',
     partial: '部分完成，后续操作已停止',
     unknown: '结果未知，请检查操作记录，勿重复提交',
@@ -31,6 +32,8 @@ export function MutationFeedback({ result }: { result: MutationResult }) {
     <p role={result.status === 'completed' ? 'status' : 'alert'}>
       {labels[result.status]} · 已完成 {result.completedSteps} 步 / 剩余 {result.remainingSteps} 步
       {result.needsReconcile && ' · 需要协调检查'}
+      {result.reason === 'invalid-sender' && ' · 侧边栏授权尚未恢复，请等待连接恢复后重新操作'}
+      {result.reason === 'preview-unavailable' && ' · 操作准备失败，请重新选择目标'}
       <small>请求编号：{result.requestId}</small>
     </p>
   );
@@ -43,14 +46,16 @@ export function BookmarkActions({
   onInteractionChange,
   hideCommands = false,
   initialMode,
+  containerRef,
 }: {
   snapshot: TreeSnapshot;
   selectedId: string | undefined;
   send?: SendMutation;
   interactionBlocked?: boolean;
-  onInteractionChange?: (active: boolean) => void;
+  onInteractionChange?: (active: boolean, busy: boolean) => void;
   hideCommands?: boolean;
   initialMode?: Mode;
+  containerRef?: Ref<HTMLElement>;
 }) {
   const [draft, setDraft] = useState<Draft>();
   const [result, setResult] = useState<MutationResult>();
@@ -59,7 +64,7 @@ export function BookmarkActions({
   const started = useRef('');
   const form = useRef<HTMLFormElement>(null);
   useEffect(() => {
-    onInteractionChange?.(!!draft || busy);
+    onInteractionChange?.(!!draft || busy, busy);
   }, [draft, busy, onInteractionChange]);
   const selected = snapshot.nodes.find(n => n.ref.nativeId === selectedId);
   useEffect(() => {
@@ -126,11 +131,19 @@ export function BookmarkActions({
       invalid = '内容或目标无效，或书签已变化；请取消并重新选择，不会自动改用其他目录。';
     }
   }
-  async function confirm() {
-    if (!request || invalid || lock.current || interactionBlocked) return;
+  async function confirm(nextDraft?: Draft) {
+    if ((!request && !nextDraft) || (!nextDraft && invalid) || lock.current || interactionBlocked) return;
+    let submitted: ConfirmMutation;
+    try {
+      submitted = nextDraft ? requestFor(nextDraft) : request!;
+      preflight(submitted, snapshot);
+    } catch {
+      return;
+    }
     lock.current = true;
+    if (nextDraft) setDraft(nextDraft);
     setBusy(true);
-    const response = await submitMutation(request, send);
+    const response = await submitMutation(submitted, send);
     setResult(response);
     setDraft(undefined);
     setBusy(false);
@@ -154,7 +167,7 @@ export function BookmarkActions({
   const disabled = busy || !!draft || interactionBlocked;
   const destination = draft ? draft.snapshot.nodes.find(n => n.ref.nativeId === draft.selectedId) : selected;
   return (
-    <section className="bookmark-actions" aria-label="书签操作">
+    <section ref={containerRef} className="bookmark-actions" aria-label="书签操作">
       {hideCommands && draft && (draft.mode === 'bookmark' || draft.mode === 'folder') && (
         <p className="hint">目标目录：{destination?.title || '无标题'}</p>
       )}
@@ -228,7 +241,31 @@ export function BookmarkActions({
             <>
               <label className="field">
                 目标目录
-                <Select value={draft.parentId} onChange={event => patch({ parentId: event.target.value, index: 0 })}>
+                <Select
+                  aria-label="目标目录"
+                  value={draft.parentId}
+                  disabled={busy || interactionBlocked}
+                  onChange={event => {
+                    const parentId = event.target.value;
+                    if (!parentId) {
+                      patch({ parentId, index: 0 });
+                      return;
+                    }
+                    const next = {
+                      ...draft,
+                      parentId,
+                      index: Math.max(
+                        0,
+                        (draft.snapshot.nodes.find(node => node.ref.nativeId === parentId)?.childrenIds.length ?? 0) -
+                          (draft.snapshot.nodes.find(node => node.ref.nativeId === draft.selectedId)?.parentId ===
+                          parentId
+                            ? 1
+                            : 0),
+                      ),
+                    };
+                    void confirm(next);
+                  }}
+                >
                   <option value="">请选择目录</option>
                   {draft.snapshot.nodes
                     .filter(n => n.childrenWritable)
@@ -239,16 +276,7 @@ export function BookmarkActions({
                     ))}
                 </Select>
               </label>
-              <label className="field">
-                目标位置（从 0 开始）
-                <input
-                  type="number"
-                  min="0"
-                  step="1"
-                  value={draft.index}
-                  onChange={event => patch({ index: Number(event.target.value) })}
-                />
-              </label>
+              <p className="hint">选择目标目录后立即移动到末尾。</p>
             </>
           )}
           {invalid && <p role="alert">{invalid}</p>}
@@ -256,9 +284,11 @@ export function BookmarkActions({
             <button type="button" disabled={busy} onClick={() => setDraft(undefined)}>
               取消
             </button>
-            <button type="submit" disabled={busy || !!invalid}>
-              确认保存
-            </button>
+            {draft.mode !== 'move' && (
+              <button type="submit" disabled={busy || !!invalid}>
+                确认保存
+              </button>
+            )}
           </div>
         </form>
       )}
@@ -276,11 +306,7 @@ export function BookmarkActions({
           {invalid && <p role="alert">{invalid}</p>}
         </ImpactConfirmDialog>
       )}
-      {busy && (
-        <p role="status" aria-busy="true">
-          正在提交，请勿重复操作。
-        </p>
-      )}
+      {busy && <BusyIndicator label={draft?.mode === 'move' ? '正在移动书签…' : '正在提交，请勿重复操作。'} />}
       {result && <MutationFeedback result={result} />}
     </section>
   );

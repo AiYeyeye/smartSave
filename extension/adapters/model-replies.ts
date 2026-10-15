@@ -20,23 +20,26 @@ export type ModelReply = {
   refused?: string;
   /** Provider stop reason, for the debug trail. */
   finish?: string;
+  /** Explicit provider failure or unsupported terminal state; wins over text. */
+  failed?: string;
 };
 
 /** Where parsing a model reply failed; recorded in the opt-in debug trail only. */
 export class ModelParseError extends Error {
   constructor(
-    readonly stage: 'envelope' | 'empty' | 'incomplete' | 'refused' | 'json' | 'validate',
+    readonly stage: 'envelope' | 'empty' | 'incomplete' | 'refused' | 'provider' | 'json' | 'validate',
     readonly issue?: string,
+    readonly detail?: 'output-limit',
   ) {
     super(stage);
   }
 }
 
-type Json = Record<string, unknown>;
-const obj = (value: unknown): Json =>
+export type Json = Record<string, unknown>;
+export const obj = (value: unknown): Json =>
   value && typeof value === 'object' && !Array.isArray(value) ? (value as Json) : {};
-const arr = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
-const str = (value: unknown): string | undefined => (typeof value === 'string' ? value : undefined);
+export const arr = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
+export const str = (value: unknown): string | undefined => (typeof value === 'string' ? value : undefined);
 
 /** OpenAI-style content: a string, or an array of { type, text } parts (some proxies), or null. */
 function contentText(content: unknown, accept: (type: string | undefined) => boolean): string {
@@ -53,7 +56,10 @@ function contentText(content: unknown, accept: (type: string | undefined) => boo
 function chatCompletions(raw: unknown): ModelReply {
   const choices = arr(obj(raw).choices);
   if (!choices.length) throw new ModelParseError('envelope', 'no choices');
-  const choice = obj(choices[0]);
+  const choice = obj(
+    choices.find(value => obj(value).index === 0) ?? choices.find(value => obj(value).index === undefined),
+  );
+  if (!Object.keys(choice).length) throw new ModelParseError('envelope', 'no selected choice');
   const message = obj(choice.message);
   const finish = str(choice.finish_reason);
   const text = contentText(message.content, type => type === undefined || type === 'text' || type === 'output_text');
@@ -61,13 +67,14 @@ function chatCompletions(raw: unknown): ModelReply {
   return {
     text,
     finish,
-    truncated: finish === 'length',
+    truncated: finish === 'length' || choice.finish_reason === null,
     refused: refusal || (finish === 'content_filter' ? 'content_filter' : undefined),
+    failed: finish && !['stop', 'length', 'content_filter'].includes(finish) ? finish : undefined,
   };
 }
 
 /** Text of one content part, tolerating the shapes proxies emit ({text}, {text:{value}}, {value}, {json}). */
-function partText(part: Json): string {
+export function partText(part: Json): string {
   if (typeof part.text === 'string') return part.text;
   const nested = str(obj(part.text).value);
   if (nested !== undefined) return nested;
@@ -78,34 +85,47 @@ function partText(part: Json): string {
   return '';
 }
 
-const NON_ANSWER_PARTS = new Set(['reasoning', 'reasoning_text', 'summary_text', 'refusal']);
+const ANSWER_PARTS = new Set(['text', 'output_text', 'json']);
 
 function responses(raw: unknown): ModelReply {
   const record = obj(raw);
   const status = str(record.status);
   const incomplete = str(obj(record.incomplete_details).reason);
-  let text = str(record.output_text) ?? '';
+  let text: string;
   let refused: string | undefined;
-  if (!text.trim()) {
+  let itemFailure: string | undefined;
+  let itemIncomplete = false;
+  {
     const texts: string[] = [];
     for (const item of arr(record.output)) {
       const entry = obj(item);
       // Reasoning items carry summaries, not the answer.
       if (entry.type !== undefined && entry.type !== 'message') continue;
+      if (entry.role !== undefined && entry.role !== 'assistant') continue;
+      const itemStatus = str(entry.status);
+      if (itemStatus === 'incomplete') itemIncomplete = true;
+      else if (itemStatus && itemStatus !== 'completed') itemFailure = itemStatus;
       if (typeof entry.content === 'string') texts.push(entry.content);
       for (const part of arr(entry.content)) {
         const p = obj(part);
         if (p.type === 'refusal') refused = str(p.refusal) ?? 'refusal';
-        else if (!NON_ANSWER_PARTS.has(String(p.type))) texts.push(partText(p));
+        else if (p.type === undefined || ANSWER_PARTS.has(String(p.type))) texts.push(partText(p));
       }
       // Some gateways put the text straight on the message item.
-      if (!texts.join('').trim() && typeof entry.text === 'string') texts.push(entry.text);
+      if (!arr(entry.content).length && typeof entry.text === 'string') texts.push(entry.text);
     }
     text = texts.join('');
   }
+  if (!text.trim()) text = str(record.output_text) ?? '';
   if (!text.trim() && !refused && !arr(record.output).length && status === undefined)
     throw new ModelParseError('envelope', 'no output');
-  return { text, finish: incomplete ?? status, truncated: status === 'incomplete', refused };
+  return {
+    text,
+    finish: incomplete ?? status,
+    truncated: status === 'incomplete' || itemIncomplete,
+    refused,
+    failed: itemFailure ?? (status && !['completed', 'incomplete'].includes(status) ? status : undefined),
+  };
 }
 
 function anthropic(raw: unknown): ModelReply {
@@ -118,19 +138,33 @@ function anthropic(raw: unknown): ModelReply {
       return b.type === 'text' ? (str(b.text) ?? '') : '';
     })
     .join('');
-  return { text, finish, truncated: finish === 'max_tokens', refused: finish === 'refusal' ? 'refusal' : undefined };
+  return {
+    text,
+    finish,
+    truncated: record.stop_reason === null || ['max_tokens', 'model_context_window_exceeded'].includes(finish ?? ''),
+    refused: finish === 'refusal' ? 'refusal' : undefined,
+    failed:
+      finish &&
+      !['end_turn', 'stop_sequence', 'max_tokens', 'model_context_window_exceeded', 'refusal'].includes(finish)
+        ? finish
+        : undefined,
+  };
 }
 
 const GOOGLE_BLOCKS = new Set(['SAFETY', 'RECITATION', 'BLOCKLIST', 'PROHIBITED_CONTENT', 'SPII', 'LANGUAGE', 'OTHER']);
 function google(raw: unknown): ModelReply {
   const record = obj(raw);
+  const block = str(obj(record.promptFeedback).blockReason);
+  if (block && block !== 'BLOCK_REASON_UNSPECIFIED')
+    return { text: '', truncated: false, refused: `prompt ${block}`, finish: block };
   const candidates = arr(record.candidates);
   if (!candidates.length) {
-    const block = str(obj(record.promptFeedback).blockReason);
-    if (block) return { text: '', truncated: false, refused: `prompt ${block}`, finish: block };
     throw new ModelParseError('envelope', 'no candidates');
   }
-  const candidate = obj(candidates[0]);
+  const candidate = obj(
+    candidates.find(value => obj(value).index === 0) ?? candidates.find(value => obj(value).index === undefined),
+  );
+  if (!Object.keys(candidate).length) throw new ModelParseError('envelope', 'no selected candidate');
   const finish = str(candidate.finishReason);
   const text = arr(obj(candidate.content).parts)
     .map(part => {
@@ -143,6 +177,7 @@ function google(raw: unknown): ModelReply {
     finish,
     truncated: finish === 'MAX_TOKENS',
     refused: finish && GOOGLE_BLOCKS.has(finish) ? finish : undefined,
+    failed: finish && finish !== 'STOP' && finish !== 'MAX_TOKENS' && !GOOGLE_BLOCKS.has(finish) ? finish : undefined,
   };
 }
 
@@ -155,6 +190,13 @@ function ollama(raw: unknown): ModelReply {
 }
 
 export function readModelReply(adapter: ModelConfig['adapter'], raw: unknown): ModelReply {
+  const record = obj(raw);
+  if (record.error != null || record.type === 'error')
+    return {
+      text: '',
+      truncated: false,
+      failed: str(obj(record.error).code) ?? str(obj(record.error).type) ?? 'provider-error',
+    };
   switch (adapter) {
     case 'openai-responses':
       return responses(raw);
@@ -172,10 +214,21 @@ export function readModelReply(adapter: ModelConfig['adapter'], raw: unknown): M
 
 /** The answer text, or a ModelParseError that says why there is none. */
 export function extractAssistantText(adapter: ModelConfig['adapter'], raw: unknown): string {
-  const reply = readModelReply(adapter, raw);
-  if (reply.text.trim()) return reply.text;
+  return completedReplyText(readModelReply(adapter, raw));
+}
+
+/** Never parse usable-looking partial JSON before the provider outcome. */
+export function completedReplyText(reply: ModelReply): string {
+  // Some gateways label an incomplete snapshot response.completed. Keep rejecting it,
+  // but preserve the actionable budget stop instead of hiding it behind the label mismatch.
+  const budgetStop =
+    reply.truncated && ['max_output_tokens', 'length', 'max_tokens', 'MAX_TOKENS'].includes(reply.finish ?? '');
+  if (budgetStop && !reply.refused && (!reply.failed || reply.failed === 'contradictory-completion'))
+    throw new ModelParseError('incomplete', `finish=${reply.finish}`, 'output-limit');
+  if (reply.failed) throw new ModelParseError('provider', `finish=${reply.failed}`);
   if (reply.refused) throw new ModelParseError('refused', `${reply.refused}; finish=${reply.finish ?? '?'}`);
   if (reply.truncated) throw new ModelParseError('incomplete', `finish=${reply.finish ?? '?'}`);
+  if (reply.text.trim()) return reply.text;
   throw new ModelParseError('empty', `finish=${reply.finish ?? '?'}`);
 }
 

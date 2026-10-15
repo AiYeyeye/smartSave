@@ -30,6 +30,8 @@ export type ConnectedService = {
   enabled: string[];
   vendorId?: string;
   timeoutMs?: number;
+  streaming?: boolean;
+  maxOutputTokens?: number;
 };
 
 export type FeatureAssignment = {

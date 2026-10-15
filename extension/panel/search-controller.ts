@@ -4,22 +4,50 @@ import type { TreeState } from '../domain/node-reference';
 import { SearchIndex, type SearchHit } from '../domain/search-index';
 import { applySearchOrder, searchCandidates } from '../domain/search-rerank';
 import { openUrl } from '../domain/open-url';
+import { cancellable } from '../domain/cancellable';
 export interface SearchState {
   query: string;
   hits: SearchHit[];
   status: 'loading' | 'ready' | 'error';
   message: string;
   reranking: boolean;
+  connectionReady: boolean;
+  connectionFailed: boolean;
+  connectionMessage: string;
+}
+const PREPARE_TIMEOUT_MS = 10_000;
+function failureMessage(reason: string): string {
+  const messages: Record<string, string> = {
+    'prepare-timeout': '读取书签或模型设置超时，请重试。',
+    'tree-unavailable': '书签正在更新，请连接恢复后重试。',
+    timeout: '模型搜索超时，请重试或调整模型超时设置。',
+    unavailable: '请先在 AI 服务中为“智能搜索”指定模型。',
+    'no-allowed-candidates': '没有允许用于 AI 搜索的书签，请检查隐私排除设置。',
+    'payload-too-large': '书签资料超过单次模型请求限额，请通过隐私排除设置缩小 AI 搜索范围。',
+    permission: '模型服务尚未授权，请检查 AI 服务权限。',
+    'stale-context': '搜索期间书签或设置已变化，请重新搜索。',
+    schema: '模型返回的搜索结果无效，请重试。',
+  };
+  return `AI 搜索未完成，保留本地结果。${messages[reason] ?? '请检查模型连接后重试。'}`;
 }
 export class SearchController {
   private index?: SearchIndex;
   private tree: TreeState = { status: 'loading' };
   private local: SearchHit[] = [];
+  private semantic?: { installationId: string; hits: SearchHit[] };
   private generation = 0;
-  private authorityGeneration = 0;
-  private authorityReady = true;
+  private active?: AbortController;
   private readonly stop?: () => void;
-  private state: SearchState = { query: '', hits: [], status: 'loading', message: '', reranking: false };
+  private state: SearchState = {
+    query: '',
+    hits: [],
+    status: 'loading',
+    message: '',
+    reranking: false,
+    connectionReady: false,
+    connectionFailed: false,
+    connectionMessage: '',
+  };
   constructor(
     private readonly emit: (state: SearchState) => void,
     private readonly authority?: ModelAuthority,
@@ -29,17 +57,6 @@ export class SearchController {
     this.stop = authority?.subscribe(change => {
       if (change === 'tree') return;
       this.invalidate('设置或权限已变化，已恢复本地结果。');
-      const generation = ++this.authorityGeneration;
-      this.authorityReady = false;
-      void authority
-        .read()
-        .then(() => {
-          if (generation !== this.authorityGeneration) return;
-          this.authorityReady = true;
-        })
-        .catch(() => {
-          /* Optional AI settings failure must not clear healthy local results. */
-        });
     });
   }
   private publish() {
@@ -47,7 +64,10 @@ export class SearchController {
   }
   private invalidate(message = '') {
     this.generation++;
+    this.active?.abort();
+    this.active = undefined;
     this.transport?.cancel();
+    this.semantic = undefined;
     this.state = { ...this.state, hits: this.local, reranking: false, message };
     this.publish();
   }
@@ -55,17 +75,40 @@ export class SearchController {
   setTree(tree: TreeState) {
     this.tree = structuredClone(tree);
     try {
-      this.index = tree.status === 'ready' ? new SearchIndex(tree.snapshot) : undefined;
+      if (this.tree.status === 'ready') this.index = new SearchIndex(this.tree.snapshot);
     } catch {
       this.tree = { status: 'error', message: '搜索索引不可用，请等待书签刷新。' };
       this.index = undefined;
     }
     this.local = this.index?.query(this.state.query) ?? [];
+    let hits = this.local;
+    if (this.tree.status === 'ready' && this.semantic) {
+      const current = new Map(this.index?.all().map(hit => [hit.id, hit]));
+      this.semantic.hits =
+        this.semantic.installationId === this.tree.snapshot.installationId
+          ? this.semantic.hits.filter(hit => {
+              const live = current.get(hit.id);
+              return live?.title === hit.title && live.url === hit.url && live.path === hit.path;
+            })
+          : [];
+      const ids = new Set(this.semantic.hits.map(hit => hit.id));
+      hits = [...this.semantic.hits, ...this.local.filter(hit => !ids.has(hit.id))];
+    }
     this.state = {
       ...this.state,
-      status: this.tree.status,
-      hits: this.local,
-      message: this.tree.status === 'error' ? this.tree.message : this.state.reranking ? this.state.message : '',
+      status: this.index ? 'ready' : this.tree.status,
+      hits: tree.status === 'ready' || !this.index ? hits : this.state.hits,
+      connectionReady: this.tree.status === 'ready',
+      connectionFailed: this.tree.status === 'error',
+      connectionMessage:
+        this.tree.status === 'error'
+          ? `${this.tree.message}${this.index ? ' 仍可搜索上次读取的数据。' : ''}`
+          : this.tree.status === 'loading'
+            ? this.index
+              ? '正在更新书签；仍可搜索上次读取的数据，连接恢复后可打开结果。'
+              : '正在读取书签…'
+            : '',
+      message: this.state.reranking ? this.state.message : '',
     };
     this.publish();
   }
@@ -75,53 +118,67 @@ export class SearchController {
     this.invalidate();
   }
   cancel() {
-    this.invalidate('已取消 AI 重排，保留本地结果。');
+    this.invalidate('已取消 AI 搜索，保留本地结果。');
   }
   async rerank() {
     this.invalidate();
     const generation = this.generation;
-    if (
-      !this.authorityReady ||
-      !this.authority ||
-      !this.transport ||
-      !this.state.query.trim() ||
-      !this.local.length ||
-      this.tree.status !== 'ready'
-    ) {
-      this.state.message = 'AI 重排不可用，保留本地结果。';
+    if (!this.authority || !this.transport || !this.state.query.trim() || this.tree.status !== 'ready') {
+      this.state.message = 'AI 搜索暂不可用，请等待书签连接恢复并检查模型配置。';
       this.publish();
       return;
     }
     this.state.reranking = true;
     this.publish();
+    const started = Date.now();
+    const operation = new AbortController();
+    this.active = operation;
+    const timer = setTimeout(() => operation.abort(Error('prepare-timeout')), PREPARE_TIMEOUT_MS);
     try {
-      const context = await this.authority.read();
+      const context = await cancellable(this.authority.read(), operation.signal);
       if (generation !== this.generation) return;
       if (!context.config) throw Error('unavailable');
-      const candidates = searchCandidates(context.tree, context.privacy, this.local);
+      clearTimeout(timer);
+      const remaining = context.config.timeoutMs - (Date.now() - started);
+      if (remaining <= 0) throw Error('timeout');
+      const candidates = searchCandidates(context.tree, context.privacy);
       if (!candidates.length) throw Error('no-allowed-candidates');
-      const result = await this.transport.run({
-        ...context,
-        config: context.config,
-        request: { task: 'search', query: this.state.query, itemIds: candidates, folderIds: [] },
-      });
-      if (generation !== this.generation) return;
-      if (result.status !== 'completed' || !('rankedIds' in result.output)) throw Error('rerank-failed');
-      // Candidates removed from the tree while the model answered are simply no longer rankable.
-      const present = new Set(this.local.map(hit => hit.id));
-      this.state.hits = applySearchOrder(
-        this.local,
-        candidates,
-        result.output.rankedIds.filter(id => present.has(id)),
+      const result = await cancellable(
+        this.transport.run({
+          ...context,
+          config: context.config,
+          timeoutMs: remaining,
+          request: { task: 'search', query: this.state.query, itemIds: candidates, folderIds: [] },
+          signal: operation.signal,
+        }),
+        operation.signal,
       );
-      this.state.message = 'AI 已重排本地候选；未参与项目仍保留。';
-    } catch {
+      if (generation !== this.generation) return;
+      if (result.status !== 'completed') throw Error(result.reason);
+      if (!('rankedIds' in result.output)) throw Error('schema');
+      if (this.tree.status !== 'ready') throw Error('tree-unavailable');
+      // Candidates removed from the tree while the model answered are simply no longer rankable.
+      const catalog = this.index?.all() ?? [];
+      const present = new Set(catalog.map(hit => hit.id));
+      const rankedIds = result.output.rankedIds.filter(id => present.has(id));
+      this.state.hits = applySearchOrder(this.local, candidates, rankedIds, catalog);
+      const selected = new Set(rankedIds);
+      this.semantic = {
+        installationId: this.tree.snapshot.installationId,
+        hits: this.state.hits.filter(hit => selected.has(hit.id)),
+      };
+      this.state.message = rankedIds.length
+        ? `AI 找到 ${rankedIds.length} 条相关书签，已排在前面；关键词结果仍保留。`
+        : 'AI 没有找到相关书签，保留关键词结果。可以补充用途或大致内容再试。';
+    } catch (error) {
       if (generation === this.generation) {
         this.state.hits = this.local;
-        this.state.message = 'AI 重排未完成，保留本地结果。请检查模型配置或重试。';
+        this.state.message = failureMessage(error instanceof Error ? error.message : 'unknown');
       }
     } finally {
+      clearTimeout(timer);
       if (generation === this.generation) {
+        this.active = undefined;
         this.state.reranking = false;
         this.publish();
       }
@@ -134,7 +191,7 @@ export class SearchController {
   }
   dispose() {
     this.generation++;
-    this.authorityGeneration++;
+    this.active?.abort();
     this.stop?.();
     this.transport?.dispose();
   }

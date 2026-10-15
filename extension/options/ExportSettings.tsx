@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { WorkflowSteps } from '../ui/WorkflowSteps';
+import { ExportTreeSelector } from './ExportTreeSelector';
 import { createExportProjection, type ExportScope } from '../domain/export-projection';
 import type { NodeRef, TreeState } from '../domain/node-reference';
 import { fileOutputAncestry } from '../domain/file-output-scope';
@@ -30,6 +32,8 @@ export function ExportSettings({ visible }: { visible: boolean }) {
   const currentTree = useRef(tree);
   currentTree.current = tree;
   const [scope, setScope] = useState<ExportScope>({ roots: [], excludedFolders: [] });
+  const [step, setStep] = useState(1);
+  const [format, setFormat] = useState<keyof typeof serializers>('HTML');
   const [consent, setConsent] = useState(false);
   const [record, setRecord] = useState<FileOutputRecord>();
   const [candidate, setCandidate] = useState<GestureHandle>();
@@ -37,7 +41,7 @@ export function ExportSettings({ visible }: { visible: boolean }) {
   const locked = useRef(false);
   const revision = useRef(0);
   const mounted = useRef(true);
-  const [message, setMessage] = useState('请选择导出目录；导出排除与 AI 设置相互独立。');
+  const [message, setMessage] = useState('勾选要导出的文件夹或书签，再点击下一步。');
   const framed = typeof window !== 'undefined' && window.top !== window;
   const panelDocument = typeof location !== 'undefined' && /panel\/index\.html$/.test(location.pathname);
   const supported =
@@ -69,25 +73,30 @@ export function ExportSettings({ visible }: { visible: boolean }) {
     };
     // The store is page-local and stable; refresh is never an automatic writer.
   }, [store]);
-  const folders =
-    tree.status === 'ready' ? tree.snapshot.nodes.filter(n => n.ref.kind === 'folder' && n.parentId !== undefined) : [];
+  const nodes = tree.status === 'ready' ? tree.snapshot.nodes : [];
   const snapshot = tree.status === 'ready' ? tree.snapshot : undefined;
   // Projection validation walks the whole tree; recompute only when the snapshot identity or the scope changes, not on every render.
-  const scopeError = useMemo(() => {
+  const selection = useMemo(() => {
     try {
       if (!snapshot) throw Error('loading');
-      createExportProjection(snapshot, scope, new Date().toISOString());
-      return '';
+      const projection = createExportProjection(snapshot, scope, new Date().toISOString());
+      let bookmarks = 0;
+      let folders = 0;
+      const pending = [...projection.document.roots];
+      while (pending.length) {
+        const node = pending.pop()!;
+        if (node.type === 'bookmark') bookmarks++;
+        else {
+          folders++;
+          pending.push(...node.children);
+        }
+      }
+      return { error: '', bookmarks, folders };
     } catch {
-      return '范围无效或书签尚未就绪：请明确选择现有目录，不会自动替换已删除的根。';
+      return { error: '请勾选要导出的内容。若所选目录已被删除，请重新选择。', bookmarks: 0, folders: 0 };
     }
   }, [snapshot, scope]);
-  function toggle(field: keyof ExportScope, ref: NodeRef, checked: boolean) {
-    setScope(old => ({
-      ...old,
-      [field]: checked ? [...old[field], ref] : old[field].filter(value => !sameRef(value, ref)),
-    }));
-  }
+  const scopeError = selection.error;
   function begin() {
     if (locked.current) return false;
     locked.current = true;
@@ -236,118 +245,156 @@ export function ExportSettings({ visible }: { visible: boolean }) {
       finish();
     }
   }
-  const label = (ref: NodeRef) => folders.find(n => sameRef(n.ref, ref))?.title ?? `失效目录 ${ref.nativeId}`;
+  const label = (ref: NodeRef) => nodes.find(n => sameRef(n.ref, ref))?.title ?? `失效内容 ${ref.nativeId}`;
   return (
-    <section hidden={!visible} className="surface" aria-label="导出设置" aria-busy={busy}>
+    <section hidden={!visible} className="surface workflow-workbench" aria-label="导出设置" aria-busy={busy}>
       <h2>导出书签</h2>
-      <p>
-        JSON、HTML、Markdown 使用同一只读快照；保留原始 URL 和空目录，不包含模型、密钥、规则或日志。不是完整恢复备份。
-      </p>
-      <fieldset disabled={busy} className="scope-list">
-        <legend>导出范围（独立于 AI）</legend>
-        {folders.map(node => (
-          <div key={node.ref.nativeId} className="scope-row">
-            <span>
-              {node.title || '未命名目录'}（{node.ref.nativeId}）
-            </span>
-            <label>
+      <p>选好内容和格式，即可保存到电脑。</p>
+      <WorkflowSteps labels={['选择内容', '选择格式', '确认导出']} current={step} />
+      <div hidden={step !== 1} className="workflow-stage">
+        <h3>选择要导出的内容</h3>
+        <p className="hint">勾选文件夹可选中其中全部内容；展开后也能单独勾选书签。</p>
+        {tree.status === 'loading' && <p role="status">正在读取书签…</p>}
+        {tree.status === 'error' && <p role="alert">{tree.message}</p>}
+        {snapshot && <ExportTreeSelector tree={snapshot} scope={scope} disabled={busy} onChange={setScope} />}
+        <div className="workflow-footer">
+          <span className="hint">
+            已选 {selection.bookmarks} 条书签 · {selection.folders} 个目录
+          </span>
+          <button disabled={busy || !scope.roots.length} onClick={() => setScope({ roots: [], excludedFolders: [] })}>
+            清空选择
+          </button>
+          <button className="primary" disabled={busy || !!scopeError} onClick={() => setStep(2)}>
+            下一步：选择格式
+          </button>
+        </div>
+      </div>
+      <div hidden={step !== 2} className="workflow-stage">
+        <h3>选择导出格式</h3>
+        <div className="workflow-choices">
+          {(['HTML', 'Markdown', 'JSON'] as const).map(value => (
+            <label className="workflow-choice" key={value}>
               <input
-                type="checkbox"
-                aria-label={`导出 ${node.title}`}
-                checked={scope.roots.some(ref => sameRef(ref, node.ref))}
-                onChange={e => toggle('roots', node.ref, e.target.checked)}
+                type="radio"
+                name="export-format"
+                checked={format === value}
+                disabled={busy}
+                onChange={() => setFormat(value)}
               />
-              包含目录
+              <span>
+                <strong>
+                  {value}
+                  {value === 'HTML' ? '（推荐）' : ''}
+                </strong>
+                <small>
+                  {value === 'HTML'
+                    ? '可导入 Chrome、Edge 等浏览器'
+                    : value === 'Markdown'
+                      ? '适合阅读、笔记和分享'
+                      : '保留完整书签数据，便于再次导入'}
+                </small>
+              </span>
             </label>
-            <label>
-              <input
-                type="checkbox"
-                aria-label={`排除 ${node.title}`}
-                checked={scope.excludedFolders.some(ref => sameRef(ref, node.ref))}
-                onChange={e => toggle('excludedFolders', node.ref, e.target.checked)}
-              />
-              排除子树
-            </label>
-          </div>
-        ))}
-        <p>
-          已选根：{scope.roots.map(label).join('、') || '无'}；排除：
-          {scope.excludedFolders.map(label).join('、') || '无'}
+          ))}
+        </div>
+        <div className="workflow-footer">
+          <button disabled={busy} onClick={() => setStep(1)}>
+            上一步
+          </button>
+          <button className="primary" disabled={busy || !!scopeError} onClick={() => setStep(3)}>
+            下一步：确认导出
+          </button>
+        </div>
+      </div>
+      <div hidden={step !== 3} className="workflow-stage">
+        <h3>确认并下载</h3>
+        <p className="workflow-summary">
+          {selection.bookmarks} 条书签 · {selection.folders} 个目录 · {format} 格式
         </p>
-        <button onClick={() => setScope({ roots: [], excludedFolders: [] })}>清空范围并重新选择</button>
-      </fieldset>
-      {scopeError && <p role="alert">{scopeError}</p>}
-      <div className="actions">
-        {(Object.keys(serializers) as (keyof typeof serializers)[]).map(format => (
-          <button key={format} disabled={busy || !!scopeError} onClick={() => manual(format)}>
+        <p className="hint">保留目录层级和原始链接。点击下载后，在浏览器下载记录中查看文件。</p>
+        <div className="workflow-footer">
+          <button disabled={busy} onClick={() => setStep(2)}>
+            上一步
+          </button>
+          <button className="primary" disabled={busy || !!scopeError} onClick={() => manual(format)}>
             下载 {format}
           </button>
-        ))}
+        </div>
       </div>
-      <h3>自动 JSON 专用文件</h3>
-      <p>
-        首次授权后会覆盖此专用输出文件及外部修改，不反向同步，不逐次确认，不自动换路径。后台是唯一自动写入者；浏览器关闭时不运行。文件关闭成功且持久回执匹配后才记录成功；中断可能已更新文件但没有成功回执。
-      </p>
-      <label className="check">
-        <input type="checkbox" checked={consent} disabled={busy} onChange={e => setConsent(e.target.checked)} />
-        我同意专用输出覆盖规则
-      </label>
-      {!supported && <p role="alert">此环境不支持自动文件选择或持久句柄；仍可手动下载。不承诺后台文件输出。</p>}
-      <p>
-        当前文件：
-        {(record?.handle as GestureHandle | undefined)?.name ?? (record ? '已授权文件（名称不可用）' : '未配置')}
-      </p>
-      <p>
-        当前输出根：{record?.scope.roots.map(label).join('、') || '无'}；排除：
-        {record?.scope.excludedFolders.map(label).join('、') || '无'}
-      </p>
-      <p>
-        持久状态：{record?.status ?? '未配置'}；最近成功：{record?.lastSuccess ?? '无'}
-      </p>
-      {record && ['paused', 'needs-permission', 'scope-invalid'].includes(record.status) && (
-        <p role="alert">
-          输出已暂停。权限或文件错误请明确重新授权；范围失效请清空并重新选择目录，再选择文件启用。不会自动重试或回退全树。
-        </p>
-      )}
-      <div className="actions">
-        <button disabled={busy || !supported || !consent || !!scopeError} onClick={pick}>
-          选择专用 JSON 文件
-        </button>
-        {candidate && (
-          <>
-            <span>候选文件：{candidate.name ?? '名称不可用'}</span>
-            <button
-              disabled={busy || !consent || !!scopeError || !candidate.requestPermission}
-              onClick={() => authorize(true)}
-            >
-              授权并启用所选文件
-            </button>
-            <button disabled={busy} onClick={() => setCandidate(undefined)}>
-              放弃候选文件
-            </button>
-          </>
-        )}
-        {candidate && !candidate.requestPermission && <p role="alert">此句柄不支持显式授权，不能启用自动输出。</p>}
-        <button
-          disabled={
-            busy ||
-            !consent ||
-            !record?.enabled ||
-            record.status === 'scope-invalid' ||
-            !(record.handle as GestureHandle).requestPermission
-          }
-          onClick={() => authorize(false)}
-        >
-          重新授权并补写当前快照
-        </button>
-        <button disabled={busy || !supported} onClick={() => void stop()}>
-          停止自动输出
-        </button>
-        <button disabled={busy} onClick={() => void refresh()}>
-          刷新输出状态
-        </button>
-      </div>
+      {scopeError && !!scope.roots.length && <p role="alert">{scopeError}</p>}
       <p role="status">{message}</p>
+      <details className="workflow-help">
+        <summary>导出内容说明</summary>
+        <p>JSON、HTML、Markdown 保留原始 URL 和空目录，不包含模型、密钥、规则或日志。导出文件不是完整恢复备份。</p>
+      </details>
+      <details className="workflow-help">
+        <summary>自动更新 JSON 文件（可选）</summary>
+        <h3>自动 JSON 专用文件</h3>
+        <p>
+          首次授权后会覆盖此专用输出文件及外部修改，不反向同步，不逐次确认，不自动换路径。后台是唯一自动写入者；浏览器关闭时不运行。文件关闭成功且持久回执匹配后才记录成功；中断可能已更新文件但没有成功回执。
+        </p>
+        <label className="check">
+          <input type="checkbox" checked={consent} disabled={busy} onChange={e => setConsent(e.target.checked)} />
+          我同意专用输出覆盖规则
+        </label>
+        {!supported && <p role="alert">此环境不支持自动文件选择或持久句柄；仍可手动下载。不承诺后台文件输出。</p>}
+        <p>
+          当前文件：
+          {(record?.handle as GestureHandle | undefined)?.name ?? (record ? '已授权文件（名称不可用）' : '未配置')}
+        </p>
+        <p>
+          当前输出根：{record?.scope.roots.map(label).join('、') || '无'}；排除：
+          {[...(record?.scope.excludedFolders ?? []), ...(record?.scope.excludedBookmarks ?? [])]
+            .map(label)
+            .join('、') || '无'}
+        </p>
+        <p>
+          持久状态：{record?.status ?? '未配置'}；最近成功：{record?.lastSuccess ?? '无'}
+        </p>
+        {record && ['paused', 'needs-permission', 'scope-invalid'].includes(record.status) && (
+          <p role="alert">
+            输出已暂停。权限或文件错误请明确重新授权；范围失效请清空并重新选择目录，再选择文件启用。不会自动重试或回退全树。
+          </p>
+        )}
+        <div className="actions">
+          <button disabled={busy || !supported || !consent || !!scopeError} onClick={pick}>
+            选择专用 JSON 文件
+          </button>
+          {candidate && (
+            <>
+              <span>候选文件：{candidate.name ?? '名称不可用'}</span>
+              <button
+                disabled={busy || !consent || !!scopeError || !candidate.requestPermission}
+                onClick={() => authorize(true)}
+              >
+                授权并启用所选文件
+              </button>
+              <button disabled={busy} onClick={() => setCandidate(undefined)}>
+                放弃候选文件
+              </button>
+            </>
+          )}
+          {candidate && !candidate.requestPermission && <p role="alert">此句柄不支持显式授权，不能启用自动输出。</p>}
+          <button
+            disabled={
+              busy ||
+              !consent ||
+              !record?.enabled ||
+              record.status === 'scope-invalid' ||
+              !(record.handle as GestureHandle).requestPermission
+            }
+            onClick={() => authorize(false)}
+          >
+            重新授权并补写当前快照
+          </button>
+          <button disabled={busy || !supported} onClick={() => void stop()}>
+            停止自动输出
+          </button>
+          <button disabled={busy} onClick={() => void refresh()}>
+            刷新输出状态
+          </button>
+        </div>
+      </details>
     </section>
   );
 }

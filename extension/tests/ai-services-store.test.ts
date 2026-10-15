@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { AiServicesStore } from '../persistence/ai-services';
 import { SettingsStore } from '../persistence/settings';
+import { resolveSaveRoute } from '../background/native-bookmark-ingress';
 
 function memoryStorage() {
   const data: Record<string, unknown> = {};
@@ -37,6 +38,76 @@ const sampleService = {
 };
 
 describe('AiServicesStore', () => {
+  it('retains other temporary keys through same-owner assignments and service edits without persisting them', async () => {
+    const { storage, data } = memoryStorage();
+    const store = new AiServicesStore(storage, run => run());
+    await store.load();
+    await store.upsertService(sampleService, 'temporary-one', false);
+    await store.upsertService({ ...sampleService, id: 'c2' }, 'temporary-two', false);
+    await store.saveFeatures([{ id: 'save', name: 'Save', desc: '', connId: 'c1', modelId: 'model' }]);
+    await store.load();
+    expect(store.credential('c1')).toBe('temporary-one');
+    expect(store.credential('c2')).toBe('temporary-two');
+    await store.removeService('c2');
+    expect(store.credential('c1')).toBe('temporary-one');
+    expect(JSON.stringify(data)).not.toContain('temporary-');
+    // A different owner changing persisted state must still revoke this owner's stale key.
+    const other = new AiServicesStore(storage, run => run());
+    await other.load();
+    await other.upsertService(sampleService, '', false);
+    await store.load();
+    expect(store.credential('c1')).toBe('');
+    store.dispose();
+    other.dispose();
+  });
+  it('round-trips output budgets through persistence, export, import, primary settings and native save routing', async () => {
+    const { storage } = memoryStorage();
+    const store = new AiServicesStore(storage, run => run());
+    await store.load();
+    const service = { ...sampleService, mode: 'openai-responses' as const, maxOutputTokens: 64000 };
+    await store.upsertService(service, 'keep-key', true);
+    await store.saveFeatures([
+      { id: 'save', name: 'save', desc: '', connId: service.id, modelId: service.enabled[0]! },
+    ]);
+    const backup = store.exportConfig();
+    expect(backup.services[0]?.maxOutputTokens).toBe(64000);
+    await store.upsertService({ ...service, maxOutputTokens: 32000 }, 'keep-key', true);
+    expect(store.credential(service.id)).toBe('keep-key');
+    await store.replaceAll(backup.services, backup.features);
+    expect(store.snapshotServices().services[0]?.maxOutputTokens).toBe(64000);
+    const settings = new SettingsStore(storage, run => run());
+    await store.syncPrimaryToSettings(settings);
+    expect((await settings.snapshot()).config?.maxOutputTokens).toBe(64000);
+    const reloaded = new AiServicesStore(storage, run => run());
+    await reloaded.load();
+    expect(reloaded.snapshotServices().services[0]?.maxOutputTokens).toBe(64000);
+    await reloaded.upsertService(service, 'keep-key', true);
+    expect(await resolveSaveRoute(reloaded)).toMatchObject({ config: { maxOutputTokens: 64000 } });
+    await expect(store.upsertService({ ...service, maxOutputTokens: 0 }, '', false)).rejects.toThrow();
+    reloaded.dispose();
+    store.dispose();
+    settings.dispose();
+  });
+  it('preserves explicit JSON mode through credentials, export/import and primary synchronization', async () => {
+    const { storage } = memoryStorage();
+    const store = new AiServicesStore(storage, run => run());
+    await store.load();
+    await store.upsertService({ ...sampleService, streaming: false }, 'keep-key', true);
+    const backup = store.exportConfig();
+    expect(backup.services[0]?.streaming).toBe(false);
+    const settings = new SettingsStore(storage, run => run());
+    await settings.load();
+    await store.syncPrimaryToSettings(settings);
+    expect((await settings.snapshot()).config?.streaming).toBe(false);
+    await store.upsertService({ ...sampleService, streaming: true }, 'keep-key', true);
+    expect(store.credential(sampleService.id)).toBe('keep-key');
+    await store.replaceAll(backup.services, backup.features);
+    expect(store.snapshotServices().services[0]?.streaming).toBe(false);
+    await store.syncPrimaryToSettings(settings);
+    expect((await settings.snapshot()).config?.streaming).toBe(false);
+    store.dispose();
+    settings.dispose();
+  });
   it('persists services and remembers credentials bound to route identity', async () => {
     const { storage, data } = memoryStorage();
     const store = new AiServicesStore(storage, run => run());
@@ -87,7 +158,10 @@ describe('AiServicesStore', () => {
     const store = new AiServicesStore(storage, run => run());
     await store.load();
     await store.upsertService(sampleService, 'sk-old', true);
-    await store.replaceAll([{ ...sampleService, id: 'c2', name: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1' }], []);
+    await store.replaceAll(
+      [{ ...sampleService, id: 'c2', name: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1' }],
+      [],
+    );
     expect(store.credential('c1')).toBe('');
     expect(store.credential('c2')).toBe('');
     expect(store.snapshotServices().services[0]?.id).toBe('c2');

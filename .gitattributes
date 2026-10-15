@@ -1,0 +1,2 @@
+# RFC 4180 fixture must retain CRLF, including its quoted multiline field.
+extension/import/fixtures/bookmarks.csv text eol=crlf
