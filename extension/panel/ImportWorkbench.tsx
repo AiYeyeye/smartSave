@@ -17,6 +17,8 @@ import { ImportController, type ImportSubmission } from './import-controller';
 import { ImportDrafts } from './import-drafts';
 import { Select } from '../ui/Select';
 import { WorkflowSteps } from '../ui/WorkflowSteps';
+import { useI18n } from '../ui/i18n';
+import { importNoticeText, importSourceText, type ImportNotice } from './import-text';
 
 const formats: ImportFormat[] = ['html', 'json', 'csv', 'txt', 'markdown'];
 export function ImportWorkbench({
@@ -28,6 +30,7 @@ export function ImportWorkbench({
   settings?: SettingsStore;
   aiServices?: AiServicesStore;
 }) {
+  const { t, language } = useI18n();
   const [drafts] = useState(() => new ImportDrafts());
   const [store] = useState(() => new ImportCheckpointStore());
   const owner = useRef<{ pipeline: ImportPipeline; controller: ImportController } | undefined>(undefined);
@@ -50,7 +53,7 @@ export function ImportWorkbench({
   const [submission, setSubmission] = useState<ImportSubmission>({ state: 'idle' });
   const result = submission.result;
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState('先选择书签文件，读取完成后点击下一步。');
+  const [message, setMessage] = useState<ImportNotice>('先选择书签文件，读取完成后点击下一步。');
   // User edits drop the unapplied preview locally; only the explicit pause button signals the worker.
   const invalidate = () => {
     owner.current?.controller.invalidatePreview();
@@ -112,7 +115,7 @@ export function ImportWorkbench({
     } catch (error) {
       setMessage(
         error instanceof ImportParseError
-          ? `${error.code}: ${error.message}`
+          ? { kind: 'parse-error', code: error.code, reason: error.message }
           : error instanceof Error &&
               [
                 'import-reclassification-required',
@@ -131,7 +134,7 @@ export function ImportWorkbench({
                 'unsupported-import-checkpoint',
                 'import-checkpoint-unavailable',
               ].includes(error.message)
-            ? `${error.message}：请核对目标、任务及恢复日志，再明确恢复或重新校验；不会自动重试。`
+            ? { kind: 'authority-error', reason: error.message }
             : '操作未获确认；请保留任务并核对恢复记录，不会自动重试。',
       );
     } finally {
@@ -184,7 +187,7 @@ export function ImportWorkbench({
       setMessage(
         response.status === 'classified'
           ? '全量分类完成；请检查整批预览。'
-          : `已暂停：${response.reason}。仅保留已提交的进度。`,
+          : { kind: 'paused', reason: response.reason },
       );
     });
   const selection = checkpoint
@@ -213,25 +216,25 @@ export function ImportWorkbench({
         labels.unshift(current);
         break;
       }
-      labels.unshift(node.title || '根目录');
+      labels.unshift(node.title || t('根目录'));
       current = node.parentId;
     }
     return labels.join(' / ');
   };
   const journalOwned = submission.state === 'journal-owned' || submission.state === 'uncertain';
   return (
-    <section hidden={!visible} className="surface workflow-workbench" aria-label="导入工作台" aria-busy={busy}>
-      <h2>导入书签</h2>
-      <p>读取文件，让 AI 重新分类，检查后再添加到浏览器。</p>
-      <WorkflowSteps labels={['选择文件', '选择目标', '检查预览', '确认导入']} current={step} />
+    <section hidden={!visible} className="surface workflow-workbench" aria-label={t('导入工作台')} aria-busy={busy}>
+      <h2>{t('导入书签')}</h2>
+      <p>{t('读取文件，让 AI 重新分类，检查后再添加到浏览器。')}</p>
+      <WorkflowSteps labels={[t('选择文件'), t('选择目标'), t('检查预览'), t('确认导入')]} current={step} />
       <div hidden={step !== 1} className="workflow-stage">
-        <h3>选择要导入的书签文件</h3>
-        <p className="hint">支持浏览器导出的 HTML，以及 JSON、CSV、TXT、Markdown 文件。</p>
+        <h3>{t('选择要导入的书签文件')}</h3>
+        <p className="hint">{t('支持浏览器导出的 HTML，以及 JSON、CSV、TXT、Markdown 文件。')}</p>
         <label>
-          导入格式
+          {t('导入格式')}
           <Select
             value={format}
-            aria-label="导入格式"
+            aria-label={t('导入格式')}
             disabled={busy}
             onChange={e => {
               invalidate();
@@ -253,7 +256,7 @@ export function ImportWorkbench({
           </Select>
         </label>
         <label>
-          导入文件
+          {t('导入文件')}
           <input
             type="file"
             key={`${format}:${fileRevision}`}
@@ -279,49 +282,46 @@ export function ImportWorkbench({
                 const bytes = new Uint8Array(await file.arrayBuffer());
                 const parsed = await parseImportInWorker(bytes, format, abort.signal);
                 setSource(parsed);
-                setMessage(`文件已读取：${parsed.items.length} 条原始项。点击下一步选择存放目录。`);
+                setMessage({ kind: 'read', count: parsed.items.length });
               });
             }}
           />
         </label>
         {source && (
           <p className="workflow-summary">
-            {fileName || '已读取文件'} · {source.items.length} 条原始项
+            {t('{name} · {count} 条原始项', { name: fileName || t('已读取文件'), count: source.items.length })}
           </p>
         )}
         {source && (
           <details className="workflow-help">
-            <summary>查看文件中的原始条目</summary>
+            <summary>{t('查看文件中的原始条目')}</summary>
             {source.items.map(item => (
-              <p key={item.sourceOrdinal}>
-                来源 {item.sourceOrdinal} · {item.rawURL} · {item.diagnostic ?? '待分类'} ·{' '}
-                {JSON.stringify(item.provenance)} · 原目录 {JSON.stringify(item.oldPath)}
-              </p>
+              <p key={item.sourceOrdinal}>{importSourceText(language, item)}</p>
             ))}
           </details>
         )}
         <div className="workflow-footer">
           <button className="primary" disabled={busy || !source || !settings || !tree} onClick={() => setStep(2)}>
-            下一步：选择目标目录
+            {t('下一步：选择目标目录')}
           </button>
         </div>
-        {!settings && <p role="alert">请先在 AI 服务中配置模型，再开始导入分类。</p>}
-        {!tree && settings && <p role="status">正在连接书签服务，请稍候…</p>}
+        {!settings && <p role="alert">{t('请先在 AI 服务中配置模型，再开始导入分类。')}</p>}
+        {!tree && settings && <p role="status">{t('正在连接书签服务，请稍候…')}</p>}
       </div>
       <div hidden={step !== 2} className="workflow-stage">
-        <h3>书签要放在哪里？</h3>
+        <h3>{t('书签要放在哪里？')}</h3>
         <label>
-          导入目标根
+          {t('导入目标根')}
           <Select
             value={rootId}
-            aria-label="导入目标根"
+            aria-label={t('导入目标根')}
             disabled={busy}
             onChange={e => {
               invalidate();
               setRootId(e.target.value);
             }}
           >
-            <option value="">请选择一个目录</option>
+            <option value="">{t('请选择一个目录')}</option>
             {tree?.nodes
               .filter(n => n.ref.kind === 'folder' && n.childrenWritable)
               .map(n => (
@@ -331,17 +331,17 @@ export function ImportWorkbench({
               ))}
           </Select>
         </label>
-        <p className="hint">AI 会把文件中的书签重新分类到此目录下。检查预览后，才会创建书签。</p>
+        <p className="hint">{t('AI 会把文件中的书签重新分类到此目录下。检查预览后，才会创建书签。')}</p>
         <div className="workflow-footer">
           <button disabled={busy || journalOwned} onClick={() => setStep(1)}>
-            上一步
+            {t('上一步')}
           </button>
           <button
             className="primary"
             disabled={busy || !source || !rootId || !tree || !settings || !!checkpoint}
             onClick={() => void classify('start')}
           >
-            {busy ? '正在分类…' : '下一步：AI 分类并预览'}
+            {busy ? t('正在分类…') : t('下一步：AI 分类并预览')}
           </button>
         </div>
         {checkpoint &&
@@ -352,11 +352,11 @@ export function ImportWorkbench({
               disabled={busy || journalOwned || !rootId || !tree}
               onClick={() => void classify(action)}
             >
-              {['继续分类', '重新分类'][index]}
+              {[t('继续分类'), t('重新分类')][index]}
             </button>
           ))}
       </div>
-      <p role="status">{message}</p>
+      <p role="status">{importNoticeText(language, message)}</p>
       {(busy || checkpoint || preview) && (
         <button
           onClick={() => {
@@ -367,11 +367,11 @@ export function ImportWorkbench({
             setMessage('已请求暂停；已发起写入结果须核对日志。');
           }}
         >
-          暂停当前任务
+          {t('暂停当前任务')}
         </button>
       )}
       <details className="workflow-help">
-        <summary>继续以前的导入任务</summary>
+        <summary>{t('继续以前的导入任务')}</summary>
         <button
           disabled={busy}
           onClick={() =>
@@ -380,7 +380,7 @@ export function ImportWorkbench({
             })
           }
         >
-          读取导入任务列表
+          {t('读取导入任务列表')}
         </button>
         {records.map(record => (
           <p key={record.id}>
@@ -401,39 +401,61 @@ export function ImportWorkbench({
                 })
               }
             >
-              加载任务
+              {t('加载任务')}
             </button>
           </p>
         ))}
       </details>
       <div hidden={step < 3} className="workflow-stage">
-        <h3>{step === 4 ? '确认导入内容' : '检查分类结果'}</h3>
+        <h3>{step === 4 ? t('确认导入内容') : t('检查分类结果')}</h3>
         {step === 3 && checkpoint && checkpoint.phase !== 'classified' && (
-          <p role="status">分类尚未完成。可以先查看已有条目，再点击继续分类。</p>
+          <p role="status">{t('分类尚未完成。可以先查看已有条目，再点击继续分类。')}</p>
         )}
         {checkpoint && (
           <>
             <p className="workflow-summary">
-              已分类 {checkpoint.classified.length} / {checkpoint.items.length} 条 · 已选 {selected.length} 条
+              {t('已分类 {count} / {total} 条 · 已选 {selected} 条', {
+                count: checkpoint.classified.length,
+                total: checkpoint.items.length,
+                selected: selected.length,
+              })}
             </p>
-            {checkpoint.requestId && <p>日志请求：{checkpoint.requestId}。checkpoint 阶段不代表写入完成。</p>}
+            {checkpoint.requestId && (
+              <p>{t('日志请求：{id}。checkpoint 阶段不代表写入完成。', { id: checkpoint.requestId })}</p>
+            )}
             <details className="workflow-help">
-              <summary>任务和跳过项详情</summary>
+              <summary>{t('任务和跳过项详情')}</summary>
               <p>
-                任务 {checkpoint.id} · {checkpoint.runtime?.stage} · {checkpoint.phase} · 已映射{' '}
-                {checkpoint.runtime?.mappedGroups.length ?? 0} 组
+                {t('任务 {id} · {stage} · {phase} · 已映射 {count} 组', {
+                  id: checkpoint.id,
+                  stage: checkpoint.runtime?.stage ?? '',
+                  phase: checkpoint.phase,
+                  count: checkpoint.runtime?.mappedGroups.length ?? 0,
+                })}
               </p>
               {importDiagnosticSources(checkpoint).map(({ diagnostic, item }, index) => (
                 <p key={index}>
                   {'count' in diagnostic ? (
-                    `${diagnostic.reason === 'unmapped-candidates' ? `忽略了 ${diagnostic.count} 个未映射字段` : `跳过了 ${diagnostic.count} 个缺少 URL 字段的元素`}：${diagnostic.reason}`
+                    t(
+                      diagnostic.reason === 'unmapped-candidates'
+                        ? '忽略了 {count} 个未映射字段：{reason}'
+                        : '跳过了 {count} 个缺少 URL 字段的元素：{reason}',
+                      { count: diagnostic.count, reason: diagnostic.reason },
+                    )
                   ) : (
                     <>
                       {item
-                        ? `${item.rawURL} · 原始标题：${item.title} · 原目录：${JSON.stringify(item.oldPath)} · 来源路径：${JSON.stringify(item.provenance.sourcePath ?? [])} · `
-                        : '旧任务缺少此跳过项的原始证据；无法还原 URL/标题/路径。'}
-                      来源 {diagnostic.sourceOrdinal}：{diagnostic.reason}
-                      {'retainedSourceOrdinal' in diagnostic ? `；保留来源 ${diagnostic.retainedSourceOrdinal}` : ''}
+                        ? t('{url} · 原始标题：{title} · 原目录：{path} · 来源路径：{sourcePath} · ', {
+                            url: item.rawURL,
+                            title: item.title,
+                            path: JSON.stringify(item.oldPath),
+                            sourcePath: JSON.stringify(item.provenance.sourcePath ?? []),
+                          })
+                        : t('旧任务缺少此跳过项的原始证据；无法还原 URL/标题/路径。')}
+                      {t('来源 {id}：{reason}', { id: diagnostic.sourceOrdinal, reason: diagnostic.reason })}
+                      {'retainedSourceOrdinal' in diagnostic
+                        ? t('；保留来源 {id}', { id: diagnostic.retainedSourceOrdinal })
+                        : ''}
                     </>
                   )}
                 </p>
@@ -441,14 +463,14 @@ export function ImportWorkbench({
             </details>
             {step === 3 && !journalOwned && (
               <details className="workflow-help">
-                <summary>重新调整分类</summary>
+                <summary>{t('重新调整分类')}</summary>
                 <button disabled={busy} onClick={() => setStep(2)}>
-                  更改目标或重新分类
+                  {t('更改目标或重新分类')}
                 </button>
               </details>
             )}
             <div hidden={step !== 3}>
-              <p className="hint">取消不想导入的书签，也可以调整标题和存放目录。</p>
+              <p className="hint">{t('取消不想导入的书签，也可以调整标题和存放目录。')}</p>
               {checkpoint.items.map(({ item, titleLocked }) => (
                 <article className="workflow-review-row" key={item.sourceOrdinal}>
                   <label>
@@ -469,21 +491,28 @@ export function ImportWorkbench({
                   </label>
                   <p className="hint">{item.rawURL}</p>
                   <details className="workflow-help">
-                    <summary>原始内容详情</summary>
+                    <summary>{t('原始内容详情')}</summary>
                     <p>
-                      原始标题（{titleLocked ? 'AI 锁定' : '原文'}）：{item.title}；原目录：
-                      {JSON.stringify(item.oldPath)}
+                      {t('原始标题（{kind}）：{title}；原目录：{path}', {
+                        kind: t(titleLocked ? 'AI 锁定' : '原文'),
+                        title: item.title,
+                        path: JSON.stringify(item.oldPath),
+                      })}
                     </p>
                     <p>
-                      来源 {item.sourceOrdinal} · {item.provenance.format} ·{' '}
-                      {JSON.stringify(item.provenance.sourcePath)} · UTF-16 [{item.sourceSpan.start},{' '}
-                      {item.sourceSpan.end})
+                      {t('来源 {id} · {format} · {path} · UTF-16 [{start}, {end})', {
+                        id: item.sourceOrdinal,
+                        format: item.provenance.format,
+                        path: JSON.stringify(item.provenance.sourcePath) ?? '',
+                        start: item.sourceSpan.start,
+                        end: item.sourceSpan.end,
+                      })}
                     </p>
                   </details>
                   <label>
-                    <span>书签标题</span>
+                    <span>{t('书签标题')}</span>
                     <input
-                      aria-label={`明确编辑标题 ${item.sourceOrdinal}`}
+                      aria-label={t('明确编辑标题 {id}', { id: item.sourceOrdinal })}
                       value={
                         edits[item.sourceOrdinal] ??
                         checkpoint.classified.find(row => row.sourceOrdinal === item.sourceOrdinal)?.title ??
@@ -499,9 +528,9 @@ export function ImportWorkbench({
                     />
                   </label>
                   <label>
-                    <span>存放目录</span>
+                    <span>{t('存放目录')}</span>
                     <Select
-                      aria-label={`明确调整目标 ${item.sourceOrdinal}`}
+                      aria-label={t('明确调整目标 {id}', { id: item.sourceOrdinal })}
                       disabled={busy || journalOwned}
                       value={
                         destinations[item.sourceOrdinal] ??
@@ -515,7 +544,7 @@ export function ImportWorkbench({
                         setDestinations(next);
                       }}
                     >
-                      <option value="">请选择目标</option>
+                      <option value="">{t('请选择目标')}</option>
                       {[
                         ...(tree?.nodes
                           .filter(n => eligibleImportDestination(tree, checkpoint.root.nativeId, n.ref.nativeId))
@@ -536,38 +565,47 @@ export function ImportWorkbench({
         {step === 3 &&
           source &&
           !checkpoint &&
-          source.items.map(item => (
-            <p key={item.sourceOrdinal}>
-              来源 {item.sourceOrdinal} · {item.rawURL} · {item.diagnostic ?? '待分类'} ·{' '}
-              {JSON.stringify(item.provenance)} · 原目录 {JSON.stringify(item.oldPath)}
-            </p>
-          ))}
+          source.items.map(item => <p key={item.sourceOrdinal}>{importSourceText(language, item)}</p>)}
         {plan?.command.type === 'batch' && (
           <>
             <p>
-              所选 {selected.length}；实际新建书签{' '}
-              {plan.command.operations.filter(o => o.command.type === 'create' && o.command.url !== undefined).length}
-              ；所需目录{' '}
-              {plan.command.operations.filter(o => o.command.type === 'create' && o.command.url === undefined).length}
+              {t('所选 {selected}；实际新建书签 {bookmarks}；所需目录 {folders}', {
+                selected: selected.length,
+                bookmarks: plan.command.operations.filter(
+                  o => o.command.type === 'create' && o.command.url !== undefined,
+                ).length,
+                folders: plan.command.operations.filter(o => o.command.type === 'create' && o.command.url === undefined)
+                  .length,
+              })}
             </p>
-            <p>确认后将添加这些书签到浏览器。写入前会自动备份，请核对所选内容。</p>
+            <p>{t('确认后将添加这些书签到浏览器。写入前会自动备份，请核对所选内容。')}</p>
             <details className="workflow-help">
-              <summary>查看即将创建的书签和目录</summary>
+              <summary>{t('查看即将创建的书签和目录')}</summary>
               {plan.command.operations.map(operation => (
                 <p key={operation.id}>
-                  冻结步骤 {operation.id}：
-                  {operation.command.type === 'create'
-                    ? `${operation.command.title} · ${operation.command.url ?? '新目录'} · 目标 ${operation.command.parent.nativeId} · 依赖 ${operation.dependsOn.join(', ')}`
-                    : operation.command.type}
+                  {t('冻结步骤 {id}：{details}', {
+                    id: operation.id,
+                    details:
+                      operation.command.type === 'create'
+                        ? t('{title} · {url} · 目标 {parent} · 依赖 {dependencies}', {
+                            title: operation.command.title,
+                            url: operation.command.url ?? t('新目录'),
+                            parent: operation.command.parent.nativeId,
+                            dependencies: operation.dependsOn.join(', '),
+                          })
+                        : operation.command.type,
+                  })}
                 </p>
               ))}
             </details>
           </>
         )}
         {checkpoint?.phase === 'classified' && !plan && !journalOwned && (
-          <p className="hint">检查完成后点击下一步，系统会核对重复项和目标目录。</p>
+          <p className="hint">{t('检查完成后点击下一步，系统会核对重复项和目标目录。')}</p>
         )}
-        {emptyDestination && <p role="status">请选择已勾选条目的目标，或取消勾选；空目标草稿不会发送预览请求。</p>}
+        {emptyDestination && (
+          <p role="status">{t('请选择已勾选条目的目标，或取消勾选；空目标草稿不会发送预览请求。')}</p>
+        )}
         <div className="workflow-footer">
           <button
             disabled={busy || journalOwned}
@@ -576,11 +614,11 @@ export function ImportWorkbench({
               setStep(step === 4 ? 3 : 2);
             }}
           >
-            上一步
+            {t('上一步')}
           </button>
           {step === 3 && checkpoint?.phase !== 'classified' && !journalOwned && (
             <button className="primary" disabled={busy || !rootId || !tree} onClick={() => void classify('resume')}>
-              继续分类
+              {t('继续分类')}
             </button>
           )}
           <button
@@ -606,7 +644,7 @@ export function ImportWorkbench({
               })
             }
           >
-            下一步：确认导入
+            {t('下一步：确认导入')}
           </button>
           <button
             hidden={step !== 4 || journalOwned}
@@ -630,7 +668,7 @@ export function ImportWorkbench({
               })
             }
           >
-            确认并导入书签
+            {t('确认并导入书签')}
           </button>
         </div>
         {submission.request && (
@@ -643,13 +681,19 @@ export function ImportWorkbench({
               })
             }
           >
-            读取同一请求结果（日志去重，不新建请求）
+            {t('读取同一请求结果（日志去重，不新建请求）')}
           </button>
         )}
         {result && (
           <p>
-            请求 {result.requestId}：{result.status}；原因 {result.reason ?? '无'}；完成 {result.completedSteps}，剩余{' '}
-            {result.remainingSteps}；{result.needsReconcile ? '需要核对，禁止盲目重试' : '以日志回执为准'}。
+            {t('请求 {id}：{status}；原因 {reason}；完成 {completed}，剩余 {remaining}；{verification}。', {
+              id: result.requestId,
+              status: result.status,
+              reason: result.reason ?? t('无'),
+              completed: result.completedSteps,
+              remaining: result.remainingSteps,
+              verification: t(result.needsReconcile ? '需要核对，禁止盲目重试' : '以日志回执为准'),
+            })}
           </p>
         )}
         {result?.status === 'completed' && (
@@ -670,19 +714,20 @@ export function ImportWorkbench({
               setMessage('选择下一个书签文件，读取完成后点击下一步。');
             }}
           >
-            导入另一个文件
+            {t('导入另一个文件')}
           </button>
         )}
       </div>
       <details className="workflow-help">
-        <summary>支持的文件与导入说明</summary>
+        <summary>{t('支持的文件与导入说明')}</summary>
         <p>
-          支持 HTML、JSON、CSV、TXT、Markdown；不支持 Excel/PDF。文件编码为 UTF-8（可带 BOM）或带 BOM 的 UTF-16。只添加
-          HTTP(S) 链接，不修改已有书签；AI 会重新分类，不保留旧目录结构。
+          {t(
+            '支持 HTML、JSON、CSV、TXT、Markdown；不支持 Excel/PDF。文件编码为 UTF-8（可带 BOM）或带 BOM 的 UTF-16。只添加 HTTP(S) 链接，不修改已有书签；AI 会重新分类，不保留旧目录结构。',
+          )}
         </p>
       </details>
       <details className="workflow-help" onToggle={e => setRecoveryOpen(e.currentTarget.open)}>
-        <summary>恢复与撤销记录</summary>
+        <summary>{t('恢复与撤销记录')}</summary>
         <RecoveryWorkbench visible={visible && recoveryOpen} />
       </details>
     </section>

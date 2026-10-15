@@ -1,5 +1,6 @@
 import { ThemeProvider, ThemePicker } from '../ui/ThemeProvider';
 import { APPEARANCES } from './appearance';
+import { LanguagePicker, LocaleProvider } from '../ui/i18n';
 import { createElement, useState } from 'react';
 import { render, screen, waitFor, fireEvent, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -218,7 +219,7 @@ async function setup(mode: 'completed' | 'rejected' | 'dropped' | 'unknown' | 'p
       createElement(ImportWorkbench, { visible, settings }),
     );
   }
-  const mount = () => render(createElement(Page));
+  const mount = () => render(createElement(LocaleProvider, null, createElement(LanguagePicker), createElement(Page)));
   mount();
   const user = userEvent.setup();
   const upload = async (
@@ -312,6 +313,50 @@ async function setup(mode: 'completed' | 'rejected' | 'dropped' | 'unknown' | 'p
     },
   };
 }
+it('locale changes preserve parsing, pending classification, explicit drafts and the final registered import', async () => {
+  const h = await setup();
+  const parse = vi.spyOn(Worker.prototype, 'postMessage');
+  h.gate(1);
+  await h.upload(
+    '<DL><DT><A HREF="https://source.test/one?a=1&amp;b=2">导入书签 {title}</A><DT><A HREF="https://source.test/two">第二项</A></DL>',
+    'html',
+    'pending',
+  );
+  await waitFor(() => expect(h.fetcher).toHaveBeenCalledTimes(1));
+  const connect = vi.spyOn(chrome.runtime, 'connect');
+  fireEvent.change(screen.getByRole('combobox', { name: '语言' }), { target: { value: 'en' } });
+  expect(screen.getByRole('button', { name: 'Classifying…' })).toBeDisabled();
+  expect(h.fetcher).toHaveBeenCalledTimes(1);
+  expect(parse).toHaveBeenCalledTimes(1);
+  expect(connect).not.toHaveBeenCalled();
+  h.release();
+  await screen.findByText('Classification finished. Review the full batch preview.');
+  const title = screen.getByLabelText('Edit title for source 0');
+  fireEvent.change(title, { target: { value: '' } });
+  fireEvent.change(screen.getByLabelText('Change destination for source 0'), { target: { value: '' } });
+  fireEvent.click(screen.getByRole('checkbox', { name: '第二项' }));
+  fireEvent.change(screen.getByRole('combobox', { name: 'Language' }), { target: { value: 'zh-CN' } });
+  expect(screen.getByLabelText('明确编辑标题 0')).toBe(title);
+  expect(title).toHaveValue('');
+  expect(screen.getByLabelText('明确调整目标 0')).toHaveValue('');
+  expect(screen.getByRole('checkbox', { name: '第二项' })).not.toBeChecked();
+  expect(screen.getByRole('button', { name: '下一步：确认导入' })).toBeDisabled();
+  expect(h.sent).not.toContain('registerImportPreview');
+  fireEvent.change(title, { target: { value: '确认 {parent}' } });
+  fireEvent.change(screen.getByLabelText('明确调整目标 0'), { target: { value: 'bar' } });
+  await h.user.click(screen.getByRole('button', { name: '下一步：确认导入' }));
+  await screen.findByText(/实际新建书签 1/);
+  fireEvent.change(screen.getByRole('combobox', { name: '语言' }), { target: { value: 'en' } });
+  expect(screen.getByRole('button', { name: 'Confirm and import bookmarks' })).toBeEnabled();
+  expect(h.sent.filter(type => type === 'registerImportPreview')).toHaveLength(1);
+  expect(h.create).not.toHaveBeenCalled();
+  await h.user.click(screen.getByRole('button', { name: 'Confirm and import bookmarks' }));
+  await screen.findByText(/Request .*: completed;/);
+  expect(h.create).toHaveBeenCalledTimes(1);
+  expect(h.create.mock.calls[0]![0]).toMatchObject({ title: '确认 {parent}', url: 'https://source.test/one?a=1&b=2' });
+  expect(h.fetcher).toHaveBeenCalledTimes(1);
+  expect(parse).toHaveBeenCalledTimes(1);
+});
 it.each(['completed', 'rejected', 'dropped', 'unknown'] as const)(
   'real UI pipeline/controller/authority/coordinator %s handoff preserves ownership',
   async mode => {
