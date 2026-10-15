@@ -13,6 +13,7 @@ import { PanelChrome, PanelFooter, SearchBox, type PopupView } from './PanelChro
 import { OptionsNav, parseOptionsHash, ROUTE_META, type OptionsRoute } from './OptionsNav';
 import { PopupSettings } from './PopupSettings';
 import { PanelModePicker } from './PanelModePicker';
+import { useSearchKey, useSearchLaunch } from './search-entry';
 import { ModelSettings } from '../options/ModelSettings';
 import { SiteRulesSettings } from '../options/SiteRulesSettings';
 import { RecoveryWorkbench } from '../options/RecoveryWorkbench';
@@ -86,6 +87,11 @@ function PopupApp({ overlay = false }: { overlay?: boolean }) {
   const [query, setQuery] = useState('');
   const [batchNonce, setBatchNonce] = useState(0);
   const [trialNonce, setTrialNonce] = useState(0);
+  const [focusRequest, setFocusRequest] = useState(0);
+  useSearchKey(() => {
+    setView('browse');
+    setFocusRequest(value => value + 1);
+  });
 
   // Workbenches open in a settings tab; the overlay sidebar gets out of the way, the side panel stays.
   function open(route: string) {
@@ -108,6 +114,7 @@ function PopupApp({ overlay = false }: { overlay?: boolean }) {
         跳到主要内容
       </a>
       <PanelChrome
+        focusRequest={focusRequest}
         view={view}
         query={query}
         onQuery={setQuery}
@@ -170,6 +177,12 @@ function OptionsApp() {
   const [batchNonce, setBatchNonce] = useState(0);
   const [visited, setVisited] = useState<Set<OptionsRoute>>(() => new Set([initial.route]));
   const [exportRecoveryOpen, setExportRecoveryOpen] = useState(false);
+  const [focusRequest, setFocusRequest] = useState(0);
+  const searchLaunch = useSearchLaunch(setQuery);
+  useSearchKey(() => {
+    go('browse');
+    setFocusRequest(value => value + 1);
+  });
 
   useEffect(() => {
     function onHash() {
@@ -221,7 +234,29 @@ function OptionsApp() {
         </header>
         <main id="main" tabIndex={-1} className={meta.wide ? 'is-wide' : undefined}>
           <div className="view" hidden={route !== 'browse'}>
-            <SearchBox value={query} onChange={setQuery} />
+            <SearchBox
+              value={query}
+              onChange={setQuery}
+              focusRequest={focusRequest}
+              autoFocus={searchLaunch.requested}
+            />
+            {searchLaunch.status && <p role="status">{searchLaunch.status}</p>}
+            <details>
+              <summary>快速搜索入口</summary>
+              <p>
+                按 Alt+Shift+K 打开搜索。也可在地址栏输入 sb，按 Tab 或空格后输入关键词。智栏内按
+                Ctrl+K（Mac：⌘K）聚焦搜索。
+              </p>
+              <p>若快捷键被其他扩展占用，可在浏览器中重新设置。</p>
+              <button
+                type="button"
+                onClick={() => {
+                  void chrome.tabs.create({ url: 'chrome://extensions/shortcuts' }).catch(() => {});
+                }}
+              >
+                设置浏览器搜索快捷键
+              </button>
+            </details>
             <SearchResults
               query={query}
               settings={settingsStore}

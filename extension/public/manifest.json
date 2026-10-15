@@ -38,10 +38,15 @@
     "extension_pages": "script-src 'self'; object-src 'self'; connect-src https: http:"
   },
   "commands": {
+    "search-bookmarks": {
+      "suggested_key": { "default": "Alt+Shift+K" },
+      "description": "搜索智栏书签"
+    },
     "save-current-page": {
       "description": "Save current page with Zhilan"
     }
   },
+  "omnibox": { "keyword": "sb" },
   "web_accessible_resources": [
     {
       "resources": [

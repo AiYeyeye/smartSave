@@ -18,15 +18,17 @@ export function SearchBox({
   value,
   onChange,
   autoFocus,
+  focusRequest = 0,
 }: {
   value: string;
   onChange: (value: string) => void;
   autoFocus?: boolean;
+  focusRequest?: number;
 }) {
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => {
-    if (autoFocus) input.current?.focus();
-  }, [autoFocus]);
+    if (autoFocus || focusRequest > 0) input.current?.focus();
+  }, [autoFocus, focusRequest]);
   return (
     <div className={`search zh-search${value ? ' has-query' : ''}`}>
       <Search aria-hidden="true" />
@@ -61,6 +63,7 @@ export function PanelChrome({
   onSettings,
   onBack,
   onClose,
+  focusRequest,
 }: {
   view: PopupView;
   query: string;
@@ -69,6 +72,7 @@ export function PanelChrome({
   onBack: () => void;
   /** Overlay sidebar only: slide the sidebar away. */
   onClose?: () => void;
+  focusRequest?: number;
 }) {
   const browse = view === 'browse';
   return (
@@ -93,7 +97,7 @@ export function PanelChrome({
           </button>
         ) : null}
       </header>
-      {browse && <SearchBox value={query} onChange={onQuery} autoFocus />}
+      {browse && <SearchBox value={query} onChange={onQuery} autoFocus focusRequest={focusRequest} />}
     </>
   );
 }

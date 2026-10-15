@@ -17,6 +17,7 @@ import {
   watchPanelMode,
 } from './overlay-host';
 import { startTreeService } from './tree-service';
+import { startSearchEntrypoints } from './search-entrypoints';
 import { startMutationService } from './mutation-service';
 import { extractSaveBodyForUi } from './extract-coordinator';
 import { setOverlayDocumentTrust, withTrustedSender } from '../domain/trusted-sender';
@@ -72,6 +73,7 @@ const { validateSaveContext, livePageForSender } = startSaveEntrypoints(
   openSaveSurface,
 );
 const projection = startTreeService();
+startSearchEntrypoints(projection);
 startFileOutput(projection);
 const settings = new SettingsStore(chrome.storage.local);
 // Complete first-install migration before a model task can retain its settings baseline.

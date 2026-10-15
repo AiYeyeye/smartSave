@@ -1,4 +1,4 @@
-import { createElement } from 'react';
+import { createElement, StrictMode } from 'react';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -51,6 +51,38 @@ it('production App input reaches search without model calls or writes', () => {
   expect(row).toHaveTextContent(/^重庆大学$/);
   expect(row).not.toHaveTextContent('https://');
   expect(row).not.toHaveTextContent('学习资料');
+  expect(fetcher).not.toHaveBeenCalled();
+});
+it('Ctrl+K returns from settings and focuses the existing search; composition is ignored', () => {
+  chromeStub();
+  render(createElement(App, { page: 'panel' }));
+  fireEvent.click(screen.getByRole('button', { name: /^设置$/ }));
+  expect(screen.queryByRole('searchbox')).toBeNull();
+  fireEvent.keyDown(window, { key: 'k', ctrlKey: true, isComposing: true });
+  expect(screen.queryByRole('searchbox')).toBeNull();
+  fireEvent.keyDown(window, { key: 'k', ctrlKey: true });
+  expect(screen.getByRole('searchbox')).toHaveFocus();
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'cqdx' } });
+  fireEvent.keyDown(window, { key: 'k', metaKey: true });
+  expect(screen.getByRole('searchbox')).toHaveValue('cqdx');
+});
+it('opaque search launch claims the query once and clears its route without automatic AI', async () => {
+  chromeStub();
+  const send = vi.fn<(message: unknown) => Promise<{ query: string }>>(async () => ({ query: 'cqdx' }));
+  chrome.runtime.sendMessage = send as unknown as typeof chrome.runtime.sendMessage;
+  location.hash = '#search/test-token';
+  const fetcher = vi.spyOn(globalThis, 'fetch');
+  render(createElement(StrictMode, null, createElement(App, { page: 'options' })));
+  await act(async () => {
+    await Promise.resolve();
+  });
+  expect(screen.getByRole('searchbox')).toHaveValue('cqdx');
+  expect(screen.getByRole('searchbox')).toHaveFocus();
+  expect(location.hash).toBe('#browse');
+  expect(send).toHaveBeenCalledWith({ type: 'claimSearchLaunch', token: 'test-token' });
+  expect(
+    send.mock.calls.filter(args => (args[0] as { type?: string } | undefined)?.type === 'claimSearchLaunch'),
+  ).toHaveLength(1);
   expect(fetcher).not.toHaveBeenCalled();
 });
 it('four themes preserve results, query draft and keyboard/click safe activation', async () => {
