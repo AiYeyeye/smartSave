@@ -170,16 +170,25 @@ with sync_playwright() as playwright:
         def open_ui():
             page = context.new_page()
             page.goto(f'chrome-extension://{extension_id}/options/index.html#organize')
-            page.get_by_role('heading', name='整理书签', exact=True).wait_for()
+            page.get_by_role('heading', name=text('整理书签', 'Organize bookmarks'), exact=True).wait_for()
             return page
 
+        scope_geometry = []
         def generate(page):
-            page.get_by_label('整理范围', exact=True).select_option(fixture['root'])
-            page.get_by_text('高级选项', exact=True).click()
-            page.get_by_label('每批最多书签', exact=True).fill('1')
-            page.get_by_label('建议清理原有空分类和迁移后变空的分类', exact=True).uncheck()
-            page.get_by_role('button', name='下一步：生成整理方案', exact=True).click()
-            page.get_by_role('button', name='确认分类，开始分批整理书签', exact=True).click()
+            page.get_by_label(text('整理范围', 'Organization scope'), exact=True).select_option(fixture['root'])
+            page.get_by_text(text('高级选项', 'Advanced options'), exact=True).click()
+            page.get_by_label(text('每批最多书签', 'Bookmarks per batch'), exact=True).fill('1')
+            page.get_by_label(text('建议清理原有空分类和迁移后变空的分类', 'Suggest removing empty folders, including those emptied by moves'), exact=True).uncheck()
+            if cycle == 1:
+                for width in [320, 340, 480, 1024]:
+                    page.set_viewport_size({'width': width, 'height': 900})
+                    page.evaluate('()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))')
+                    measured = page.evaluate('({width:innerWidth,scroll:document.documentElement.scrollWidth})')
+                    assert measured['scroll'] <= width + 1, measured
+                    scope_geometry.append(measured)
+                    page.screenshot(path=str(root / f'scope-{width}.png'), full_page=True)
+            page.get_by_role('button', name=text('下一步：生成整理方案', 'Next: generate plan'), exact=True).click()
+            page.get_by_role('button', name=text('确认分类，开始分批整理书签', 'Confirm folders and start bookmark batches'), exact=True).click()
 
         page = open_ui()
         generate(page)
@@ -209,7 +218,7 @@ with sync_playwright() as playwright:
             expect(page.get_by_label(choice_label, exact=True)).not_to_be_checked()
             expect(page.get_by_label(f'Destination for move:{fixture["a"]}', exact=True)).to_have_value(fixture['target'])
             preferences.close()
-        expect(page.get_by_role('button', name='下一步：确认操作', exact=True)).to_be_enabled()
+        expect(page.get_by_role('button', name=text('下一步：确认操作', 'Next: confirm changes'), exact=True)).to_be_enabled()
         page.close()
         page = open_ui()
         page.get_by_text(review_label, exact=True).click()
@@ -217,7 +226,7 @@ with sync_playwright() as playwright:
         assert len([e for e in events if e['state'] == 'started']) == count
         assert worker.evaluate('(id)=>chrome.bookmarks.getSubTree(id)', fixture['root']) == before
         page.screenshot(path=str(root / 'restored-review.png'), full_page=True)
-        page.get_by_text('完整分类树与内容去向', exact=True).click()
+        page.get_by_text(text('完整分类树与内容去向', 'Full folder tree and bookmark destinations'), exact=True).click()
         expect(page.get_by_role('heading', name=text('预计整理后的分类', 'Proposed folders'), exact=True)).to_be_visible()
         expect(page.locator('.organize-classification-tree').get_by_text('不再建议', exact=True)).to_be_visible()
         geometry = []
@@ -232,7 +241,7 @@ with sync_playwright() as playwright:
         # A second task is interrupted with B durable and A still pending.
         cycle = 2
         gate = threading.Event()
-        page.get_by_role('button', name='上一步', exact=True).click()
+        page.get_by_role('button', name=text('上一步', 'Back'), exact=True).click()
         generate(page)
         wait_for(lambda: any(e['cycle'] == 2 and e['stage'] == 'bookmarks' and fixture['b'] in e['ids'] and e['state'] == 'finished' for e in events))
         task = wait_for(lambda: next((t for t in worker.evaluate(read_tasks) if t['id'] != first_id and any(b['status'] == 'accepted' for b in t['batches'])), None))
@@ -245,7 +254,7 @@ with sync_playwright() as playwright:
         worker = context.service_workers[0] if context.service_workers else context.wait_for_event('serviceworker', timeout=15000)
         wait_for(lambda: worker.evaluate('()=>chrome.action.getBadgeText({})') == '停')
         page = open_ui()
-        resume = page.get_by_role('button', name='继续未完成批次', exact=True)
+        resume = page.get_by_role('button', name=text('继续未完成批次', 'Continue unfinished batches'), exact=True)
         expect(resume).to_be_enabled()
         previous = len([e for e in events if e['state'] == 'started'])
         assert previous == count + 3
@@ -255,21 +264,21 @@ with sync_playwright() as playwright:
         restored = next(t for t in worker.evaluate(read_tasks) if t['id'] == task['id'])
         assert [batch['id'] for batch in restored['batches']] == stable
         assert worker.evaluate('(id)=>chrome.bookmarks.getSubTree(id)', fixture['root']) == before
-        page.get_by_role('button', name='下一步：确认操作', exact=True).click()
-        page.get_by_role('button', name='确认并执行 2 项操作', exact=True).click()
-        page.get_by_text('整理已完成，可从恢复记录核对或撤销。', exact=True).first.wait_for()
+        page.get_by_role('button', name=text('下一步：确认操作', 'Next: confirm changes'), exact=True).click()
+        page.get_by_role('button', name=text('确认并执行 2 项操作', 'Confirm and apply operations (2)'), exact=True).click()
+        page.get_by_text(text('整理已完成，可从恢复记录核对或撤销。', 'Organization complete. Review or undo it in recovery records.'), exact=True).first.wait_for()
         submitted = next(t for t in worker.evaluate(read_tasks) if t['id'] == task['id'])['submission']['requestId']
         after = worker.evaluate('(id)=>chrome.bookmarks.getSubTree(id)', fixture['root'])
         target = next(n for n in after[0]['children'] if n['id'] == fixture['target'])
         assert {n['id'] for n in target['children']} == {fixture['a'], fixture['b']}
         page.close()
         page = open_ui()
-        page.get_by_text('整理已完成，可从恢复记录核对或撤销。', exact=True).first.wait_for()
+        page.get_by_text(text('整理已完成，可从恢复记录核对或撤销。', 'Organization complete. Review or undo it in recovery records.'), exact=True).first.wait_for()
         assert submitted in page.locator('body').inner_text()
         assert worker.evaluate('(id)=>chrome.bookmarks.getSubTree(id)', fixture['root']) == after
         page.screenshot(path=str(root / 'submitted-result.png'), full_page=True)
         result = {'status': 'PASS', 'browser': context.browser.version, 'taskId': task['id'], 'requestId': submitted,
-                  'reviewLanguage': args.language, 'geometry': geometry, 'crossDocumentSelectionRetained': args.language == 'en',
+                  'reviewLanguage': args.language, 'geometry': geometry, 'scopeGeometry': scope_geometry, 'crossDocumentSelectionRetained': args.language == 'en',
                   'events': events, 'evidence': str(root), 'manifestDelta': {'host_permissions': ['http://127.0.0.1/*']},
                   'productionWorkerSHA256': hashlib.sha256((extension / 'service-worker.js').read_bytes()).hexdigest(),
                   'badge': 'PASS: closed-page progress, unread review, visible acknowledgement, restart-paused reminder',

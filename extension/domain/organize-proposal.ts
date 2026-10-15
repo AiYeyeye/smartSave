@@ -89,7 +89,7 @@ export function organizeProposal(
       targetId: f.parentId,
       title: f.title,
       children: [],
-      reason: f.reason || '为相关内容建立统一分类。',
+      reason: f.reason || undefined,
     })),
     ...output.moves.map(m => ({
       id: `move:${m.itemId}`,
@@ -98,7 +98,7 @@ export function organizeProposal(
       targetId: m.folderId,
       title: byId.get(m.itemId)!.title,
       children: [],
-      reason: m.reason || '归入更符合内容主题的分类。',
+      reason: m.reason || undefined,
     })),
     ...output.merges.map(m => ({
       id: `merge:${m.sourceId}`,
@@ -107,7 +107,7 @@ export function organizeProposal(
       targetId: m.targetId,
       title: byId.get(m.sourceId)!.title,
       children: [...byId.get(m.sourceId)!.childrenIds],
-      reason: m.reason || '合并用途相同的分类，保留全部内容。',
+      reason: m.reason || undefined,
     })),
     ...(options.allowRename === false ? [] : (output.renames ?? [])).map(r => ({
       id: `rename:${r.folderId}`,
@@ -116,7 +116,7 @@ export function organizeProposal(
       title: byId.get(r.folderId)!.title,
       newTitle: r.title,
       children: [],
-      reason: r.reason || '使用更清晰、一致的分类名称。',
+      reason: r.reason || undefined,
     })),
   ];
   const allowed = new Set([...context.items.map(i => i.id), ...context.folders.map(f => f.id)]);
@@ -210,9 +210,7 @@ export function organizeCleanup(
       title: node.title,
       children: [],
       dependsOn,
-      reason:
-        explicit.get(id) ||
-        (node.childrenIds.length ? '内容迁移后此分类为空，移除多余目录。' : '此分类为空，可清理；需要保留时取消勾选。'),
+      reason: explicit.get(id) || undefined,
     });
     simulated = { ...simulated, nodes: expectedAfter(simulated, { type: 'remove', id }) };
   }

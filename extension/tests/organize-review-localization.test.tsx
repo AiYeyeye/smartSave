@@ -9,6 +9,9 @@ import type { OrganizeProposal } from '../domain/organize-proposal';
 import type { OrganizeState } from '../domain/organize-state';
 import { organizerTree } from './fixtures/organizer-tree';
 import { useState } from 'react';
+import { organizeActionReason } from '../panel/organize-action-text';
+import { organizeProposal } from '../domain/organize-proposal';
+import { duplicateProposal } from '../domain/exact-duplicates';
 
 afterEach(() => vi.useRealTimers());
 const switchLanguage = (language: string) =>
@@ -36,6 +39,38 @@ function fixture() {
   };
   return proposal;
 }
+
+it('keeps optional model reasons distinct from localized defaults when constructing a plan', () => {
+  const tree = organizerTree();
+  const raw = { newFolders: [], merges: [], moves: [{ itemId: 'a', folderId: 'right' }], unchangedIds: ['b'] };
+  const privacy = { fullUrl: false, bodyEnabled: false, excludedFolders: [] };
+  const plan = organizeProposal(tree, 'bar', raw, privacy, { cleanupEmpty: false });
+  const move = plan.actions.find(action => action.id === 'move:a')!;
+  expect(move.reason).toBeUndefined();
+  expect(organizeActionReason('en', move, plan)).toBe('Move to a folder that better matches the content.');
+  const withReason = organizeProposal(
+    tree,
+    'bar',
+    {
+      ...raw,
+      moves: [{ itemId: 'a', folderId: 'right', reason: '归入更符合内容主题的分类。' }],
+    },
+    privacy,
+    { cleanupEmpty: false },
+  );
+  expect(organizeActionReason('en', withReason.actions[0]!, withReason)).toBe('归入更符合内容主题的分类。');
+  expect(organizeActionReason('en', { ...move, kind: 'delete', sourceId: 'right' }, plan)).toContain(
+    'This folder is empty.',
+  );
+  expect(organizeActionReason('en', { ...move, kind: 'delete', sourceId: 'left' }, plan)).toContain(
+    'after its contents have moved out',
+  );
+  expect(organizeActionReason('en', { ...move, kind: 'delete', sourceId: 'a' }, plan)).toContain('identical URLs');
+  const duplicates = duplicateProposal(tree, 'bar', { a: 'keep', b: 'delete' });
+  expect(organizeActionReason('en', duplicates.actions[0]!, duplicates)).toBe(
+    'Remove bookmarks with identical URLs, keeping the explicitly chosen copies.',
+  );
+});
 
 it('preserves mixed group selection, open details and native content across language switches', () => {
   const proposal = fixture();

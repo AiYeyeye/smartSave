@@ -30,7 +30,7 @@ export function organizeBookmarkActions(
       targetId: move.folderId,
       title: nodes.get(move.itemId)!.title,
       children: [],
-      reason: move.reason || '按已确认分类归入更合适的目录。',
+      reason: move.reason || undefined,
       dependsOn: lockedActionIds,
     }));
 }

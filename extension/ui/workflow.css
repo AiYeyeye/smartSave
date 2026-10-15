@@ -314,6 +314,12 @@
 .export-tree-row input {
   margin: 0;
 }
+/* Long translated status/repair text must not cover the review in a narrow or short viewport. */
+@media (max-width: 520px), (max-height: 640px) {
+  .organize-footer {
+    position: static;
+  }
+}
 @media (max-width: 520px) {
   .workflow-steps li {
     flex-direction: column;

@@ -13,8 +13,11 @@ from playwright.sync_api import expect, sync_playwright
 sys.stdout.reconfigure(encoding='utf-8')
 parser = argparse.ArgumentParser()
 parser.add_argument('--run', action='store_true')
+parser.add_argument('--language', choices=['zh-CN', 'en'], default='zh-CN')
 parser.add_argument('--browser', default='C:/Users/PC/AppData/Local/ms-playwright/chromium-1208/chrome-win64/chrome.exe')
 args = parser.parse_args()
+def text(zh, en):
+    return en if args.language == 'en' else zh
 if not args.run:
     print('SKIP: pass --run for isolated synthetic partial repair')
     raise SystemExit(0)
@@ -76,42 +79,56 @@ with sync_playwright() as playwright:
           id:'local',name:'Synthetic provider',serviceType:'Anthropic',kind:'api',detail:'loopback only',baseUrl:origin+'/v1',mode:'anthropic',status:'ok',letter:'A',avatarClass:'av-o',catalog:[{id:'synthetic',ctx:''}],enabled:['synthetic'],timeoutMs:60000,streaming:false
         }],features:[{id:'organize',name:'Organize',desc:'fixture',connId:'local',modelId:'synthetic'}]}})""", origin)
         before = worker.evaluate('(id)=>chrome.bookmarks.getSubTree(id)', fixture['root'])
+        preferences = context.new_page()
+        preferences.goto(f'chrome-extension://{extension_id}/options/index.html#appearance')
+        if args.language == 'en':
+            preferences.get_by_label('语言', exact=True).select_option('en')
         page = context.new_page()
         page.goto(f'chrome-extension://{extension_id}/options/index.html#organize')
-        page.get_by_label('整理范围', exact=True).select_option(fixture['root'])
-        page.get_by_text('高级选项', exact=True).click()
-        page.get_by_label('每批最多书签', exact=True).fill('100')
-        page.get_by_label('建议清理原有空分类和迁移后变空的分类', exact=True).uncheck()
-        page.get_by_role('button', name='下一步：生成整理方案', exact=True).click()
-        page.get_by_role('button', name='确认分类，开始分批整理书签', exact=True).click()
-        repair = page.get_by_role('button', name='只补问这 1 条', exact=True)
+        page.get_by_label(text('整理范围', 'Organization scope'), exact=True).select_option(fixture['root'])
+        page.get_by_text(text('高级选项', 'Advanced options'), exact=True).click()
+        page.get_by_label(text('每批最多书签', 'Bookmarks per batch'), exact=True).fill('100')
+        page.get_by_label(text('建议清理原有空分类和迁移后变空的分类', 'Suggest removing empty folders, including those emptied by moves'), exact=True).uncheck()
+        page.get_by_role('button', name=text('下一步：生成整理方案', 'Next: generate plan'), exact=True).click()
+        page.get_by_role('button', name=text('确认分类，开始分批整理书签', 'Confirm folders and start bookmark batches'), exact=True).click()
+        repair = page.get_by_role('button', name=text('只补问这 1 条', 'Retry these items (1)'), exact=True)
         expect(repair).to_be_enabled()
         assert len(events) == 2, events
-        expect(page.get_by_role('button', name='下一步：确认操作', exact=True)).to_be_disabled()
+        expect(page.get_by_role('button', name=text('下一步：确认操作', 'Next: confirm changes'), exact=True)).to_be_disabled()
         assert worker.evaluate('(id)=>chrome.bookmarks.getSubTree(id)', fixture['root']) == before
         geometry = []
-        for width in [340, 1024]:
+        for width in [320, 340, 480, 1024]:
             page.set_viewport_size({'width': width, 'height': 960})
+            page.evaluate('()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))')
             measured = page.evaluate('({width:innerWidth,scroll:document.documentElement.scrollWidth})')
             assert measured['scroll'] <= measured['width'] + 1, measured
+            if width <= 520:
+                assert page.locator('.organize-footer').evaluate('e=>getComputedStyle(e).position') == 'static'
+                failure_box = page.locator('.organize-failure').bounding_box()
+                footer_box = page.locator('.organize-footer').bounding_box()
+                assert failure_box['y'] + failure_box['height'] <= footer_box['y'], (failure_box, footer_box)
             geometry.append(measured)
             repair.scroll_into_view_if_needed()
             page.screenshot(path=str(root / f'repair-consent-{width}.png'), full_page=True)
+        page.set_viewport_size({'width': 1024, 'height': 600})
+        page.evaluate('()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))')
+        assert page.locator('.organize-footer').evaluate('e=>getComputedStyle(e).position') == 'static'
+        page.set_viewport_size({'width': 1024, 'height': 960})
         page.reload()
         expect(repair).to_be_enabled()
         assert len(events) == 2, events
         repair.click()
-        next_button = page.get_by_role('button', name='下一步：确认操作', exact=True)
+        next_button = page.get_by_role('button', name=text('下一步：确认操作', 'Next: confirm changes'), exact=True)
         expect(next_button).to_be_enabled()
         assert events == [{'stage': 'folders', 'ids': [fixture['source'], fixture['target']]}, {'stage': 'bookmarks', 'ids': [fixture['a'], fixture['b']]}, {'stage': 'bookmarks', 'ids': [fixture['b']]}], events
         assert worker.evaluate('(id)=>chrome.bookmarks.getSubTree(id)', fixture['root']) == before
         next_button.click()
-        page.get_by_role('button', name='确认并执行 2 项操作', exact=True).click()
-        page.get_by_text('状态 completed', exact=False).wait_for()
+        page.get_by_role('button', name=text('确认并执行 2 项操作', 'Confirm and apply operations (2)'), exact=True).click()
+        page.get_by_text(text('状态 completed', 'Status: completed'), exact=False).wait_for()
         for key in ['a', 'b']:
             assert worker.evaluate('async id=>(await chrome.bookmarks.get(id))[0].parentId', fixture[key]) == fixture['target']
         result = {'status': 'PASS', 'browser': context.browser.version, 'evidence': str(root), 'geometry': geometry,
-                  'requests': events, 'workerSHA256': hashlib.sha256((extension / 'service-worker.js').read_bytes()).hexdigest(),
+                  'language': args.language, 'requests': events, 'workerSHA256': hashlib.sha256((extension / 'service-worker.js').read_bytes()).hexdigest(),
                   'scope': 'Production JS/CSS/HTML unchanged; copied manifest loopback grant, synthetic provider/bookmarks, no real provider or release readiness claim.'}
         (root / 'results.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
         print(json.dumps(result), flush=True)

@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { OrganizeWorkbench } from '../panel/OrganizeWorkbench';
 import { OrganizeController } from '../panel/organize-controller';
@@ -7,9 +7,91 @@ import { ThemeProvider, ThemePicker } from '../ui/ThemeProvider';
 import { APPEARANCES } from './appearance';
 import { SettingsStore } from '../persistence/settings';
 import { organizeClientRuntime } from './fixtures/organize-client-runtime';
+import { LanguagePicker, LocaleProvider } from '../ui/i18n';
+import type { ModelResult } from '../adapters/model-transport';
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+});
+
+it('retains custom inputs, a pending worker request and final confirmation across language changes', async () => {
+  const h = organizeClientRuntime();
+  let finish!: (result: ModelResult) => void;
+  h.run
+    .mockImplementationOnce(
+      () =>
+        new Promise<ModelResult>(resolve => {
+          finish = resolve;
+        }),
+    )
+    .mockImplementation(async input => ({
+      status: 'completed',
+      output: {
+        newFolders: [],
+        merges: [],
+        moves:
+          input.request.task === 'organize' ? input.request.itemIds.map(itemId => ({ itemId, folderId: 'right' })) : [],
+      },
+    }));
+  const settings = new SettingsStore({
+    get: async () => ({}),
+    set: async () => {},
+    remove: async () => {},
+    setAccessLevel: async () => {},
+  });
+  const create = vi.fn((emit: ConstructorParameters<typeof OrganizeController>[0]) => h.client(emit));
+  const page = render(
+    <LocaleProvider>
+      <LanguagePicker />
+      <OrganizeWorkbench visible settings={settings} createController={create} memoryStore={h.memory} />
+    </LocaleProvider>,
+  );
+  await waitFor(() => expect(screen.getByRole('button', { name: '下一步：生成整理方案' })).toBeEnabled());
+  fireEvent.click(screen.getByText('高级选项'));
+  fireEvent.change(screen.getByLabelText('分类方式'), { target: { value: 'custom' } });
+  const instructions = screen.getByLabelText('分类要求');
+  fireEvent.change(instructions, { target: { value: '移动 <&> {count}' } });
+  fireEvent.change(screen.getByLabelText('每批最多书签'), { target: { value: '2' } });
+  fireEvent.change(screen.getByLabelText('语言'), { target: { value: 'en' } });
+  expect(screen.getByLabelText('Organization instructions')).toBe(instructions);
+  expect(instructions).toHaveValue('移动 <&> {count}');
+  expect(screen.getByLabelText('Folder style')).toHaveValue('custom');
+  expect(screen.getByLabelText('Bookmarks per batch')).toHaveValue(2);
+  fireEvent.click(screen.getByRole('button', { name: 'Next: generate plan' }));
+  await waitFor(() => expect(h.run).toHaveBeenCalledTimes(1));
+  fireEvent.change(screen.getByLabelText('Language'), { target: { value: 'zh-CN' } });
+  expect(screen.getByRole('button', { name: '确认分类，开始分批整理书签' })).toBeDisabled();
+  fireEvent.change(screen.getByLabelText('语言'), { target: { value: 'en' } });
+  expect(create).toHaveBeenCalledOnce();
+  expect(h.run).toHaveBeenCalledTimes(1);
+  expect(h.run.mock.calls[0]![0].request).toMatchObject({
+    preference: { style: 'custom', instructions: '移动 <&> {count}' },
+  });
+  expect(h.move).not.toHaveBeenCalled();
+  await act(async () => finish({ status: 'completed', output: { newFolders: [], moves: [], merges: [] } }));
+  const confirmFolders = screen.getByRole('button', { name: 'Confirm folders and start bookmark batches' });
+  await waitFor(() => expect(confirmFolders).toBeEnabled());
+  fireEvent.click(confirmFolders);
+  await screen.findByText('Review and adjust bookmarks (2)');
+  fireEvent.click(screen.getByText('Review and adjust bookmarks (2)'));
+  await waitFor(() => expect(screen.getByLabelText('Select move:a')).toBeEnabled());
+  fireEvent.click(screen.getByLabelText('Select move:a'));
+  await waitFor(() => expect(screen.getByLabelText('Select move:a')).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: 'Next: confirm changes' }));
+  const apply = screen.getByRole('button', { name: 'Confirm and apply operations (1)' });
+  fireEvent.change(screen.getByLabelText('Language'), { target: { value: 'zh-CN' } });
+  expect(screen.getByRole('button', { name: '确认并执行 1 项操作' })).toBe(apply);
+  expect(screen.getByRole('heading', { name: '确认所选操作' })).toBeVisible();
+  expect(h.run).toHaveBeenCalledTimes(2);
+  expect(h.move).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByLabelText('语言'), { target: { value: 'en' } });
+  fireEvent.click(apply);
+  await waitFor(() => expect(h.move).toHaveBeenCalledExactlyOnceWith('b', expect.anything()));
+  await screen.findByText(/Request: .*Status: completed/);
+  expect(create).toHaveBeenCalledOnce();
+  page.unmount();
+  settings.dispose();
+  h.dispose();
 });
 
 it('shows a separate one-shot repair action, keeps apply unavailable and sends only failed identities on click', async () => {
@@ -35,7 +117,10 @@ it('shows a separate one-shot repair action, keeps apply unavailable and sends o
     setAccessLevel: async () => {},
   });
   const page = render(
-    <OrganizeWorkbench visible settings={settings} createController={emit => h.client(emit)} memoryStore={h.memory} />,
+    <LocaleProvider>
+      <LanguagePicker />
+      <OrganizeWorkbench visible settings={settings} createController={emit => h.client(emit)} memoryStore={h.memory} />
+    </LocaleProvider>,
   );
   await waitFor(() => expect(screen.getByRole('button', { name: '下一步：生成整理方案' })).toBeEnabled());
   fireEvent.click(screen.getByRole('button', { name: '下一步：生成整理方案' }));
@@ -45,11 +130,16 @@ it('shows a separate one-shot repair action, keeps apply unavailable and sends o
   await waitFor(() => expect(repair).toBeEnabled());
   expect(h.run).toHaveBeenCalledTimes(2);
   expect(screen.getByRole('button', { name: '下一步：确认操作' })).toBeDisabled();
+  fireEvent.change(screen.getByLabelText('语言'), { target: { value: 'en' } });
+  expect(screen.getByRole('button', { name: 'Retry these items (1)' })).toBe(repair);
+  expect(screen.getByRole('button', { name: 'Next: confirm changes' })).toBeDisabled();
+  expect(screen.getByText('A few bookmarks have invalid destination folders.', { exact: false })).toBeVisible();
+  expect(h.run).toHaveBeenCalledTimes(2);
   fireEvent.click(repair);
-  await waitFor(() => expect(screen.getByRole('button', { name: '下一步：确认操作' })).toBeEnabled());
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Next: confirm changes' })).toBeEnabled());
   expect(h.run).toHaveBeenCalledTimes(3);
   expect(h.run.mock.calls[2]![0].request).toMatchObject({ itemIds: ['b'] });
-  expect(screen.queryByRole('button', { name: '只补问这 1 条' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Retry these items (1)' })).not.toBeInTheDocument();
   expect(h.move).not.toHaveBeenCalled();
   page.unmount();
   settings.dispose();

@@ -6,6 +6,7 @@ import { english } from '../ui/i18n/catalog';
 import { searchStatusText } from '../panel/search-status-text';
 import { serviceStatusText } from '../options/ai-services/status-text';
 import { saveStatusText } from '../panel/save-status-text';
+import { organizeStatusText, organizePreviewText } from '../panel/organize-status-text';
 
 it('every translation preserves its parameters and interpolates values as literal text', () => {
   const placeholders = (value: string) => [...value.matchAll(/\{(\w+)\}/g)].map(match => match[1]).sort();
@@ -17,6 +18,32 @@ it('every translation preserves its parameters and interpolates values as litera
     'Results: 2 · <script>{count}$&</script>',
   );
   expect(translateKnown('en', '用户自己的标题')).toBe('用户自己的标题');
+});
+
+it('organizer statuses adapt owned progress and errors while preserving diagnostic codes and native preview content', () => {
+  expect(organizeStatusText('en', '正在生成第 2 / 3 批建议（100 条书签）…')).toBe(
+    'Generating batch 2 / 3 (100 bookmarks)…',
+  );
+  expect(organizeStatusText('en', '服务繁忙，4 秒后重试（2/3），可随时暂停。')).toContain('Retrying in 4s (2/3)');
+  expect(organizeStatusText('en', '等待连接、后续流数据或完整非流式响应超过 180 秒，请重试。 未修改书签。')).toContain(
+    '180s. Retry. No bookmarks were changed.',
+  );
+  expect(
+    organizeStatusText('en', '模型服务密钥无效，请检查 AI 服务配置。 已保留 3 批结果，可继续未完成批次。未修改书签。'),
+  ).toBe(
+    'The provider key is invalid. Check AI service settings. Retained results from 3 batches. You can continue unfinished batches. No bookmarks were changed.',
+  );
+  expect(organizeStatusText('en', '全部 3 批已完成，已核对 200 条书签。没有需要应用的操作。')).toBe(
+    'All 3 batches are complete; 200 bookmarks checked. No changes to apply.',
+  );
+  expect(
+    organizeStatusText('en', 'unknown：已完成 1 步，未完成 2 步。结果未知，请在备份与恢复中核对；不自动重放。'),
+  ).toContain('unknown: completed 1 steps, remaining 2. The outcome is unknown.');
+  expect(organizeStatusText('en', 'unrecognized diagnostic: 书签')).toBe('unrecognized diagnostic: 书签');
+  expect(organizePreviewText('en', '新建目录：移动 / 重命名 <&> {action}')).toBe(
+    'New folder: 移动 / 重命名 <&> {action}',
+  );
+  expect(organizePreviewText('zh-CN', '新建目录：移动')).toBe('新建目录：移动');
 });
 it('language changes retain mounted owners and drafts, persist locally, and update document metadata', () => {
   const mount = vi.fn();

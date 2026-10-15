@@ -3,6 +3,7 @@ import type { OrganizeAction, OrganizeProposal } from '../domain/organize-propos
 import { organizePaths } from '../domain/organize-review';
 import { Select } from '../ui/Select';
 import { useI18n } from '../ui/i18n';
+import { organizeActionReason } from './organize-action-text';
 
 function GroupChoice({
   checked,
@@ -64,7 +65,7 @@ export function OrganizeTargetReview({
   reject: (action: OrganizeAction) => void;
   rejectDisabled: boolean;
 }) {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const groups = useMemo(() => {
     const result = new Map<string, OrganizeAction[]>();
     for (const action of actions) {
@@ -116,7 +117,7 @@ export function OrganizeTargetReview({
                   </label>
                   <p>{t('当前路径：{path}', { path: paths.get(action.sourceId) ?? '' })}</p>
                   <div className="organize-reason">
-                    <p>{t('建议理由：{reason}', { reason: action.reason ?? '' })}</p>
+                    <p>{t('建议理由：{reason}', { reason: organizeActionReason(language, action, proposal) })}</p>
                     <button
                       className="organize-reject"
                       disabled={disabled || rejectDisabled}

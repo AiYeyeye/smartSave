@@ -44,9 +44,9 @@ with sync_playwright() as playwright:
             preferences.get_by_label('语言', exact=True).select_option('en')
         page = context.new_page()
         page.goto(f'chrome-extension://{extension_id}/options/index.html#organize')
-        page.get_by_role('radio', name='清理重复书签', exact=False).check()
-        page.get_by_label('整理范围', exact=True).select_option(fixture['root'])
-        page.get_by_role('button', name='下一步：查找重复书签', exact=True).click()
+        page.get_by_role('radio', name=text('清理重复书签', 'Review duplicate bookmarks'), exact=False).check()
+        page.get_by_label(text('整理范围', 'Organization scope'), exact=True).select_option(fixture['root'])
+        page.get_by_role('button', name=text('下一步：查找重复书签', 'Next: find duplicates'), exact=True).click()
         expect(page.get_by_role('heading', name=text('精确重复 · 2 条', 'Exact duplicates · 2'), exact=True)).to_be_visible()
         expect(page.get_by_role('heading', name=text('疑似重复 · 3 条', 'Possible duplicates · 3'), exact=True)).to_be_visible()
         assert page.locator('.duplicate-review select').count() == 5
@@ -56,7 +56,7 @@ with sync_playwright() as playwright:
             expect(page.locator('.duplicate-review').get_by_text(item['url'], exact=True)).to_be_visible()
         expect(page.get_by_label(text('Different content 保留或删除', 'Keep or delete Different content'), exact=True)).to_have_count(0)
         page.get_by_label(text('Delete B 保留或删除', 'Keep or delete Delete B'), exact=True).select_option('delete')
-        expect(page.get_by_role('button', name='生成去重预览', exact=True)).to_be_disabled()
+        expect(page.get_by_role('button', name=text('生成去重预览', 'Preview duplicate cleanup'), exact=True)).to_be_disabled()
         page.get_by_label(text('Keep A 保留或删除', 'Keep or delete Keep A'), exact=True).select_option('keep')
         if args.language == 'en':
             preferences.get_by_label('Language', exact=True).select_option('zh-CN')
@@ -74,8 +74,11 @@ with sync_playwright() as playwright:
             assert measured['scroll'] <= measured['width'] + 1, measured
             geometry.append(measured)
             page.screenshot(path=str(root / f'duplicate-review-{width}.png'), full_page=True)
-        page.get_by_role('button', name='生成去重预览', exact=True).click()
-        page.get_by_text('完整分类树与内容去向', exact=True).click()
+        page.get_by_role('button', name=text('生成去重预览', 'Preview duplicate cleanup'), exact=True).click()
+        page.get_by_text(text('完整分类树与内容去向', 'Full folder tree and bookmark destinations'), exact=True).click()
+        if args.language == 'en':
+            page.get_by_text('Folder changes and other operations · 1', exact=True).click()
+            expect(page.get_by_text('Reason: Remove possible duplicates after individual review, keeping the explicitly chosen copies.', exact=True)).to_be_visible()
         expect(page.get_by_role('heading', name=text('预计整理后的分类', 'Proposed folders'), exact=True)).to_be_visible()
         expect(page.get_by_text(text('→ 删除重复书签 · 1 条书签', '→ Delete duplicate bookmarks · Bookmarks: 1'), exact=True)).to_be_visible()
         for width in [320, 340, 480, 1024]:
@@ -85,10 +88,10 @@ with sync_playwright() as playwright:
             assert measured['scroll'] <= width + 1, measured
             geometry.append({'surface': 'preview', **measured})
             page.screenshot(path=str(root / f'duplicate-preview-{width}.png'), full_page=True)
-        page.get_by_role('button', name='下一步：确认操作', exact=True).click()
+        page.get_by_role('button', name=text('下一步：确认操作', 'Next: confirm changes'), exact=True).click()
         assert worker.evaluate('(id)=>chrome.bookmarks.getSubTree(id)', fixture['root']) == before
-        page.get_by_role('button', name='确认并执行 1 项操作', exact=True).click()
-        page.get_by_text('状态 completed', exact=False).wait_for()
+        page.get_by_role('button', name=text('确认并执行 1 项操作', 'Confirm and apply operations (1)'), exact=True).click()
+        page.get_by_text(text('状态 completed', 'Status: completed'), exact=False).wait_for()
         after = worker.evaluate('async id=>(await chrome.bookmarks.getSubTree(id))[0].children', fixture['root'])
         assert [item['id'] for item in after] == [item['id'] for item in fixture['items'] if item['title'] != 'Delete B']
         assert [item['url'] for item in after] == [item['url'] for item in fixture['items'] if item['title'] != 'Delete B']

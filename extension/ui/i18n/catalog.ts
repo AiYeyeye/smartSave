@@ -3,6 +3,8 @@ import { saveEnglish } from './save';
 import { saveReceiptsEnglish } from './save-receipts';
 import { bookmarksEnglish } from './bookmarks';
 import { organizeEnglish } from './organize';
+import { organizeWorkbenchEnglish } from './organize-workbench';
+import { organizeStatusEnglish } from './organize-status';
 /** UI-owned messages only. Native bookmark content and provider output never enter this catalog. */
 export const english = {
   ...aiServicesEnglish,
@@ -10,6 +12,8 @@ export const english = {
   ...saveReceiptsEnglish,
   ...bookmarksEnglish,
   ...organizeEnglish,
+  ...organizeWorkbenchEnglish,
+  ...organizeStatusEnglish,
   智栏: 'Zhilan',
   '智栏 · 书签助手': 'Zhilan · Bookmark assistant',
   语言: 'Language',
