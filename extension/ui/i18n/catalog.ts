@@ -8,6 +8,7 @@ import { organizeStatusEnglish } from './organize-status';
 import { recoveryEnglish } from './recovery';
 import { exportEnglish } from './export';
 import { importEnglish } from './import';
+import { preferencesEnglish } from './preferences';
 /** UI-owned messages only. Native bookmark content and provider output never enter this catalog. */
 export const english = {
   ...aiServicesEnglish,
@@ -20,6 +21,7 @@ export const english = {
   ...recoveryEnglish,
   ...exportEnglish,
   ...importEnglish,
+  ...preferencesEnglish,
   智栏: 'Zhilan',
   '智栏 · 书签助手': 'Zhilan · Bookmark assistant',
   语言: 'Language',

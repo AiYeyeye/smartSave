@@ -10,6 +10,8 @@ import { DEFAULT_MAX_OUTPUT_TOKENS, maxOutputTokensSchema, modelStreaming } from
 import { Select } from '../ui/Select';
 import type { AiPrivacy } from '../domain/ai-payload';
 import { modelPresets } from '../domain/model-presets';
+import { useI18n } from '../ui/i18n';
+import { modelSettingsNoticeText, type ModelSettingsNotice } from './model-settings-text';
 function browserStore() {
   return new SettingsStore(chrome.storage.local);
 }
@@ -22,6 +24,7 @@ export function ModelSettings({
   fields?: 'all' | 'model' | 'privacy';
   showHeading?: boolean;
 }) {
+  const { t, language, message } = useI18n();
   const [store] = useState(
     () => supplied ?? (typeof chrome !== 'undefined' && chrome.storage?.local ? browserStore() : undefined),
   );
@@ -67,7 +70,7 @@ export function ModelSettings({
   const [remember, setRemember] = useState(false);
   const [privacy, setPrivacy] = useState<AiPrivacy>({ fullUrl: true, bodyEnabled: false, excludedFolders: [] });
   const [tree, setTree] = useState<TreeState>({ status: 'loading' });
-  const [status, setStatus] = useState('');
+  const [status, setStatus] = useState<ModelSettingsNotice>('');
   const [error, setError] = useState(false);
   const [busy, setBusy] = useState(false);
   const testAbort = useRef<AbortController | undefined>(undefined);
@@ -171,7 +174,7 @@ export function ModelSettings({
     cancel();
     const operation = generation.current;
     const current = () => mounted.current && generation.current === operation;
-    const updateStatus = (text: string) => {
+    const updateStatus = (text: ModelSettingsNotice) => {
       if (current()) setStatus(text);
     };
     const updateError = (value: boolean) => {
@@ -220,9 +223,7 @@ export function ModelSettings({
           updateError(true);
           setDiscoveredModels([]);
           setListSource('');
-          updateStatus(
-            `未能获取模型列表：${result.reason}。可手填模型 ID；401检查密钥；403检查服务鉴权/Origin；429稍后重试；permission重新授权；list-unsupported 请手填。`,
-          );
+          updateStatus({ kind: 'list-failed', reason: result.reason });
           return;
         }
         setDiscoveredModels(result.models);
@@ -231,7 +232,7 @@ export function ModelSettings({
         updateStatus(
           result.source === 'curated'
             ? '已授权；列表接口不可用，已填入常用模型，仍可手填自定义 ID。'
-            : `已授权并获取 ${result.models.length} 个模型；尚未证明任务能力。`,
+            : { kind: 'listed', count: result.models.length },
         );
         return;
       }
@@ -263,7 +264,7 @@ export function ModelSettings({
         updateStatus(
           result.status === 'completed'
             ? '合成分类测试通过；草稿未保存。'
-            : `模型请求未完成：${result.reason}。可展开 Debug 日志查看调用与返回。`,
+            : { kind: 'test-failed', reason: result.reason },
         );
       }
     } catch {
@@ -278,25 +279,27 @@ export function ModelSettings({
   return (
     <section
       className="surface"
-      aria-label={fields === 'privacy' ? '隐私' : fields === 'model' ? 'AI 模型' : '模型与隐私'}
+      aria-label={fields === 'privacy' ? t('隐私') : fields === 'model' ? t('AI 模型') : t('模型与隐私')}
     >
-      {showHeading && <h2>{fields === 'privacy' ? '隐私' : fields === 'model' ? 'AI 模型' : '模型与隐私'}</h2>}
+      {showHeading && <h2>{fields === 'privacy' ? t('隐私') : fields === 'model' ? t('AI 模型') : t('模型与隐私')}</h2>}
       {showModel && (
         <>
           <details className="settings-help">
-            <summary>数据发送与密钥安全</summary>
+            <summary>{t('数据发送与密钥安全')}</summary>
             <p>
-              请求发送到您配置的服务；本地不会自动切换云端。完整网址参数可能包含凭证。未排除的内网书签信息也可能发送。
+              {t(
+                '请求发送到您配置的服务；本地不会自动切换云端。完整网址参数可能包含凭证。未排除的内网书签信息也可能发送。',
+              )}
             </p>
-            <p>密钥默认仅当前页面会话使用。记住密钥存于本地扩展存储；不进入同步、日志、备份或导出。</p>
+            <p>{t('密钥默认仅当前页面会话使用。记住密钥存于本地扩展存储；不进入同步、日志、备份或导出。')}</p>
           </details>
           <label className="field">
-            模型服务
-            <Select aria-label="模型服务" value={presetId} onChange={e => choosePreset(e.target.value)}>
-              <option value="custom">自定义</option>
+            {t('模型服务')}
+            <Select aria-label={t('模型服务')} value={presetId} onChange={e => choosePreset(e.target.value)}>
+              <option value="custom">{t('自定义')}</option>
               {modelPresets.map(item => (
                 <option key={item.id} value={item.id}>
-                  {item.name}
+                  {message(item.name)}
                 </option>
               ))}
             </Select>
@@ -316,20 +319,20 @@ export function ModelSettings({
           </label>
           <label className="check">
             <input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)} />
-            明确记住密钥（本地明文存储）
+            {t('明确记住密钥（本地明文存储）')}
           </label>
-          <p className="hint">记住的密钥不是操作系统保险库保护的数据。</p>
+          <p className="hint">{t('记住的密钥不是操作系统保险库保护的数据。')}</p>
           <label className="field">
-            模型
+            {t('模型')}
             <Select
-              aria-label="模型"
+              aria-label={t('模型')}
               value={modelChoices.includes(model) ? model : ''}
               onChange={e => {
                 cancel();
                 if (e.target.value) setModel(e.target.value);
               }}
             >
-              <option value="">手填模型 ID</option>
+              <option value="">{t('手填模型 ID')}</option>
               {modelChoices.map(id => (
                 <option key={id} value={id}>
                   {id}
@@ -338,9 +341,9 @@ export function ModelSettings({
             </Select>
           </label>
           <label className="field">
-            模型名称
+            {t('模型名称')}
             <input
-              aria-label="模型名称"
+              aria-label={t('模型名称')}
               value={model}
               onChange={e => {
                 cancel();
@@ -348,11 +351,11 @@ export function ModelSettings({
               }}
             />
           </label>
-          {listSource === 'curated' && <p className="hint">当前列表为常用模型兜底，不是实时发现结果。</p>}
+          {listSource === 'curated' && <p className="hint">{t('当前列表为常用模型兜底，不是实时发现结果。')}</p>}
           <label className="field">
             <input
               type="checkbox"
-              aria-label="流式响应"
+              aria-label={t('流式响应')}
               checked={modelStreaming({ adapter: adapter as ModelConfig['adapter'], streaming })}
               disabled={adapter === 'ollama'}
               onChange={e => {
@@ -360,27 +363,27 @@ export function ModelSettings({
                 setStreaming(e.target.checked);
               }}
             />
-            流式响应（关闭后使用 JSON）
+            {t('流式响应（关闭后使用 JSON）')}
           </label>
           <label className="field">
             <input
               type="checkbox"
-              aria-label="优先快速响应"
+              aria-label={t('优先快速响应')}
               checked={fastMode ?? true}
               onChange={e => {
                 cancel();
                 setFastMode(e.target.checked);
               }}
             />
-            优先快速响应（对已支持的模型降低思考量）
+            {t('优先快速响应（对已支持的模型降低思考量）')}
           </label>
           <details className="settings-help">
-            <summary>高级：协议、地址与超时</summary>
+            <summary>{t('高级：协议、地址与超时')}</summary>
             {['openai-compatible', 'openai-responses', 'anthropic', 'google-generative-ai'].includes(adapter) && (
               <label className="field">
-                最大输出 tokens
+                {t('最大输出 tokens')}
                 <input
-                  aria-label="最大输出 tokens"
+                  aria-label={t('最大输出 tokens')}
                   type="number"
                   min={1}
                   max={Number.MAX_SAFE_INTEGER}
@@ -392,14 +395,14 @@ export function ModelSettings({
                     setMaxOutputTokens(e.target.value);
                   }}
                 />
-                <span className="hint">默认 128,000，包含推理和正文。请填写所选模型支持的输出额度。</span>
-                {!outputLimitValid && <span role="alert">输出上限请输入大于或等于 1 的有效整数。</span>}
+                <span className="hint">{t('默认 128,000，包含推理和正文。请填写所选模型支持的输出额度。')}</span>
+                {!outputLimitValid && <span role="alert">{t('输出上限请输入大于或等于 1 的有效整数。')}</span>}
               </label>
             )}
             <label className="field">
-              接口协议
+              {t('接口协议')}
               <Select
-                aria-label="接口协议"
+                aria-label={t('接口协议')}
                 value={adapter}
                 onChange={e => {
                   cancel();
@@ -411,7 +414,7 @@ export function ModelSettings({
                   setAdapter(e.target.value);
                 }}
               >
-                <option value="">请选择</option>
+                <option value="">{t('请选择')}</option>
                 <option value="openai-compatible">OpenAI Chat Completions</option>
                 <option value="openai-responses">OpenAI Responses</option>
                 <option value="anthropic">Anthropic Messages</option>
@@ -421,9 +424,9 @@ export function ModelSettings({
               </Select>
             </label>
             <label className="field">
-              服务基础地址
+              {t('服务基础地址')}
               <input
-                aria-label="服务基础地址"
+                aria-label={t('服务基础地址')}
                 value={baseUrl}
                 onChange={e => {
                   cancel();
@@ -437,15 +440,16 @@ export function ModelSettings({
               />
             </label>
             <p className="hint">
-              填写服务根/代理前缀（可以以 /v1 结尾，不会重复拼接）。Anthropic 使用 /v1/messages；兼容协议使用
-              /v1/chat/completions；Ollama 使用 /api/chat。主机权限不能精确限定端口/路径。
+              {t(
+                '填写服务根/代理前缀（可以以 /v1 结尾，不会重复拼接）。Anthropic 使用 /v1/messages；兼容协议使用 /v1/chat/completions；Ollama 使用 /api/chat。主机权限不能精确限定端口/路径。',
+              )}
             </p>
             <label className="field">
-              超时（毫秒）
+              {t('超时（毫秒）')}
               <input
                 type="number"
                 min="1"
-                aria-label="超时（毫秒）"
+                aria-label={t('超时（毫秒）')}
                 value={timeout}
                 onChange={e => {
                   cancel();
@@ -454,14 +458,14 @@ export function ModelSettings({
               />
             </label>
             <p className="hint">
-              流式响应按连续无事件或心跳的时间计时；持续收到数据会继续等待。非流式响应按总时间计时。
+              {t('流式响应按连续无事件或心跳的时间计时；持续收到数据会继续等待。非流式响应按总时间计时。')}
             </p>
           </details>
         </>
       )}
       {showPrivacy && (
         <>
-          <p>控制发送到模型服务的内容。排除目录不改变导出范围。</p>
+          <p>{t('控制发送到模型服务的内容。排除目录不改变导出范围。')}</p>
           <label className="check">
             <input
               type="checkbox"
@@ -471,7 +475,7 @@ export function ModelSettings({
                 setPrivacy({ ...privacy, fullUrl: e.target.checked });
               }}
             />
-            发送完整网址（含查询参数和片段）
+            {t('发送完整网址（含查询参数和片段）')}
           </label>
           <label className="check">
             <input
@@ -482,12 +486,12 @@ export function ModelSettings({
                 setPrivacy({ ...privacy, bodyEnabled: e.target.checked });
               }}
             />
-            正文辅助（仅主动收藏）
+            {t('正文辅助（仅主动收藏）')}
           </label>
           <fieldset>
-            <legend>AI排除目录（包括子目录；不改变导出范围）</legend>
+            <legend>{t('AI排除目录（包括子目录；不改变导出范围）')}</legend>
             {tree.status !== 'ready' ? (
-              <p>目录未就绪；现有排除配置保留。</p>
+              <p>{t('目录未就绪；现有排除配置保留。')}</p>
             ) : (
               tree.snapshot.nodes
                 .filter(n => n.ref.kind === 'folder')
@@ -510,7 +514,7 @@ export function ModelSettings({
                         });
                       }}
                     />
-                    {n.title || '根目录'}（{n.ref.nativeId}）
+                    {n.title || t('根目录')}（{n.ref.nativeId}）
                   </label>
                 ))
             )}
@@ -518,19 +522,19 @@ export function ModelSettings({
         </>
       )}
       <div hidden={!status} role={error ? 'alert' : 'status'}>
-        {status}
+        {modelSettingsNoticeText(language, status)}
       </div>
       <div className="actions">
         <button disabled={busy || !outputLimitValid} onClick={() => void run('save')}>
-          {fields === 'privacy' ? '保存隐私设置' : '保存模型设置'}
+          {fields === 'privacy' ? t('保存隐私设置') : t('保存模型设置')}
         </button>
         {showModel && (
           <>
             <button disabled={busy} onClick={() => void run('authorize-list')}>
-              授权并获取模型
+              {t('授权并获取模型')}
             </button>
             <button disabled={busy || !outputLimitValid} onClick={() => void run('test')}>
-              使用合成数据测试连接
+              {t('使用合成数据测试连接')}
             </button>
             <button
               onClick={() => {
@@ -538,18 +542,18 @@ export function ModelSettings({
                 setStatus('已取消；不会自动重试。');
               }}
             >
-              取消请求
+              {t('取消请求')}
             </button>
             <button disabled={busy} onClick={() => void run('delete')}>
-              删除密钥
+              {t('删除密钥')}
             </button>
           </>
         )}
       </div>
       {showModel && (
         <details className="settings-help">
-          <summary>测试范围与请求生命周期</summary>
-          <p>连接测试不代表全部任务已验证。关闭页面会取消请求，不自动重试。</p>
+          <summary>{t('测试范围与请求生命周期')}</summary>
+          <p>{t('连接测试不代表全部任务已验证。关闭页面会取消请求，不自动重试。')}</p>
         </details>
       )}
     </section>

@@ -1450,7 +1450,7 @@ dialog::backdrop {
 }
 .debug-list li {
   display: grid;
-  grid-template-columns: 74px 64px minmax(110px, auto) 1fr;
+  grid-template-columns: 74px minmax(0, 1fr) minmax(0, 2fr);
   gap: 10px;
   padding: 6px 12px;
   border-bottom: 1px solid var(--divider);
@@ -1464,9 +1464,11 @@ dialog::backdrop {
 }
 .debug-src {
   color: var(--accent-text);
+  overflow-wrap: anywhere;
 }
 .debug-event {
   font-weight: 600;
+  overflow-wrap: anywhere;
 }
 .debug-event.is-fail {
   color: var(--danger);
@@ -1475,6 +1477,8 @@ dialog::backdrop {
   color: var(--success);
 }
 .debug-detail {
+  grid-column: 1 / -1;
+  min-width: 0;
   color: var(--muted);
   overflow-wrap: anywhere;
 }

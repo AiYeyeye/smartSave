@@ -11,6 +11,7 @@ import {
 } from '../domain/debug-log';
 import { ReceiptView, useSaveReceipts } from '../panel/SaveReceiptCard';
 import { summarizeSaveTimings } from '../domain/save-performance';
+import { useI18n } from '../ui/i18n';
 
 function time(t: number) {
   const d = new Date(t);
@@ -34,14 +35,17 @@ function tone(entry: DebugEntry) {
 
 /** Recent native-save receipts: the answer to "did AI run, and where did it put my bookmark?". */
 export function SaveHistory({ onOpen }: { onOpen: (route: string) => void }) {
+  const { t } = useI18n();
   const receipts = useSaveReceipts();
   return (
-    <section className="surface" aria-label="收藏记录">
-      <h2>最近的原生收藏</h2>
-      <p className="hint">在浏览器里点星标或 Ctrl+D 收藏后，智栏的处理结果会记录在这里（最多 30 条，仅保存在本机）。</p>
+    <section className="surface" aria-label={t('收藏记录')}>
+      <h2>{t('最近的原生收藏')}</h2>
+      <p className="hint">
+        {t('在浏览器里点星标或 Ctrl+D 收藏后，智栏的处理结果会记录在这里（最多 30 条，仅保存在本机）。')}
+      </p>
       {receipts.length === 0 ? (
         <p className="hint" style={{ marginTop: 12 }}>
-          还没有记录。收藏一个网页试试。
+          {t('还没有记录。收藏一个网页试试。')}
         </p>
       ) : (
         <ul className="receipt-table">
@@ -58,6 +62,7 @@ export function SaveHistory({ onOpen }: { onOpen: (route: string) => void }) {
 
 /** Settings → Debug: opt-in call trail for AI requests and background classification. */
 export function DebugLogPanel() {
+  const { t } = useI18n();
   const timings = summarizeSaveTimings(useSaveReceipts());
   const [enabled, setEnabled] = useState(false);
   const [entries, setEntries] = useState<DebugEntry[]>([]);
@@ -99,21 +104,21 @@ export function DebugLogPanel() {
   }
 
   return (
-    <section className="surface" aria-label="Debug 日志">
+    <section className="surface" aria-label={t('Debug 日志')}>
       <div className="debug-head">
         <div>
-          <h2>Debug 日志</h2>
+          <h2>{t('Debug 日志')}</h2>
           <p>
-            开启后记录 AI
-            请求、脱敏后的请求与响应正文、状态码和解析过程。仅保存在本机，不记录密钥；正文可能包含书签标题和网址，分享前请检查。单份正文最多
-            65536 字符，日志总量最多 1 MiB。
+            {t(
+              '开启后记录 AI 请求、脱敏后的请求与响应正文、状态码和解析过程。仅保存在本机，不记录密钥；正文可能包含书签标题和网址，分享前请检查。单份正文最多 65536 字符，日志总量最多 1 MiB。',
+            )}
           </p>
         </div>
-        <label className="switch" title={enabled ? '已开启' : '已关闭'}>
+        <label className="switch" title={enabled ? t('已开启') : t('已关闭')}>
           <input
             type="checkbox"
             role="switch"
-            aria-label="开启 Debug 日志"
+            aria-label={t('开启 Debug 日志')}
             checked={enabled}
             onChange={event => {
               setEnabled(event.target.checked);
@@ -123,19 +128,18 @@ export function DebugLogPanel() {
           <span />
         </label>
       </div>
-      <section aria-label="收藏耗时统计">
-        <h3>收藏耗时统计</h3>
+      <section aria-label={t('收藏耗时统计')}>
+        <h3>{t('收藏耗时统计')}</h3>
         <p className="hint">
-          最近 30
-          条本机记录，按连接和模型统计成功收藏；失败单独计数。总耗时包含收藏后的等待。非流式响应无法拆分首字与生成耗时。
+          {t(
+            '最近 30 条本机记录，按连接和模型统计成功收藏；失败单独计数。总耗时包含收藏后的等待。非流式响应无法拆分首字与生成耗时。',
+          )}
         </p>
-        {timings.length === 0 && <p className="hint">收藏网页后会显示耗时，不需要开启 Debug 日志。</p>}
+        {timings.length === 0 && <p className="hint">{t('收藏网页后会显示耗时，不需要开启 Debug 日志。')}</p>}
         {timings.map(row => (
           <div key={row.model}>
             <strong>{row.model}</strong>
-            <p>
-              成功 {row.completed} 条 · 失败 {row.failed} 条
-            </p>
+            <p>{t('成功 {completed} 条 · 失败 {failed} 条', { completed: row.completed, failed: row.failed })}</p>
             {(
               [
                 ['总耗时', row.total],
@@ -148,8 +152,12 @@ export function DebugLogPanel() {
               ([label, value]) =>
                 value && (
                   <p className="hint" key={label}>
-                    {label}：中位 {(value.median / 1000).toFixed(2)} 秒 · P90 {(value.p90 / 1000).toFixed(2)} 秒（
-                    {value.count} 条）
+                    {t('{label}：中位 {median} 秒 · P90 {p90} 秒（{count} 条）', {
+                      label: t(label),
+                      median: (value.median / 1000).toFixed(2),
+                      p90: (value.p90 / 1000).toFixed(2),
+                      count: value.count,
+                    })}
                   </p>
                 ),
             )}
@@ -159,11 +167,11 @@ export function DebugLogPanel() {
       <div className="actions">
         <button type="button" onClick={() => void readDebugTrail().then(setEntries)}>
           <RefreshCw aria-hidden="true" />
-          刷新
+          {t('刷新')}
         </button>
         <button type="button" onClick={() => void copy()} disabled={!entries.length}>
           <Copy aria-hidden="true" />
-          {copied ? '已复制' : '复制全部'}
+          {copied ? t('已复制') : t('复制全部')}
         </button>
         <button
           type="button"
@@ -172,17 +180,17 @@ export function DebugLogPanel() {
           disabled={!entries.length}
         >
           <Trash2 aria-hidden="true" />
-          清空
+          {t('清空')}
         </button>
       </div>
       {newestFirst.length === 0 ? (
         <p className="hint" style={{ marginTop: 12 }}>
           {enabled
-            ? '已开启，暂无记录。收藏一个网页或测试一次连接试试。'
-            : '默认关闭。开启后，新的调用会出现在这里（最多 400 条）。'}
+            ? t('已开启，暂无记录。收藏一个网页或测试一次连接试试。')
+            : t('默认关闭。开启后，新的调用会出现在这里（最多 400 条）。')}
         </p>
       ) : (
-        <ol className="debug-list" aria-label="调用轨迹">
+        <ol className="debug-list" aria-label={t('调用轨迹')}>
           {newestFirst.map((entry, index) => (
             <li key={`${entry.t}-${index}`}>
               <time>{time(entry.t)}</time>
@@ -193,8 +201,8 @@ export function DebugLogPanel() {
                 {typeof entry.detail?.body === 'string' && (
                   <details>
                     <summary>
-                      查看{entry.event === 'request-body' ? '请求' : '响应'}正文
-                      {entry.detail.truncated ? '（已截断）' : ''}
+                      {t(entry.event === 'request-body' ? '查看请求正文' : '查看响应正文')}
+                      {entry.detail.truncated ? t('（已截断）') : ''}
                     </summary>
                     <pre>{entry.detail.body}</pre>
                   </details>

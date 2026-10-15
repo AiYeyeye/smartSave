@@ -209,7 +209,7 @@ it('debug trail stays empty by default and records sanitized entries once enable
 
 it('expands captured bodies and copies their full diagnostic text from the Debug panel', async () => {
   const body = JSON.stringify({
-    output: [{ type: 'message', content: [{ type: 'output_text', text: 'answer'.repeat(100) }] }],
+    output: [{ type: 'message', content: [{ type: 'output_text', text: '清空 {title}'.repeat(100) }] }],
   });
   stubStorage({
     [DEBUG_SETTINGS_KEY]: { enabled: true },
@@ -224,10 +224,20 @@ it('expands captured bodies and copies their full diagnostic text from the Debug
   });
   const user = userEvent.setup();
   const copy = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue();
-  render(createElement(DebugLogPanel));
+  render(createElement(LocaleProvider, null, createElement(LanguagePicker), createElement(DebugLogPanel)));
   await user.click(await screen.findByText('查看响应正文'));
   expect(screen.getByText(body)).toBeVisible();
-  await user.click(screen.getByRole('button', { name: '复制全部' }));
+  const set = vi.spyOn(chrome.storage.local, 'set');
+  const get = vi.spyOn(chrome.storage.local, 'get');
+  const opened = screen.getByText('查看响应正文').closest('details');
+  fireEvent.change(screen.getByRole('combobox', { name: '语言' }), { target: { value: 'en' } });
+  expect(screen.getByText('View response body').closest('details')).toBe(opened);
+  expect(opened).toHaveAttribute('open');
+  expect(screen.getByText(body)).toBeVisible();
+  expect(screen.getByRole('switch', { name: 'Enable Debug logs' })).toBeChecked();
+  expect(set).not.toHaveBeenCalled();
+  expect(get).not.toHaveBeenCalled();
+  await user.click(screen.getByRole('button', { name: 'Copy all' }));
   expect(copy).toHaveBeenCalledWith(expect.stringContaining(body));
   expect(copy).toHaveBeenCalledWith(expect.stringContaining('callId=call-1  attempt=2'));
   copy.mockRestore();
