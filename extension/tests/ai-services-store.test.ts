@@ -64,13 +64,14 @@ describe('AiServicesStore', () => {
     const { storage } = memoryStorage();
     const store = new AiServicesStore(storage, run => run());
     await store.load();
-    const service = { ...sampleService, mode: 'openai-responses' as const, maxOutputTokens: 64000 };
+    const service = { ...sampleService, mode: 'openai-responses' as const, maxOutputTokens: 64000, fastMode: false };
     await store.upsertService(service, 'keep-key', true);
     await store.saveFeatures([
       { id: 'save', name: 'save', desc: '', connId: service.id, modelId: service.enabled[0]! },
     ]);
     const backup = store.exportConfig();
     expect(backup.services[0]?.maxOutputTokens).toBe(64000);
+    expect(backup.services[0]?.fastMode).toBe(false);
     await store.upsertService({ ...service, maxOutputTokens: 32000 }, 'keep-key', true);
     expect(store.credential(service.id)).toBe('keep-key');
     await store.replaceAll(backup.services, backup.features);
@@ -78,11 +79,12 @@ describe('AiServicesStore', () => {
     const settings = new SettingsStore(storage, run => run());
     await store.syncPrimaryToSettings(settings);
     expect((await settings.snapshot()).config?.maxOutputTokens).toBe(64000);
+    expect((await settings.snapshot()).config?.fastMode).toBe(false);
     const reloaded = new AiServicesStore(storage, run => run());
     await reloaded.load();
     expect(reloaded.snapshotServices().services[0]?.maxOutputTokens).toBe(64000);
     await reloaded.upsertService(service, 'keep-key', true);
-    expect(await resolveSaveRoute(reloaded)).toMatchObject({ config: { maxOutputTokens: 64000 } });
+    expect(await resolveSaveRoute(reloaded)).toMatchObject({ config: { maxOutputTokens: 64000, fastMode: false } });
     await expect(store.upsertService({ ...service, maxOutputTokens: 0 }, '', false)).rejects.toThrow();
     reloaded.dispose();
     store.dispose();

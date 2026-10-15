@@ -18,6 +18,7 @@ export const modelConfigSchema = z.strictObject({
   model: z.string().trim().min(1),
   timeoutMs: z.number().int().positive().max(2147483647),
   streaming: z.boolean().optional(),
+  fastMode: z.boolean().optional(),
   maxOutputTokens: maxOutputTokensSchema.optional(),
 });
 export type ModelConfig = z.infer<typeof modelConfigSchema>;

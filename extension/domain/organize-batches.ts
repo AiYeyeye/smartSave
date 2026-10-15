@@ -9,23 +9,36 @@ export type OrganizeRequest = Extract<AiRequest, { task: 'organize' }>;
 
 export function partitionOrganizeItems(
   ids: string[],
-  size: (items: string[]) => number,
+  size: ((items: string[]) => number) | { sharedBytes: number; itemBytes(id: string): number },
   maxItems = ORGANIZE_BATCH_SIZE,
   maxRequestBytes = ORGANIZE_REQUEST_BYTES,
 ) {
   if (!Number.isSafeInteger(maxItems) || maxItems < 1) throw Error('invalid-batch-size');
-  if (size([]) > maxRequestBytes) throw Error('folder-context-too-large');
+  const sharedBytes = typeof size === 'function' ? size([]) : size.sharedBytes;
+  if (sharedBytes > maxRequestBytes) throw Error('folder-context-too-large');
   const batches: string[][] = [];
   let pending: string[] = [];
+  let pendingBytes = sharedBytes;
   for (const id of ids) {
-    if (pending.length && (pending.length >= maxItems || size([...pending, id]) > ORGANIZE_REQUEST_BYTES)) {
+    if (pending.length >= maxItems) {
       batches.push(pending);
       pending = [];
+      pendingBytes = sharedBytes;
+    }
+    let nextBytes =
+      typeof size === 'function'
+        ? size([...pending, id])
+        : pendingBytes + size.itemBytes(id) + (pending.length ? 1 : 0);
+    if (pending.length && nextBytes > ORGANIZE_REQUEST_BYTES) {
+      batches.push(pending);
+      pending = [];
+      nextBytes = typeof size === 'function' ? size([id]) : sharedBytes + size.itemBytes(id);
     }
     pending.push(id);
+    pendingBytes = nextBytes;
     // An indivisible item can exceed the preferred batch size while still fitting
     // the transport. Keep it intact in its own batch instead of rejecting the run.
-    if (size(pending) > maxRequestBytes) throw Error('bookmark-context-too-large');
+    if (nextBytes > maxRequestBytes) throw Error('bookmark-context-too-large');
   }
   if (pending.length) batches.push(pending);
   return batches;

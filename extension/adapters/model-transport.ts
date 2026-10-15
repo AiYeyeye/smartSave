@@ -1,7 +1,7 @@
 import { modelOutputTokenLimit, modelStreaming, parseModelEndpoint, type ModelConfig } from '../domain/model-route';
 import type { ModelAuthority } from './model-authority';
 import { readModelText, MODEL_BYTE_LIMITS, ModelResponseReadError, type ModelBodyObserver } from './model-byte-limits';
-import { serializeAiPayload, type AiPrivacy, type AiRequest } from '../domain/ai-payload';
+import { compactAiPayload, serializeAiPayload, type AiPrivacy, type AiRequest } from '../domain/ai-payload';
 import {
   classificationPolicySchema,
   DEFAULT_CLASSIFICATION_POLICY,
@@ -19,7 +19,13 @@ import {
 import { modelBodyDiagnostics, modelDiagnosticLog } from './model-diagnostics';
 import { completedReplyText, ModelParseError, replyShape } from './model-replies';
 import { readWireReply, type ModelStreamProgress } from './model-stream';
-export type ModelProgress = ModelStreamProgress & { phase: 'waiting' | 'receiving' | 'validating' };
+import type { ModelTiming } from '../domain/save-performance';
+import { modelThinkingPlan, rejectsThinkingParameter } from '../domain/model-thinking';
+import { abortableDelay } from '../domain/cancellable';
+export type ModelProgress = ModelStreamProgress & {
+  phase: 'waiting' | 'receiving' | 'validating';
+  retry?: { attempt: number; delaySeconds: number; httpStatus: number };
+};
 export { parseModelEndpoint, parseModelListEndpoint } from '../domain/model-route';
 export type ModelResult =
   | { status: 'completed'; output: ReturnType<typeof parseModelOutput> }
@@ -30,6 +36,7 @@ interface ModelBoundary {
 }
 const ANTHROPIC_VERSION = '2023-06-01';
 let modelCallSequence = 0;
+const unsupportedThinking = new Map<string, number>();
 
 function requestHeaders(adapter: ModelConfig['adapter'], key: string): Record<string, string> {
   if (adapter === 'anthropic') {
@@ -63,6 +70,8 @@ export function modelRequestBody(
   /** Ask for JSON through the API's own switch; off for the one retry after an empty reply. */
   jsonMode = true,
 ): string {
+  payload = compactAiPayload(payload);
+  const thinking = modelThinkingPlan(config);
   const schema = modelOutputJsonSchema(task);
   const system = `${modelSystemPrompt(task, classificationPolicySchema.parse(policy))} Output schema: ${JSON.stringify(schema)}`;
   if (config.adapter === 'anthropic') {
@@ -84,6 +93,7 @@ export function modelRequestBody(
       input: payload,
       // Reasoning models spend output tokens on thinking first; a small proxy default ends them before the JSON.
       max_output_tokens: modelOutputTokenLimit(config),
+      ...thinking?.top,
       ...(jsonMode ? { text: { format: { type: 'json_object' } } } : {}),
     });
   }
@@ -92,13 +102,18 @@ export function modelRequestBody(
     return JSON.stringify({
       systemInstruction: { parts: [{ text: system }] },
       contents: [{ role: 'user', parts: [{ text: payload }] }],
-      generationConfig: { responseMimeType: 'application/json', maxOutputTokens: modelOutputTokenLimit(config) },
+      generationConfig: {
+        responseMimeType: 'application/json',
+        maxOutputTokens: modelOutputTokenLimit(config),
+        ...thinking?.generation,
+      },
     });
   }
   return JSON.stringify({
     model: config.model,
     stream: modelStreaming(config),
     ...(config.adapter === 'openai-compatible' ? { max_completion_tokens: modelOutputTokenLimit(config) } : {}),
+    ...thinking?.top,
     messages: [
       { role: 'system', content: system },
       { role: 'user', content: payload },
@@ -244,6 +259,8 @@ export class ModelTransport {
     /** Request/JSON budget, then inactivity budget for actual SSE; does not alter saved settings. */
     timeoutMs?: number;
     onProgress?: (progress: ModelProgress) => void;
+    /** Numeric phase measurements, independent of debug logging and UI observers. */
+    onTiming?: (timing: ModelTiming) => void;
     /** Diagnostic correlation only; never included in the provider request. */
     diagnosticRunId?: string;
   }): Promise<ModelResult> {
@@ -260,6 +277,9 @@ export class ModelTransport {
     let timer: ReturnType<typeof setTimeout> | undefined;
     let httpStatus: number | undefined;
     let attempt = 0;
+    let firstTokenAt: number | undefined;
+    let responseAt: number | undefined;
+    let actualStreaming: boolean | undefined;
     let host = '';
     try {
       host = new URL(input.config.baseUrl).host;
@@ -346,6 +366,7 @@ export class ModelTransport {
     let suppressedUpdates = 0;
     const progress = (update: ModelProgress) => {
       if (controller.signal.aborted || generation !== this.generation) return;
+      if (update.streaming && update.receivedChars > 0 && firstTokenAt === undefined) firstTokenAt = Date.now();
       progressUpdates++;
       if (
         update.phase === 'receiving' &&
@@ -386,9 +407,10 @@ export class ModelTransport {
     };
     try {
       if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > 2147483647) throw Error('invalid-timeout');
-      const { signal: _signal, onProgress: _progress, ...data } = input;
+      const { signal: _signal, onProgress: _progress, onTiming: _timing, ...data } = input;
       void _signal;
       void _progress;
+      void _timing;
       const frozen = structuredClone(data);
       const route = parseModelEndpoint(frozen.config);
       check();
@@ -423,7 +445,13 @@ export class ModelTransport {
       };
       await fresh();
       result = { status: 'failed', reason: 'empty' };
-      for (const jsonMode of [true, false]) {
+      let jsonMode = true;
+      let recoveries = 0;
+      const thinkingPlan = modelThinkingPlan(frozen.config);
+      const thinkingKey = JSON.stringify([route.identity, frozen.config.model, thinkingPlan?.key]);
+      let useThinking = Boolean(thinkingPlan) && (unsupportedThinking.get(thinkingKey) ?? 0) <= Date.now();
+      let thinkingFallback = false;
+      for (;;) {
         check();
         timeoutPhase = 'request';
         lastActivityAt = undefined;
@@ -431,7 +459,13 @@ export class ModelTransport {
         const attemptLog = modelDiagnosticLog({ ...metadata, attempt }, frozen.key);
         await permission();
         await fresh();
-        const body = modelRequestBody(frozen.config, frozen.request.task, payload, policy, jsonMode);
+        const body = modelRequestBody(
+          useThinking ? frozen.config : { ...frozen.config, fastMode: false },
+          frozen.request.task,
+          payload,
+          policy,
+          jsonMode,
+        );
         const requestBytes = new TextEncoder().encode(body).byteLength;
         if (requestBytes > this.limits.requestBytes) throw Error('payload-too-large');
         const headers = requestHeaders(frozen.config.adapter, frozen.key);
@@ -483,6 +517,32 @@ export class ModelTransport {
         if (!response.ok) {
           const message = await checked(errorMessage(response, onBody, controller.signal, this.limits.responseBytes));
           attemptLog('http-error', { status: response.status, message });
+          if (
+            useThinking &&
+            !thinkingFallback &&
+            thinkingPlan &&
+            rejectsThinkingParameter(response.status, message, thinkingPlan.fields)
+          ) {
+            useThinking = false;
+            thinkingFallback = true;
+            unsupportedThinking.set(thinkingKey, Date.now() + 24 * 60 * 60 * 1000);
+            if (unsupportedThinking.size > 128) unsupportedThinking.delete(unsupportedThinking.keys().next().value!);
+            attemptLog('thinking-compatibility-fallback', { scheme: thinkingPlan.key });
+            continue;
+          }
+          if ((response.status === 429 || (response.status >= 500 && response.status <= 599)) && recoveries < 3) {
+            const delaySeconds = 2 ** ++recoveries;
+            progress({
+              phase: 'waiting',
+              text: '',
+              receivedChars: 0,
+              streaming: modelStreaming(frozen.config),
+              retry: { attempt: recoveries, delaySeconds, httpStatus: response.status },
+            });
+            attemptLog('retry-wait', { retry: recoveries, delaySeconds, httpStatus: response.status });
+            await checked(abortableDelay(delaySeconds * 1000, controller.signal));
+            continue;
+          }
           result = {
             status: 'failed',
             reason: [401, 403, 429].includes(response.status) ? `http-${response.status}` : 'http-error',
@@ -490,6 +550,9 @@ export class ModelTransport {
           break;
         }
         const streaming = /^text\/event-stream(?:\s*;|\s*$)/i.test(response.headers.get('content-type') ?? '');
+        actualStreaming = streaming;
+        firstTokenAt = undefined;
+        responseAt = undefined;
         if (streaming) renew('stream-idle');
         attemptLog('waiting-policy', { mode: streaming ? 'stream-idle' : 'total', timeoutMs });
         let wire: Awaited<ReturnType<typeof readWireReply>>;
@@ -507,7 +570,7 @@ export class ModelTransport {
               this.limits.responseBytes,
               controller.signal,
               onBody,
-              input.onProgress ? update => progress({ ...update, phase: 'receiving' }) : undefined,
+              input.onProgress || input.onTiming ? update => progress({ ...update, phase: 'receiving' }) : undefined,
               streaming ? () => renew('stream-idle') : undefined,
             ),
           );
@@ -527,6 +590,7 @@ export class ModelTransport {
             ? error
             : new ModelParseError('envelope');
         }
+        responseAt = Date.now();
         if (streaming) renew('validation');
         await permission();
         await fresh();
@@ -589,6 +653,7 @@ export class ModelTransport {
           break;
         check();
         log('retry-without-json-mode', { attempt: attempt + 1 });
+        jsonMode = false;
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : '';
@@ -635,6 +700,19 @@ export class ModelTransport {
       httpStatus,
       ms: Date.now() - started,
     });
+    try {
+      input.onTiming?.({
+        ms: Date.now() - started,
+        attempts: attempt,
+        streaming: actualStreaming,
+        responseMs: responseAt === undefined ? undefined : responseAt - started,
+        firstTokenMs: firstTokenAt === undefined ? undefined : firstTokenAt - started,
+        generationMs: responseAt === undefined || firstTokenAt === undefined ? undefined : responseAt - firstTokenAt,
+        validationMs: responseAt === undefined ? undefined : Date.now() - responseAt,
+      });
+    } catch {
+      /* Measurement observers cannot change validation or write eligibility. */
+    }
     return result;
   }
 }
@@ -649,7 +727,7 @@ export async function errorMessage(
   try {
     const body = (await readModelText(response, limit, signal, onBody)).slice(0, 2000);
     try {
-      const parsed = JSON.parse(body) as { error?: { message?: unknown } | string; message?: unknown };
+      const parsed = JSON.parse(body) as { error?: { message?: unknown; param?: unknown } | string; message?: unknown };
       const message =
         typeof parsed.error === 'string'
           ? parsed.error
@@ -658,7 +736,9 @@ export async function errorMessage(
             : typeof parsed.message === 'string'
               ? parsed.message
               : body;
-      return message.slice(0, 300);
+      const param =
+        typeof parsed.error === 'object' && typeof parsed.error?.param === 'string' ? `${parsed.error.param}: ` : '';
+      return `${param}${message}`.slice(0, 300);
     } catch {
       return body.slice(0, 300);
     }

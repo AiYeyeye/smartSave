@@ -150,6 +150,11 @@ export class SearchController {
           timeoutMs: remaining,
           request: { task: 'search', query: this.state.query, itemIds: candidates, folderIds: [] },
           signal: operation.signal,
+          onProgress: progress => {
+            if (generation !== this.generation || !progress.retry) return;
+            this.state.message = `服务繁忙，${progress.retry.delaySeconds} 秒后重试（${progress.retry.attempt}/3），可随时取消。`;
+            this.publish();
+          },
         }),
         operation.signal,
       );

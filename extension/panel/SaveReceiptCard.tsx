@@ -93,11 +93,11 @@ export function ReceiptView({
   let sub: React.ReactNode;
   switch (receipt.status) {
     case 'classifying':
-      title = 'AI 正在选择目录…';
+      title = receipt.source === 'rule' || receipt.source === 'domain' ? '正在按本地规则归类…' : 'AI 正在选择目录…';
       sub = receipt.title;
       break;
     case 'moved':
-      title = '已自动归类';
+      title = receipt.source === 'rule' || receipt.source === 'domain' ? '已按本地规则归类' : '已自动归类';
       sub = (
         <>
           收进 <span className="receipt-path">{receipt.toPath || '新目录'}</span>
@@ -105,7 +105,7 @@ export function ReceiptView({
       );
       break;
     case 'kept':
-      title = 'AI 认为原位置合适';
+      title = receipt.source === 'rule' || receipt.source === 'domain' ? '本地规则保留原位置' : 'AI 认为原位置合适';
       sub = (
         <>
           保留在 <span className="receipt-path">{receipt.fromPath}</span>

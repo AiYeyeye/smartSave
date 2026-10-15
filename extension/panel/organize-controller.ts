@@ -3,7 +3,7 @@ import { MODEL_BYTE_LIMITS } from '../adapters/model-byte-limits';
 import { createDebugLog, type DebugDetail } from '../domain/debug-log';
 import { cancellable } from '../domain/cancellable';
 import { modelRequestBody, type ModelTransport } from '../adapters/model-transport';
-import { serializeAiPayload } from '../domain/ai-payload';
+import { serializeAiPayload, serializedItemRequestSize } from '../domain/ai-payload';
 import { parseModelOutput } from '../schemas/model-output';
 import {
   approvedOrganizeFolders,
@@ -500,8 +500,9 @@ export class OrganizeController {
               bookmarkCount,
               outputTokenLimit,
             };
-            this.state.message =
-              progress.phase === 'validating'
+            this.state.message = progress.retry
+              ? `服务繁忙，${progress.retry.delaySeconds} 秒后重试（${progress.retry.attempt}/3），可随时取消。`
+              : progress.phase === 'validating'
                 ? '正在校验返回的整理内容…'
                 : progress.receivedChars > 0
                   ? '正在接收 AI 整理建议…'
@@ -605,7 +606,10 @@ export class OrganizeController {
       };
       run.queue = partitionOrganizeItems(
         run.bookmarkIds,
-        ids => this.requestSize(run, { ...run.request, itemIds: ids }),
+        serializedItemRequestSize(
+          serializeAiPayload(run.context.tree, run.context.privacy, { ...run.request, itemIds: run.bookmarkIds }),
+          this.requestSize(run, { ...run.request, itemIds: [] }),
+        ),
         run.options.batchSize,
         MODEL_BYTE_LIMITS.requestBytes,
       );
@@ -752,6 +756,8 @@ export class OrganizeController {
                 bookmarkCount: ids.length,
                 outputTokenLimit: modelOutputTokenLimit(run.context.config),
               };
+              if (update.retry)
+                this.state.message = `服务繁忙，${update.retry.delaySeconds} 秒后重试（${update.retry.attempt}/3），可随时暂停。`;
               this.publish();
             },
           }),

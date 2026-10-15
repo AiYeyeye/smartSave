@@ -96,6 +96,58 @@ function setup(
 }
 
 const answer = '{"rankedIds":["a"]}';
+it('measures real SSE answer arrival without counting thinking, independently of a UI observer', async () => {
+  const timing = vi.fn();
+  const h = setup('openai-compatible', async () => {
+    await new Promise(resolve => setTimeout(resolve, 100));
+    return new Response(
+      new ReadableStream({
+        start(controller) {
+          const send = (value: unknown) =>
+            controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(value)}\n\n`));
+          setTimeout(() => send({ choices: [{ delta: { reasoning_content: 'private thinking' } }] }), 10);
+          setTimeout(() => send({ choices: [{ delta: { content: answer } }] }), 200);
+          setTimeout(() => {
+            send({ choices: [{ delta: {}, finish_reason: 'stop' }] });
+            controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
+            controller.close();
+          }, 500);
+        },
+      }),
+      { headers: { 'content-type': 'text/event-stream' } },
+    );
+  });
+  const pending = h.transport.run({ ...h.input, onTiming: timing });
+  await vi.advanceTimersByTimeAsync(700);
+  expect(await pending).toMatchObject({ status: 'completed' });
+  expect(timing).toHaveBeenCalledExactlyOnceWith({
+    ms: 600,
+    attempts: 1,
+    streaming: true,
+    responseMs: 600,
+    firstTokenMs: 300,
+    generationMs: 300,
+    validationMs: 0,
+  });
+  h.transport.dispose();
+});
+
+it('does not invent JSON first-token timing or let a timing observer invalidate a result', async () => {
+  const h = setup(
+    'openai-compatible',
+    async () =>
+      new Response(JSON.stringify({ choices: [{ message: { content: answer }, finish_reason: 'stop' }] }), {
+        headers: { 'content-type': 'application/json' },
+      }),
+  );
+  const timing = vi.fn(value => {
+    expect(value).toMatchObject({ streaming: false, firstTokenMs: undefined, generationMs: undefined });
+    throw Error('observer failed');
+  });
+  expect(await h.transport.run({ ...h.input, onTiming: timing })).toMatchObject({ status: 'completed' });
+  expect(timing).toHaveBeenCalledOnce();
+  h.transport.dispose();
+});
 it('records external cancellation source and diagnostic run identity without sending it to the provider', async () => {
   const fetcher = vi.fn<typeof fetch>(() => new Promise(() => {}));
   const h = setup('anthropic', fetcher);

@@ -21,6 +21,7 @@ type Draft = {
   enabled: string[];
   timeoutMs: number;
   streaming: boolean;
+  fastMode: boolean;
   maxOutputTokens: string;
 };
 
@@ -52,6 +53,7 @@ export function EditServiceOverlay({
     enabled: [...service.enabled],
     timeoutMs: service.timeoutMs ?? 60000,
     streaming: service.streaming ?? true,
+    fastMode: service.fastMode ?? true,
     maxOutputTokens: String(service.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS),
   }));
   const [keyValue, setKeyValue] = useState(initialKey);
@@ -142,6 +144,7 @@ export function EditServiceOverlay({
           enabled: draft.enabled,
           timeoutMs: draft.timeoutMs,
           streaming: draft.streaming,
+          fastMode: draft.fastMode,
           maxOutputTokens: outputLimit,
           status: service.status,
         },
@@ -243,6 +246,7 @@ export function EditServiceOverlay({
         vendorId: service.vendorId,
         timeoutMs: draft.timeoutMs,
         streaming: draft.streaming,
+        fastMode: draft.fastMode,
         maxOutputTokens: outputLimit,
         model,
       };
@@ -420,6 +424,24 @@ export function EditServiceOverlay({
               </span>
               <span className="switch">
                 <input type="checkbox" role="switch" checked={remember} onChange={e => setRemember(e.target.checked)} />
+                <span />
+              </span>
+            </label>
+            <label className="ai-svc-toggle-row">
+              <span>
+                <strong>优先快速响应</strong>
+                <small>对已支持的模型关闭或降低思考量；未知模型保持原行为。</small>
+              </span>
+              <span className="switch">
+                <input
+                  type="checkbox"
+                  role="switch"
+                  checked={draft.fastMode}
+                  onChange={e => {
+                    invalidate();
+                    setDraft(d => ({ ...d, fastMode: e.target.checked }));
+                  }}
+                />
                 <span />
               </span>
             </label>

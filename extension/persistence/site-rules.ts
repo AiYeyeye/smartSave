@@ -12,6 +12,14 @@ const envelope = z
     }
   });
 export class SiteRulesStore {
+  subscribe(listener: () => void) {
+    if (typeof chrome === 'undefined' || !chrome.storage?.onChanged) return () => {};
+    const changed = (changes: Record<string, unknown>, area: string) => {
+      if (area === 'local' && Object.hasOwn(changes, 'siteRules')) listener();
+    };
+    chrome.storage.onChanged.addListener(changed);
+    return () => chrome.storage.onChanged.removeListener(changed);
+  }
   constructor(
     private readonly storage: IdentityStorage,
     private readonly lock: <T>(run: () => Promise<T>) => Promise<T> = run =>

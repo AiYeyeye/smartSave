@@ -16,6 +16,7 @@ export type ConnectionDraft = {
   vendorId?: string;
   model?: string;
   streaming?: boolean;
+  fastMode?: boolean;
   maxOutputTokens?: number;
 };
 
@@ -31,6 +32,7 @@ function draftConfig(draft: ConnectionDraft) {
     model,
     timeoutMs,
     ...(draft.streaming === undefined ? {} : { streaming: draft.streaming }),
+    ...(draft.fastMode === undefined ? {} : { fastMode: draft.fastMode }),
     ...(draft.maxOutputTokens === undefined ? {} : { maxOutputTokens: draft.maxOutputTokens }),
   };
   parseModelEndpoint(config);

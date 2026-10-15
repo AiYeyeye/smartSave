@@ -3,6 +3,8 @@
  * The popup reads these so the user can always see whether AI ran, where the bookmark went and undo it.
  * Stored locally only; contains bookmark titles/URLs but never keys or page text.
  */
+import type { SaveTiming } from '../domain/save-performance';
+
 export const SAVE_RECEIPTS_KEY = 'nativeSaveReceipts';
 export const SAVE_RECEIPTS_LIMIT = 30;
 
@@ -25,7 +27,9 @@ export type SaveReceipt = {
   createdFolderIds?: string[];
   /** e.g. "gpt-4o-mini · OpenRouter"; never contains keys. */
   model?: string;
+  source?: 'rule' | 'domain' | 'ai';
   ms?: number;
+  timing?: SaveTiming;
 };
 
 type LocalArea = {

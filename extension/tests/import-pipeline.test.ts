@@ -7,6 +7,7 @@ import { ModelTransport, modelRequestBody } from '../adapters/model-transport';
 import { serializeAiPayload } from '../domain/ai-payload';
 import { parseImport } from '../import/parsers';
 import type { TreeSnapshot } from '../domain/node-reference';
+import { wireFolderIds } from './fixtures/wire-folder-ids';
 
 function setup(slack = 1200) {
   const tree: TreeSnapshot = {
@@ -58,6 +59,7 @@ function setup(slack = 1200) {
   let failure = 0;
   const fetcher = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
     const payload = JSON.parse(JSON.parse(String(init?.body)).messages[1].content);
+    payload.folders = wireFolderIds(payload).map(id => ({ id }));
     payloads.push(payload);
     if (failure === payloads.length) throw Error('synthetic interruption');
     const output =

@@ -10,6 +10,7 @@ import { noopDebugLog } from '../domain/debug-log';
 import { SaveReceiptLog, readSaveReceipts, SAVE_RECEIPTS_KEY, type SaveReceipt } from '../persistence/save-receipts';
 import type { ApiMode } from '../domain/ai-providers';
 import { ModelTransport } from '../adapters/model-transport';
+import type { SiteRulesStore } from '../persistence/site-rules';
 
 function event<T extends (...args: never[]) => unknown>() {
   const listeners = new Set<T>();
@@ -72,6 +73,7 @@ async function harness(
     mode?: ApiMode;
     streaming?: boolean;
     initialReceipts?: SaveReceipt[];
+    rules?: Pick<SiteRulesStore, 'load' | 'subscribe'>;
   } = {},
 ) {
   let nextId = 10;
@@ -220,6 +222,7 @@ async function harness(
     },
     permissions,
     fetch: fetchMock,
+    rules: opts.rules,
   });
 
   return {
@@ -701,6 +704,86 @@ function modelReply(itemId: string, folderId: string) {
     );
 }
 
+it('applies an explicit site rule before AI even without a configured model or host permission, and remains undoable', async () => {
+  const rules = {
+    load: vi.fn(async () => [
+      {
+        host: 'rule.test',
+        includeSubdomains: false,
+        folder: { installationId: 'test-install', nativeId: '2', kind: 'folder' as const },
+      },
+    ]),
+    subscribe: () => () => {},
+  };
+  const h = await harness({ configureSave: false, rules });
+  const snapshot = await h.projection.fresh();
+  rules.load.mockImplementation(async () => [
+    {
+      host: 'rule.test',
+      includeSubdomains: false,
+      folder: { installationId: snapshot.installationId, nativeId: '2', kind: 'folder' as const },
+    },
+  ]);
+  h.find('1').children!.push({
+    syncing: false,
+    id: 'local',
+    parentId: '1',
+    title: 'Local',
+    url: 'https://rule.test/page',
+  });
+  h.projection.refresh();
+  await h.projection.fresh();
+  expect(await h.ingress.classify('local')).toEqual({
+    status: 'completed',
+    bookmarkId: 'local',
+    destinationId: '2',
+    createdFolderIds: [],
+  });
+  expect(h.fetchMock).not.toHaveBeenCalled();
+  const receipt = (await readSaveReceipts(h.storage))[0]!;
+  expect(receipt).toMatchObject({ status: 'moved', source: 'rule', model: '本地网站规则', toId: '2' });
+  expect(receipt.timing?.model).toBeUndefined();
+  expect(await h.ingress.undo(receipt.id)).toEqual({ status: 'undone' });
+  expect(h.find('local').parentId).toBe('1');
+  h.ingress.dispose();
+});
+
+it('stops a local move if its rule is revoked during the last authoritative check', async () => {
+  let invalidate = () => {};
+  const rules = {
+    load: vi.fn<SiteRulesStore['load']>(),
+    subscribe: (listener: () => void) => {
+      invalidate = listener;
+      return () => {};
+    },
+  };
+  const h = await harness({ configureSave: false, rules });
+  const snapshot = await h.projection.fresh();
+  const rule = {
+    host: 'rule.test',
+    includeSubdomains: false,
+    folder: { installationId: snapshot.installationId, nativeId: '2', kind: 'folder' as const },
+  };
+  rules.load.mockResolvedValueOnce([rule]).mockImplementationOnce(async () => {
+    invalidate();
+    return [rule];
+  });
+  h.find('1').children!.push({
+    syncing: false,
+    id: 'revoked',
+    parentId: '1',
+    title: 'Local',
+    url: 'https://rule.test/page',
+  });
+  h.projection.refresh();
+  await h.projection.fresh();
+  const move = vi.spyOn(h.writer, 'move');
+  expect(await h.ingress.classify('revoked')).toMatchObject({ status: 'failed', reason: 'stale-context' });
+  expect(move).not.toHaveBeenCalled();
+  expect(h.fetchMock).not.toHaveBeenCalled();
+  h.ingress.dispose();
+});
+
 it('classifies from the AI services assignment alone, without the legacy single-connection settings', async () => {
   const h = await harness({ settlingMs: 5, syncLegacy: false });
   h.fetchMock.mockImplementation(modelReply('u5', '2'));
@@ -718,6 +801,10 @@ it('classifies from the AI services assignment alone, without the legacy single-
   const [receipt] = await readSaveReceipts(h.storage);
   expect(receipt).toMatchObject({ bookmarkId: 'u5', status: 'moved', fromParentId: '1', toId: '2', toPath: 'Other' });
   expect(receipt!.model).toContain('gpt-4.1-mini');
+  expect(receipt!.timing?.totalMs).toBeGreaterThanOrEqual(receipt!.ms!);
+  expect(receipt!.timing?.prepareMs).toBeGreaterThanOrEqual(5);
+  expect(receipt!.timing?.model).toMatchObject({ attempts: 1, streaming: false });
+  expect(receipt!.timing?.model?.firstTokenMs).toBeUndefined();
   h.ingress.dispose();
 });
 

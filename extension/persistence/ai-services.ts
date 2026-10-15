@@ -25,6 +25,7 @@ const connectedServiceSchema = z.strictObject({
   vendorId: z.string().min(1).optional(),
   timeoutMs: z.number().int().positive().max(2147483647).optional(),
   streaming: z.boolean().optional(),
+  fastMode: z.boolean().optional(),
   maxOutputTokens: maxOutputTokensSchema.optional(),
 });
 
@@ -309,6 +310,7 @@ export class AiServicesStore {
           vendorId,
           timeoutMs,
           streaming,
+          fastMode,
           maxOutputTokens,
           letter,
           avatarClass,
@@ -326,6 +328,7 @@ export class AiServicesStore {
           vendorId,
           timeoutMs,
           streaming,
+          fastMode,
           maxOutputTokens,
           letter,
           avatarClass,
@@ -364,6 +367,7 @@ export class AiServicesStore {
       model: modelId,
       timeoutMs: primary.timeoutMs ?? 60000,
       ...(primary.streaming === undefined ? {} : { streaming: primary.streaming }),
+      ...(primary.fastMode === undefined ? {} : { fastMode: primary.fastMode }),
       ...(primary.maxOutputTokens === undefined ? {} : { maxOutputTokens: primary.maxOutputTokens }),
     };
     const remembered = Boolean(this.value.credentials?.[primary.id]?.key);

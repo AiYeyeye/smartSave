@@ -19,3 +19,20 @@ export function cancellable<T>(pending: Promise<T>, signal: AbortSignal): Promis
     );
   });
 }
+
+/** A cancelled wait releases its timer immediately; it never schedules more work. */
+export function abortableDelay(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const abort = () => {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', abort);
+      reject(signal.reason ?? Error('aborted'));
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', abort);
+      resolve();
+    }, ms);
+    signal.addEventListener('abort', abort, { once: true });
+    if (signal.aborted) abort();
+  });
+}

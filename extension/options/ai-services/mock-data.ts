@@ -31,6 +31,7 @@ export type ConnectedService = {
   vendorId?: string;
   timeoutMs?: number;
   streaming?: boolean;
+  fastMode?: boolean;
   maxOutputTokens?: number;
 };
 

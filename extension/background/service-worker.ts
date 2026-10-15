@@ -22,6 +22,7 @@ import { extractSaveBodyForUi } from './extract-coordinator';
 import { setOverlayDocumentTrust, withTrustedSender } from '../domain/trusted-sender';
 import { OwnWriteGuard } from './own-write-guard';
 import { nativeSaveBadge, startNativeBookmarkIngress } from './native-bookmark-ingress';
+import { SiteRulesStore } from '../persistence/site-rules';
 import { SaveReceiptLog } from '../persistence/save-receipts';
 import { startWorkerDiagnostics } from './worker-diagnostics';
 
@@ -83,6 +84,7 @@ const nativeSaves = startNativeBookmarkIngress({
   writer,
   guard: ownWrites,
   receipts: new SaveReceiptLog(chrome.storage.local),
+  rules: new SiteRulesStore(chrome.storage.local),
   badge: nativeSaveBadge,
 });
 

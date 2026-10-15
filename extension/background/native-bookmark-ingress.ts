@@ -16,6 +16,9 @@ import type { SettingsStore } from '../persistence/settings';
 import type { OwnWriteGuard } from './own-write-guard';
 import type { TreeProjection } from './tree-projection';
 import { createWorkerTaskLifetime } from './worker-task-lifetime';
+import type { ModelTiming } from '../domain/save-performance';
+import { localClassification } from '../domain/local-classification';
+import type { SiteRulesStore } from '../persistence/site-rules';
 
 export type NativeClassifyResult =
   | { status: 'skipped'; reason: string; bookmarkId: string }
@@ -46,6 +49,7 @@ export type NativeBookmarkIngressOptions = {
   debug?: DebugLog;
   /** Receipts the popup shows (where it went / why AI did not run). Optional for tests. */
   receipts?: SaveReceiptLog;
+  rules?: Pick<SiteRulesStore, 'load' | 'subscribe'>;
   /** Toolbar badge hint; never throws. */
   badge?: (state: BadgeState) => void;
   /** Optional UI hint after a successful auto-classify. Never throws. */
@@ -88,6 +92,7 @@ export async function resolveSaveRoute(ai: AiServicesStore): Promise<SaveRoute> 
     model: feat.modelId,
     timeoutMs: service.timeoutMs ?? 60000,
     ...(service.streaming === undefined ? {} : { streaming: service.streaming }),
+    ...(service.fastMode === undefined ? {} : { fastMode: service.fastMode }),
     ...(service.maxOutputTokens === undefined ? {} : { maxOutputTokens: service.maxOutputTokens }),
   };
   const key = ai.credential(service.id);
@@ -189,7 +194,7 @@ export function startNativeBookmarkIngress(options: NativeBookmarkIngressOptions
   let importing = false;
   const pending = new Map<string, ReturnType<typeof setTimeout>>();
   let disposed = false;
-  const active = new Set<{ id: string; transport: ModelTransport; invalidated: boolean }>();
+  const active = new Set<{ id: string; transport?: ModelTransport; invalidated: boolean }>();
   const lifetime = createWorkerTaskLifetime();
 
   const setBadge = (state: BadgeState) => {
@@ -250,12 +255,13 @@ export function startNativeBookmarkIngress(options: NativeBookmarkIngressOptions
       return;
     }
     clearPending(id);
+    const observedAt = Date.now();
     debug('observed', { bookmarkId: id, parentId: node.parentId });
     pending.set(
       id,
       setTimeout(() => {
         pending.delete(id);
-        void classify(id).catch(error =>
+        void classify(id, observedAt).catch(error =>
           debug('error', {
             bookmarkId: id,
             reason: error instanceof Error ? error.message : 'unknown',
@@ -270,23 +276,23 @@ export function startNativeBookmarkIngress(options: NativeBookmarkIngressOptions
     for (const operation of active)
       if (operation.id === id) {
         operation.invalidated = true;
-        operation.transport.cancel();
+        operation.transport?.cancel();
         debug('cancel', { bookmarkId: id, reason: 'removed' });
       }
   };
 
-  async function classify(bookmarkId: string): Promise<NativeClassifyResult> {
+  async function classify(bookmarkId: string, observedAt = Date.now()): Promise<NativeClassifyResult> {
     if (disposed) return { status: 'skipped', reason: 'disposed', bookmarkId };
     const release = lifetime.acquire();
     try {
       await ready;
-      return await classifyBookmark(bookmarkId);
+      return await classifyBookmark(bookmarkId, observedAt);
     } finally {
       release();
     }
   }
 
-  async function classifyBookmark(bookmarkId: string): Promise<NativeClassifyResult> {
+  async function classifyBookmark(bookmarkId: string, observedAt: number): Promise<NativeClassifyResult> {
     if (disposed) return { status: 'skipped', reason: 'disposed', bookmarkId };
     if (guard.isOwn(bookmarkId)) return { status: 'skipped', reason: 'plugin-created', bookmarkId };
 
@@ -315,22 +321,28 @@ export function startNativeBookmarkIngress(options: NativeBookmarkIngressOptions
       fromPath: folderPath(tree, node.parentId),
     };
     const started = Date.now();
+    let modelTiming: ModelTiming | undefined;
+    let modelStartedAt: number | undefined;
+    let applyStartedAt: number | undefined;
     const finish = async (status: SaveReceipt['status'], extra: Partial<SaveReceipt> = {}): Promise<void> => {
-      await record({ ...receipt, ...extra, status, ms: Date.now() - started });
+      const now = Date.now();
+      await record({
+        ...receipt,
+        ...extra,
+        status,
+        ms: now - started,
+        timing: {
+          totalMs: now - observedAt,
+          prepareMs: (modelStartedAt ?? now) - observedAt,
+          model: modelTiming,
+          applyMs: applyStartedAt === undefined ? undefined : now - applyStartedAt,
+        },
+      });
     };
 
-    const route = await resolveSaveRoute(aiServices);
-    if (route.status !== 'ok') {
-      debug('skip', { bookmarkId, reason: route.reason });
-      await finish('skipped', { reason: route.reason });
-      setBadge('attention');
-      return { status: 'skipped', reason: route.reason, bookmarkId };
-    }
-
     const root = tree.nodes.find(n => n.parentId === undefined && n.ref.kind === 'folder');
-    const folderIds = tree.nodes.filter(n => n.childrenWritable).map(n => n.ref.nativeId);
-    if (!root || !folderIds.length) {
-      await finish('failed', { reason: 'no-writable-folders', model: route.label });
+    if (!root || !tree.nodes.some(n => n.childrenWritable)) {
+      await finish('failed', { reason: 'no-writable-folders' });
       setBadge('attention');
       return { status: 'failed', reason: root ? 'no-writable-folders' : 'no-root', bookmarkId };
     }
@@ -340,10 +352,91 @@ export function startNativeBookmarkIngress(options: NativeBookmarkIngressOptions
       await settings.load();
       privacy = (await settings.snapshot()).privacy;
     } catch {
-      await finish('failed', { reason: 'settings-unavailable', model: route.label });
+      await finish('failed', { reason: 'settings-unavailable' });
       setBadge('attention');
       return { status: 'failed', reason: 'settings-unavailable', bookmarkId };
     }
+
+    // Local reads never require a model credential or model-host permission.
+    const rules = await options.rules?.load().catch(() => undefined);
+    if (options.rules && !rules) {
+      await finish('failed', { reason: 'settings-unavailable' });
+      return { status: 'failed', reason: 'settings-unavailable', bookmarkId };
+    }
+    const local = localClassification(tree, bookmarkId, privacy, rules ?? []);
+    if (!local.sourceAllowed) {
+      await finish('skipped', { reason: 'excluded' });
+      return { status: 'skipped', reason: 'excluded', bookmarkId };
+    }
+    if (local.choice) {
+      const choice = local.choice;
+      const request: AiRequest = {
+        task: 'save',
+        targetId: root.ref.nativeId,
+        item: { source: 'bookmark', id: bookmarkId },
+        folderIds: [choice.folderId],
+      };
+      const dependencies = dependencyDigest(tree, request);
+      const operation = { id: bookmarkId, invalidated: false };
+      active.add(operation);
+      const stopSettings = settings.subscribe(() => {
+        operation.invalidated = true;
+      });
+      const stopRules = options.rules?.subscribe(() => {
+        operation.invalidated = true;
+      });
+      receipt.source = choice.source;
+      receipt.model = choice.source === 'rule' ? '本地网站规则' : '本地同站点归类';
+      applyStartedAt = Date.now();
+      try {
+        await record(receipt);
+        const currentPrivacy = (await settings.snapshot()).privacy;
+        const currentRules = (await options.rules?.load()) ?? [];
+        const current = await projection.fresh();
+        const stillChosen = localClassification(current, bookmarkId, currentPrivacy, currentRules).choice;
+        if (
+          disposed ||
+          operation.invalidated ||
+          guard.isOwn(bookmarkId) ||
+          JSON.stringify(currentPrivacy) !== JSON.stringify(privacy) ||
+          current.installationId !== tree.installationId ||
+          dependencyDigest(current, request) !== dependencies ||
+          stillChosen?.folderId !== choice.folderId ||
+          stillChosen.source !== choice.source
+        )
+          throw Error('stale-context');
+        const state = projection.state;
+        if (state.status !== 'ready' || dependencyDigest(state.snapshot, request) !== dependencies)
+          throw Error('stale-context');
+        if (node.parentId !== choice.folderId) await writer.move(bookmarkId, { parentId: choice.folderId, index: 0 });
+        const after = await projection.fresh();
+        if (!after.nodes.some(n => n.ref.nativeId === bookmarkId && n.parentId === choice.folderId))
+          throw Error('native-write-uncertain');
+        await finish(node.parentId === choice.folderId ? 'kept' : 'moved', {
+          toId: choice.folderId,
+          toPath: folderPath(after, choice.folderId),
+        });
+        setBadge('done');
+        return { status: 'completed', bookmarkId, destinationId: choice.folderId, createdFolderIds: [] };
+      } catch (error) {
+        const reason =
+          error instanceof Error && error.message === 'stale-context' ? 'stale-context' : 'native-write-uncertain';
+        await finish('failed', { reason });
+        setBadge('attention');
+        return { status: 'failed', reason, bookmarkId };
+      } finally {
+        stopSettings();
+        stopRules?.();
+        active.delete(operation);
+      }
+    }
+    const route = await resolveSaveRoute(aiServices);
+    if (route.status !== 'ok') {
+      await finish('skipped', { reason: route.reason });
+      setBadge('attention');
+      return { status: 'skipped', reason: route.reason, bookmarkId };
+    }
+    const folderIds = local.folderIds;
 
     await record({ ...receipt, model: route.label });
     setBadge('working');
@@ -411,6 +504,7 @@ export function startNativeBookmarkIngress(options: NativeBookmarkIngressOptions
 
     try {
       checkActive();
+      modelStartedAt = Date.now();
       const response = await transport.run({
         config: route.config,
         key: route.key,
@@ -418,7 +512,11 @@ export function startNativeBookmarkIngress(options: NativeBookmarkIngressOptions
         tree,
         policy: DEFAULT_CLASSIFICATION_POLICY,
         request,
+        onTiming: timing => {
+          modelTiming = timing;
+        },
       });
+      applyStartedAt = Date.now();
 
       if (response.status !== 'completed') {
         debug('model-failed', { bookmarkId, reason: response.reason });
@@ -585,7 +683,7 @@ export function startNativeBookmarkIngress(options: NativeBookmarkIngressOptions
       for (const id of [...pending.keys()]) clearPending(id);
       for (const operation of active) {
         operation.invalidated = true;
-        operation.transport.cancel();
+        operation.transport?.cancel();
       }
       active.clear();
       bookmarksApi.onCreated.removeListener(onCreated);

@@ -54,6 +54,31 @@ afterEach(() => {
   resetDebugLogForTests();
 });
 
+it('shows recent successful speed percentiles while keeping failures and missing streaming phases honest', async () => {
+  stubStorage({
+    [SAVE_RECEIPTS_KEY]: [
+      {
+        ...base,
+        status: 'moved',
+        model: 'Test model',
+        timing: {
+          totalMs: 1200,
+          prepareMs: 200,
+          applyMs: 100,
+          model: { ms: 900, attempts: 1, streaming: false, validationMs: 50 },
+        },
+      },
+      { ...base, id: 'failed', status: 'failed', model: 'Test model', ms: 60000 },
+    ],
+  });
+  render(createElement(DebugLogPanel));
+  expect(await screen.findByText('Test model')).toBeVisible();
+  expect(screen.getByText('成功 1 条 · 失败 1 条')).toBeVisible();
+  expect(screen.getByText(/总耗时：中位 1.20 秒 · P90 1.20 秒/)).toBeVisible();
+  expect(screen.getByText(/校验与写入：中位 0.15 秒/)).toBeVisible();
+  expect(screen.queryByText(/^等首字：/)).toBeNull();
+});
+
 it('replaces a pending spinner with an honest interruption notice after worker recovery', async () => {
   const send = vi.fn();
   stubStorage({ [SAVE_RECEIPTS_KEY]: [{ ...base, status: 'classifying', reason: undefined }] }, send);

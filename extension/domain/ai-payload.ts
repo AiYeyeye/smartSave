@@ -12,6 +12,78 @@ export type AiSample =
   | { source: 'bookmark'; contextId: string; field: 'title' | 'url' }
   | { source: 'new-import'; value: string; kind: 'url' | 'text' };
 export type OrganizeDestination = { id: string; parentId?: string; title: string };
+
+/** Compact wire copy only. The canonical payload remains available for validation/freshness. */
+export function compactAiPayload(payload: string): string {
+  let value: {
+    folders?: { id: string; ancestorIds: string[]; path: string[] }[];
+    items?: unknown[];
+    query?: string;
+    fields?: unknown[];
+    snippet?: string;
+    [key: string]: unknown;
+  };
+  try {
+    value = JSON.parse(payload);
+  } catch {
+    return payload;
+  }
+  if (
+    !value ||
+    !Array.isArray(value.folders) ||
+    value.folders.some(f => !f || typeof f.id !== 'string' || !Array.isArray(f.ancestorIds) || !Array.isArray(f.path))
+  )
+    return payload;
+  const { folders, items, query, fields, snippet, ...shared } = value;
+  const ids = new Set(folders.map(f => f.id));
+  const children = new Map<string | undefined, typeof folders>();
+  for (const folder of folders) {
+    const parent = folder.ancestorIds.find(id => ids.has(id));
+    const list = children.get(parent) ?? [];
+    list.push(folder);
+    children.set(parent, list);
+  }
+  const lines: string[] = [];
+  const seen = new Set<string>();
+  function visit(parent: string | undefined, depth: number) {
+    for (const folder of [...(children.get(parent) ?? [])].sort((a, b) => a.id.localeCompare(b.id, 'en'))) {
+      if (seen.has(folder.id)) throw Error('invalid-tree');
+      seen.add(folder.id);
+      lines.push(`${'  '.repeat(depth)}${JSON.stringify(folder.id)} ${JSON.stringify(folder.path.at(-1) ?? '')}`);
+      visit(folder.id, depth + 1);
+    }
+  }
+  visit(undefined, 0);
+  if (seen.size !== folders.length) throw Error('invalid-tree');
+  return JSON.stringify({
+    ...shared,
+    folderTree: lines.join('\n'),
+    ...(query === undefined ? {} : { query }),
+    items,
+    ...(fields === undefined ? {} : { fields }),
+    ...(snippet === undefined ? {} : { snippet }),
+  });
+}
+
+/** Exact UTF-8 increments when this JSON payload is embedded as one JSON string in a protocol envelope. */
+export function serializedItemRequestSize(payload: string, emptyRequestBytes: number) {
+  const parsed: { items: { id: string }[] } = JSON.parse(payload);
+  const encoder = new TextEncoder();
+  const sizes = new Map<string, number>();
+  for (const item of parsed.items) {
+    if (sizes.has(item.id)) throw Error('duplicate-id');
+    // One outer string-escape layer, without the surrounding quotes. Commas are added by the partitioner.
+    sizes.set(item.id, encoder.encode(JSON.stringify(JSON.stringify(item))).byteLength - 2);
+  }
+  return {
+    sharedBytes: emptyRequestBytes,
+    itemBytes(id: string) {
+      const value = sizes.get(id);
+      if (value === undefined) throw Error('invalid-reference');
+      return value;
+    },
+  };
+}
 export type AiRequest =
   | { task: 'search'; query: string; itemIds: string[]; folderIds: string[] }
   | {

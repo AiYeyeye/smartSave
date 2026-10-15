@@ -10,6 +10,7 @@ import {
   type DebugEntry,
 } from '../domain/debug-log';
 import { ReceiptView, useSaveReceipts } from '../panel/SaveReceiptCard';
+import { summarizeSaveTimings } from '../domain/save-performance';
 
 function time(t: number) {
   const d = new Date(t);
@@ -57,6 +58,7 @@ export function SaveHistory({ onOpen }: { onOpen: (route: string) => void }) {
 
 /** Settings → Debug: opt-in call trail for AI requests and background classification. */
 export function DebugLogPanel() {
+  const timings = summarizeSaveTimings(useSaveReceipts());
   const [enabled, setEnabled] = useState(false);
   const [entries, setEntries] = useState<DebugEntry[]>([]);
   const [copied, setCopied] = useState(false);
@@ -121,6 +123,39 @@ export function DebugLogPanel() {
           <span />
         </label>
       </div>
+      <section aria-label="收藏耗时统计">
+        <h3>收藏耗时统计</h3>
+        <p className="hint">
+          最近 30
+          条本机记录，按连接和模型统计成功收藏；失败单独计数。总耗时包含收藏后的等待。非流式响应无法拆分首字与生成耗时。
+        </p>
+        {timings.length === 0 && <p className="hint">收藏网页后会显示耗时，不需要开启 Debug 日志。</p>}
+        {timings.map(row => (
+          <div key={row.model}>
+            <strong>{row.model}</strong>
+            <p>
+              成功 {row.completed} 条 · 失败 {row.failed} 条
+            </p>
+            {(
+              [
+                ['总耗时', row.total],
+                ['等首字', row.firstToken],
+                ['生成', row.generation],
+                ['校验与写入', row.validationApply],
+                ['旧记录（不含前置等待）', row.legacy],
+              ] as const
+            ).map(
+              ([label, value]) =>
+                value && (
+                  <p className="hint" key={label}>
+                    {label}：中位 {(value.median / 1000).toFixed(2)} 秒 · P90 {(value.p90 / 1000).toFixed(2)} 秒（
+                    {value.count} 条）
+                  </p>
+                ),
+            )}
+          </div>
+        ))}
+      </section>
       <div className="actions">
         <button type="button" onClick={() => void readDebugTrail().then(setEntries)}>
           <RefreshCw aria-hidden="true" />

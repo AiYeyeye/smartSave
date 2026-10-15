@@ -26,6 +26,7 @@ export async function featureModelContext<T extends Awaited<ReturnType<SettingsS
       model: feature.modelId,
       timeoutMs: service.timeoutMs ?? 60_000,
       ...(service.streaming === undefined ? {} : { streaming: service.streaming }),
+      ...(service.fastMode === undefined ? {} : { fastMode: service.fastMode }),
       ...(service.maxOutputTokens === undefined ? {} : { maxOutputTokens: service.maxOutputTokens }),
     },
     key: services.credential(service.id),

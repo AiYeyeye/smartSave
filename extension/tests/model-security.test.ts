@@ -283,17 +283,21 @@ it('shows explicit model configuration, privacy defaults, and a non-vault warnin
 });
 
 it.each([401, 403, 429, 500])('classifies HTTP %s without leaking response or key', async status => {
+  vi.useFakeTimers();
   const fetcher = vi.fn(async () => new Response('sensitive-provider-body', { status }));
   const transport = makeTransport({ fetch: fetcher, contains: async () => true });
-  const result = await transport.run({
+  const pending = transport.run({
     config,
     key: 'test-only-key',
     tree,
     privacy,
     request: { task: 'search', query: 'find', itemIds: ['public'], folderIds: [] },
   });
+  await vi.advanceTimersByTimeAsync(14000);
+  const result = await pending;
   expect(result).toEqual({ status: 'failed', reason: status === 500 ? 'http-error' : `http-${status}` });
-  expect(fetcher).toHaveBeenCalledOnce();
+  expect(fetcher).toHaveBeenCalledTimes(status === 429 || status === 500 ? 4 : 1);
+  vi.useRealTimers();
 });
 it('rejects an old response after cancellation even if fetch ignores abort', async () => {
   let release!: (response: Response) => void;
@@ -502,13 +506,16 @@ describe('task prompts and classification policy', () => {
     for (const task of ['search', 'import-map'] as const)
       expect(modelSystemPrompt(task, DEFAULT_CLASSIFICATION_POLICY)).not.toMatch(/Depth policy|Title policy/);
   });
-  it('keeps the adapter envelope shape: two messages, verbatim payload, schema and unchanged structured-output branches', () => {
+  it('keeps the adapter envelope shape with a compact catalog, schema and unchanged structured-output branches', () => {
     const payload = JSON.stringify({ task: 'save', items: [], folders: [] });
     for (const adapter of ['openai-compatible', 'ollama', 'lm-studio'] as const) {
       const body = JSON.parse(modelRequestBody({ ...config, adapter }, 'save', payload));
       expect(body.messages).toHaveLength(2);
       expect(body.messages[0].role).toBe('system');
-      expect(body.messages[1]).toEqual({ role: 'user', content: payload });
+      expect(body.messages[1]).toEqual({
+        role: 'user',
+        content: JSON.stringify({ task: 'save', folderTree: '', items: [] }),
+      });
       expect(body.messages[0].content).toContain(modelSystemPrompt('save', DEFAULT_CLASSIFICATION_POLICY));
       expect(body.messages[0].content).toContain('"newFolders"');
       expect(body).toMatchObject({

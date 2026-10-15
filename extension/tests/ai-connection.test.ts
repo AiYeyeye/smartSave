@@ -53,7 +53,8 @@ it('tests draft classification without saving, primary-route comparison or real 
     const payload = JSON.parse(body.input);
     expect(payload.task).toBe('save');
     expect(payload.items).toHaveLength(1);
-    expect(payload.folders).toHaveLength(2);
+    expect(payload.folderTree.split('\n')).toHaveLength(2);
+    expect(payload.folderTree).toContain('"test-docs" "Documentation"');
     expect(JSON.stringify(body)).not.toContain('saved-key');
     return new Response(
       JSON.stringify({

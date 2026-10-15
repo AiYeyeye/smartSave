@@ -70,7 +70,7 @@ it('uses actual transport and privacy projection; explicit request only, no auto
   const payload = JSON.parse(body.messages[1].content);
   expect(payload.query).toBe('example');
   expect(payload.items).toHaveLength(12);
-  expect(payload.folders).toEqual([]);
+  expect(payload.folderTree).toBe('');
   expect(body.messages).toHaveLength(2);
   expect(body.messages[0].content).toContain('rank the given items by relevance to the query');
   expect(body.messages[0].content).not.toContain('Depth policy');

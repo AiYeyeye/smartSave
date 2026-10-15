@@ -90,6 +90,11 @@ export class SearchIndex {
   query(query: string): SearchHit[] {
     const tokens = normalize(query).trim().split(/\s+/).filter(Boolean);
     if (!tokens.length) return [];
+    const chineseParts = new Map(
+      tokens
+        .filter(token => /^\p{Script=Han}{4,32}$/u.test(token))
+        .map(token => [token, [...new Set(Array.from({ length: token.length - 1 }, (_, i) => token.slice(i, i + 2)))]]),
+    );
     const fuzzy = new Map<string, boolean>();
     return this.entries
       .flatMap((entry, order) => {
@@ -107,6 +112,16 @@ export class SearchIndex {
           if (entry.phonetic.some(field => field.includes(token))) {
             score += 3;
             continue;
+          }
+          const parts = chineseParts.get(token);
+          if (parts) {
+            const matched = parts.filter(
+              part => entry.title.includes(part) || entry.fields.some(field => field.includes(part)),
+            ).length;
+            if (matched >= Math.max(2, Math.ceil((parts.length * 2) / 3))) {
+              score += 5 + (parts.length - matched) / parts.length;
+              continue;
+            }
           }
           if (
             token.length >= 3 &&

@@ -30,6 +30,7 @@ export function ModelSettings({
   const [model, setModel] = useState('');
   const [timeout, setTimeoutValue] = useState('');
   const [streaming, setStreaming] = useState<boolean | undefined>(undefined);
+  const [fastMode, setFastMode] = useState<boolean | undefined>(undefined);
   const [maxOutputTokens, setMaxOutputTokens] = useState(String(DEFAULT_MAX_OUTPUT_TOKENS));
   const outputLimitValid =
     !['openai-compatible', 'openai-responses', 'anthropic', 'google-generative-ai'].includes(adapter) ||
@@ -51,6 +52,7 @@ export function ModelSettings({
     setListSource('');
     setPresetId(id);
     setStreaming(undefined);
+    setFastMode(undefined);
     setMaxOutputTokens(String(DEFAULT_MAX_OUTPUT_TOKENS));
     const next = modelPresets.find(item => item.id === id);
     if (next) {
@@ -97,6 +99,7 @@ export function ModelSettings({
             setModel(value.config.model);
             setTimeoutValue(String(value.config.timeoutMs));
             setStreaming(value.config.streaming);
+            setFastMode(value.config.fastMode);
             setMaxOutputTokens(String(value.config.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS));
             if (!value.presetId) {
               const matched = modelPresets.find(
@@ -156,6 +159,7 @@ export function ModelSettings({
       model,
       timeoutMs: Number(timeout),
       ...(streaming === undefined ? {} : { streaming }),
+      ...(fastMode === undefined ? {} : { fastMode }),
       ...(['openai-compatible', 'openai-responses', 'anthropic', 'google-generative-ai'].includes(adapter)
         ? { maxOutputTokens: Number(maxOutputTokens) }
         : {}),
@@ -247,6 +251,7 @@ export function ModelSettings({
             model: config.model,
             timeoutMs: config.timeoutMs,
             streaming: config.streaming,
+            fastMode: config.fastMode,
             maxOutputTokens: config.maxOutputTokens,
             key,
           },
@@ -356,6 +361,18 @@ export function ModelSettings({
               }}
             />
             流式响应（关闭后使用 JSON）
+          </label>
+          <label className="field">
+            <input
+              type="checkbox"
+              aria-label="优先快速响应"
+              checked={fastMode ?? true}
+              onChange={e => {
+                cancel();
+                setFastMode(e.target.checked);
+              }}
+            />
+            优先快速响应（对已支持的模型降低思考量）
           </label>
           <details className="settings-help">
             <summary>高级：协议、地址与超时</summary>

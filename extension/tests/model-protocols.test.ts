@@ -83,7 +83,11 @@ describe('request side: endpoint, JSON mode and output budget per protocol', () 
       'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent',
     );
     const body = JSON.parse(modelRequestBody(c, 'search', '{}'));
-    expect(body.generationConfig).toEqual({ responseMimeType: 'application/json', maxOutputTokens: 128000 });
+    expect(body.generationConfig).toEqual({
+      responseMimeType: 'application/json',
+      maxOutputTokens: 128000,
+      thinkingConfig: { thinkingBudget: 0 },
+    });
     expect(body.systemInstruction.parts[0].text).toContain('JSON');
     expect(body.model).toBeUndefined();
   });

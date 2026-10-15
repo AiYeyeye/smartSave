@@ -3,6 +3,18 @@ import { SearchIndex } from '../domain/search-index';
 import { searchCandidates, applySearchOrder } from '../domain/search-rerank';
 import { searchTree } from './fixtures/search-tree';
 describe('SearchIndex', () => {
+  it('finds separated Chinese concepts, ranks contiguous titles first and still ANDs other query tokens', () => {
+    const tree = searchTree();
+    tree.nodes
+      .filter(n => n.ref.kind === 'bookmark')
+      .forEach((node, i) => {
+        node.title = ['前端学习笔记与实用工具', '前端工具', '前端入门'][i] ?? '';
+      });
+    const index = new SearchIndex(tree);
+    expect(index.query('前端工具').map(hit => hit.id)).toEqual(['2', '1']);
+    expect(index.query('前端工具 nonexistent')).toEqual([]);
+    expect(index.query('前端工具 example').map(hit => hit.id)).toEqual(['2', '1']);
+  });
   it.each(['重庆', 'chongqing', 'cqdx', 'example.com', '/guide/0', '学习资料', 'xuexiziliao', 'chongqng'])(
     'matches cached local fields: %s',
     query => {
