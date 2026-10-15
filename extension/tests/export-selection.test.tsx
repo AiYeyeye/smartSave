@@ -12,6 +12,7 @@ import { organizerTree } from './fixtures/organizer-tree';
 import { FileOutputStore } from '../persistence/file-output';
 import { IDBFactory } from 'fake-indexeddb';
 import { parseImport } from '../import/parsers';
+import { LanguagePicker, LocaleProvider } from '../ui/i18n';
 
 const empty: ExportScope = { roots: [], excludedFolders: [] };
 afterEach(() => vi.restoreAllMocks());
@@ -74,6 +75,30 @@ it('tree expansion and mixed parent checks retain choices across hidden navigati
   fireEvent.click(screen.getByRole('button', { name: '展开 left' }));
   expect(screen.getByRole('checkbox', { name: '导出 a' })).toBeChecked();
   expect([...exportSelection(tree, last)]).toEqual(['a']);
+});
+
+it('preserves native names, mixed selection and collapsed folders across language changes', () => {
+  const tree = organizerTree();
+  tree.nodes.find(node => node.ref.nativeId === 'a')!.title = '导出书签 {title}';
+  function Harness() {
+    const [scope, setScope] = useState<ExportScope>(empty);
+    return (
+      <LocaleProvider>
+        <LanguagePicker />
+        <ExportTreeSelector tree={tree} scope={scope} disabled={false} onChange={setScope} />
+      </LocaleProvider>
+    );
+  }
+  render(<Harness />);
+  const selected = screen.getByRole('checkbox', { name: '导出 导出书签 {title}' });
+  fireEvent.click(selected);
+  fireEvent.click(screen.getByRole('button', { name: '收起 left' }));
+  fireEvent.change(screen.getByRole('combobox', { name: '语言' }), { target: { value: 'en' } });
+  expect(screen.getByRole('checkbox', { name: 'Export left' })).toBePartiallyChecked();
+  expect(screen.queryByRole('checkbox', { name: 'Export 导出书签 {title}' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Expand left' }));
+  expect(screen.getByRole('checkbox', { name: 'Export 导出书签 {title}' })).toBeChecked();
+  expect(screen.getByRole('checkbox', { name: 'Export b' })).not.toBeChecked();
 });
 
 it('persistent output accepts leaf exclusions and fences their deletion while legacy folder scopes still work', async () => {

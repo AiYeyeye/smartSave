@@ -9,13 +9,14 @@ import { FileOutputStore, type OutputFileHandle } from '../persistence/file-outp
 import { FileOutputSink } from '../background/file-output';
 import { TreeProjection } from '../background/tree-projection';
 import { APPEARANCES } from './appearance';
+import { LanguagePicker, LocaleProvider } from '../ui/i18n';
 
 const clone = globalThis.structuredClone;
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
-async function setup(app = false) {
+async function setup(app = false, localized = false) {
   const handles = new Map<string, OutputFileHandle>();
   vi.stubGlobal('indexedDB', new IDBFactory());
   vi.stubGlobal('structuredClone', (value: unknown) => {
@@ -101,7 +102,14 @@ async function setup(app = false) {
   const a = handle('a.json');
   const picker = vi.fn(async () => a.file);
   vi.stubGlobal('showSaveFilePicker', picker);
-  const view = render(app ? createElement(App, { page: 'options' }) : createElement(ExportSettings, { visible: true }));
+  const workbench = createElement(ExportSettings, { visible: true });
+  const view = render(
+    app
+      ? createElement(App, { page: 'options' })
+      : localized
+        ? createElement(LocaleProvider, null, createElement(LanguagePicker), workbench)
+        : workbench,
+  );
   if (app) fireEvent.click(screen.getByRole('button', { name: /导出与备份/ }));
   await screen.findByRole('checkbox', { name: '导出 Folder' });
   fireEvent.click(screen.getByText('自动更新 JSON 文件（可选）'));
@@ -146,6 +154,53 @@ async function setup(app = false) {
     },
   };
 }
+it('language changes retain candidate, consent and format during authorization without duplicate permission or writes', async () => {
+  const h = await setup(false, true);
+  h.select();
+  const candidate = h.handle('确认 {name}.json');
+  h.picker.mockResolvedValueOnce(candidate.file);
+  h.click('下一步：选择格式');
+  fireEvent.click(screen.getByRole('radio', { name: /Markdown/ }));
+  h.click('下一步：确认导出');
+  h.click('选择专用 JSON 文件');
+  await screen.findByText('候选文件：确认 {name}.json');
+  const read = vi.spyOn(FileOutputStore.prototype, 'read');
+  const connect = vi.spyOn(chrome.runtime, 'connect');
+  fireEvent.change(screen.getByRole('combobox', { name: '语言' }), { target: { value: 'en' } });
+  expect(screen.getByRole('button', { name: 'Download Markdown' })).toBeEnabled();
+  expect(screen.getByRole('checkbox', { name: 'I agree to the dedicated file overwrite rules' })).toBeChecked();
+  expect(screen.getByText('Candidate file: 确认 {name}.json')).toBeVisible();
+  expect(read).not.toHaveBeenCalled();
+  expect(connect).not.toHaveBeenCalled();
+  expect(h.messages).toEqual([]);
+  expect(candidate.file.requestPermission).not.toHaveBeenCalled();
+  let grant!: (permission: PermissionState) => void;
+  candidate.file.requestPermission.mockImplementationOnce(
+    () =>
+      new Promise(resolve => {
+        grant = resolve;
+      }),
+  );
+  h.click('Authorize and enable selected file');
+  expect(candidate.file.requestPermission).toHaveBeenCalledTimes(1);
+  for (const language of ['zh-CN', 'en']) {
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: language } });
+    expect(candidate.file.requestPermission).toHaveBeenCalledTimes(1);
+    expect(candidate.file.createWritable).not.toHaveBeenCalled();
+    expect(h.messages).toEqual([]);
+  }
+  await act(async () => grant('granted'));
+  await waitFor(() => expect(h.sink.status().status).toBe('success'));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Refresh output status' })).toBeEnabled());
+  expect(candidate.file.createWritable).toHaveBeenCalledTimes(1);
+  expect(h.messages.map(message => (message as FileOutputCommand).action)).toEqual(['prepare', 'reload']);
+  expect(screen.getByText(/The background worker accepted this update request/)).toBeVisible();
+  h.click('Refresh output status');
+  await screen.findByText(/Saved status: success/);
+  expect(screen.getByText('Current file: 确认 {name}.json')).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Download Markdown' })).toBeEnabled();
+  h.cleanup();
+});
 it('production UI gesture ordering, consent, same-origin handle transport, cancellation and durable close status', async () => {
   const h = await setup();
   expect(screen.getByRole('button', { name: '选择专用 JSON 文件' })).toBeDisabled();

@@ -6,6 +6,7 @@ import { organizeEnglish } from './organize';
 import { organizeWorkbenchEnglish } from './organize-workbench';
 import { organizeStatusEnglish } from './organize-status';
 import { recoveryEnglish } from './recovery';
+import { exportEnglish } from './export';
 /** UI-owned messages only. Native bookmark content and provider output never enter this catalog. */
 export const english = {
   ...aiServicesEnglish,
@@ -16,6 +17,7 @@ export const english = {
   ...organizeWorkbenchEnglish,
   ...organizeStatusEnglish,
   ...recoveryEnglish,
+  ...exportEnglish,
   智栏: 'Zhilan',
   '智栏 · 书签助手': 'Zhilan · Bookmark assistant',
   语言: 'Language',

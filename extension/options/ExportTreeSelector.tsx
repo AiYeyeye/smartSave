@@ -4,6 +4,7 @@ import type { ExportScope } from '../domain/export-projection';
 import { exportSelection, toggleExportSelection } from '../domain/export-selection';
 import type { TreeSnapshot } from '../domain/node-reference';
 import { BookmarkFavicon } from '../ui/BookmarkFavicon';
+import { useI18n } from '../ui/i18n';
 
 function SelectionCheck({ mixed, ...props }: React.InputHTMLAttributes<HTMLInputElement> & { mixed: boolean }) {
   const input = useRef<HTMLInputElement>(null);
@@ -24,6 +25,7 @@ export function ExportTreeSelector({
   disabled: boolean;
   onChange: (scope: ExportScope) => void;
 }) {
+  const { t } = useI18n();
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const nodes = useMemo(() => new Map(tree.nodes.map(node => [node.ref.nativeId, node])), [tree]);
   const selected = useMemo(() => exportSelection(tree, scope), [tree, scope]);
@@ -63,20 +65,20 @@ export function ExportTreeSelector({
   }
   tree.roots.forEach(id => walk(id, 0));
   return (
-    <ul className="bookmark-tree export-tree" aria-label="选择导出内容">
+    <ul className="bookmark-tree export-tree" aria-label={t('选择导出内容')}>
       {rows.map(({ id, depth }) => {
         const node = nodes.get(id)!;
         const folder = node.ref.kind === 'folder';
         const count = counts.get(id)!;
         const expanded = !collapsed.has(id);
-        const title = node.title || (folder ? '未命名目录' : node.url || '未命名书签');
+        const title = node.title || (folder ? t('未命名目录') : node.url || t('未命名书签'));
         return (
           <li key={id} className="bookmark-row export-tree-row" style={{ '--depth': depth } as CSSProperties}>
             {folder && node.childrenIds.length > 0 ? (
               <button
                 type="button"
                 className="export-tree-expand"
-                aria-label={`${expanded ? '收起' : '展开'} ${title}`}
+                aria-label={t(expanded ? '收起 {title}' : '展开 {title}', { title })}
                 aria-expanded={expanded}
                 onClick={() =>
                   setCollapsed(old => {
@@ -94,7 +96,7 @@ export function ExportTreeSelector({
             )}
             <label>
               <SelectionCheck
-                aria-label={`导出 ${title}`}
+                aria-label={t('导出 {title}', { title })}
                 disabled={disabled}
                 checked={count.chosen === count.all}
                 mixed={count.chosen > 0 && count.chosen < count.all}

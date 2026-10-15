@@ -8,6 +8,7 @@ import { serializeExportHTML, serializeExportJSON, serializeExportMarkdown } fro
 import { configureFileOutput, sendFileOutputCommand, fileOutputRefusal } from '../export/file-output-control';
 import { FileOutputStore, type FileOutputRecord, type OutputFileHandle } from '../persistence/file-output';
 import { connectTree } from '../panel/tree-client';
+import { useI18n } from '../ui/i18n';
 
 type GestureHandle = OutputFileHandle & {
   name?: string;
@@ -27,6 +28,7 @@ const sameRef = (a: NodeRef, b: NodeRef) =>
 /** Retained by App across navigation. Only explicit manual downloads write in this page;
  * automatic files belong exclusively to the worker, including initial catchup. */
 export function ExportSettings({ visible }: { visible: boolean }) {
+  const { t, message: translateMessage } = useI18n();
   const [store] = useState(() => new FileOutputStore());
   const [tree, setTree] = useState<TreeState>({ status: 'loading' });
   const currentTree = useRef(tree);
@@ -41,7 +43,7 @@ export function ExportSettings({ visible }: { visible: boolean }) {
   const locked = useRef(false);
   const revision = useRef(0);
   const mounted = useRef(true);
-  const [message, setMessage] = useState('勾选要导出的文件夹或书签，再点击下一步。');
+  const [message, setMessage] = useState<string | { format: keyof typeof serializers }>();
   const framed = typeof window !== 'undefined' && window.top !== window;
   const panelDocument = typeof location !== 'undefined' && /panel\/index\.html$/.test(location.pathname);
   const supported =
@@ -134,7 +136,7 @@ export function ExportSettings({ visible }: { visible: boolean }) {
         anchor.remove();
         setTimeout(() => URL.revokeObjectURL(url), 1000);
       }
-      setMessage(`已发起 ${format} 下载；请在浏览器下载记录中确认完成。`);
+      setMessage({ format });
     } catch {
       setMessage('导出被拒绝：请重新选择有效范围，或缩小过大的范围。');
     }
@@ -145,7 +147,7 @@ export function ExportSettings({ visible }: { visible: boolean }) {
     try {
       const pending = (window as PickerWindow).showSaveFilePicker!({
         suggestedName: 'bookmarks.json',
-        types: [{ description: 'JSON 专用输出', accept: { 'application/json': ['.json'] } }],
+        types: [{ description: t('JSON 专用输出'), accept: { 'application/json': ['.json'] } }],
       });
       void pending
         .then(
@@ -245,32 +247,31 @@ export function ExportSettings({ visible }: { visible: boolean }) {
       finish();
     }
   }
-  const label = (ref: NodeRef) => nodes.find(n => sameRef(n.ref, ref))?.title ?? `失效内容 ${ref.nativeId}`;
+  const label = (ref: NodeRef) =>
+    nodes.find(n => sameRef(n.ref, ref))?.title ?? t('失效内容 {id}', { id: ref.nativeId });
   return (
-    <section hidden={!visible} className="surface workflow-workbench" aria-label="导出设置" aria-busy={busy}>
-      <h2>导出书签</h2>
-      <p>选好内容和格式，即可保存到电脑。</p>
-      <WorkflowSteps labels={['选择内容', '选择格式', '确认导出']} current={step} />
+    <section hidden={!visible} className="surface workflow-workbench" aria-label={t('导出设置')} aria-busy={busy}>
+      <h2>{t('导出书签')}</h2>
+      <p>{t('选好内容和格式，即可保存到电脑。')}</p>
+      <WorkflowSteps labels={[t('选择内容'), t('选择格式'), t('确认导出')]} current={step} />
       <div hidden={step !== 1} className="workflow-stage">
-        <h3>选择要导出的内容</h3>
-        <p className="hint">勾选文件夹可选中其中全部内容；展开后也能单独勾选书签。</p>
-        {tree.status === 'loading' && <p role="status">正在读取书签…</p>}
-        {tree.status === 'error' && <p role="alert">{tree.message}</p>}
+        <h3>{t('选择要导出的内容')}</h3>
+        <p className="hint">{t('勾选文件夹可选中其中全部内容；展开后也能单独勾选书签。')}</p>
+        {tree.status === 'loading' && <p role="status">{t('正在读取书签…')}</p>}
+        {tree.status === 'error' && <p role="alert">{translateMessage(tree.message)}</p>}
         {snapshot && <ExportTreeSelector tree={snapshot} scope={scope} disabled={busy} onChange={setScope} />}
         <div className="workflow-footer">
-          <span className="hint">
-            已选 {selection.bookmarks} 条书签 · {selection.folders} 个目录
-          </span>
+          <span className="hint">{t('已选 {bookmarks} 条书签 · {folders} 个目录', selection)}</span>
           <button disabled={busy || !scope.roots.length} onClick={() => setScope({ roots: [], excludedFolders: [] })}>
-            清空选择
+            {t('清空选择')}
           </button>
           <button className="primary" disabled={busy || !!scopeError} onClick={() => setStep(2)}>
-            下一步：选择格式
+            {t('下一步：选择格式')}
           </button>
         </div>
       </div>
       <div hidden={step !== 2} className="workflow-stage">
-        <h3>选择导出格式</h3>
+        <h3>{t('选择导出格式')}</h3>
         <div className="workflow-choices">
           {(['HTML', 'Markdown', 'JSON'] as const).map(value => (
             <label className="workflow-choice" key={value}>
@@ -284,14 +285,14 @@ export function ExportSettings({ visible }: { visible: boolean }) {
               <span>
                 <strong>
                   {value}
-                  {value === 'HTML' ? '（推荐）' : ''}
+                  {value === 'HTML' ? t('（推荐）') : ''}
                 </strong>
                 <small>
                   {value === 'HTML'
-                    ? '可导入 Chrome、Edge 等浏览器'
+                    ? t('可导入 Chrome、Edge 等浏览器')
                     : value === 'Markdown'
-                      ? '适合阅读、笔记和分享'
-                      : '保留完整书签数据，便于再次导入'}
+                      ? t('适合阅读、笔记和分享')
+                      : t('保留完整书签数据，便于再次导入')}
                 </small>
               </span>
             </label>
@@ -299,82 +300,113 @@ export function ExportSettings({ visible }: { visible: boolean }) {
         </div>
         <div className="workflow-footer">
           <button disabled={busy} onClick={() => setStep(1)}>
-            上一步
+            {t('上一步')}
           </button>
           <button className="primary" disabled={busy || !!scopeError} onClick={() => setStep(3)}>
-            下一步：确认导出
+            {t('下一步：确认导出')}
           </button>
         </div>
       </div>
       <div hidden={step !== 3} className="workflow-stage">
-        <h3>确认并下载</h3>
+        <h3>{t('确认并下载')}</h3>
         <p className="workflow-summary">
-          {selection.bookmarks} 条书签 · {selection.folders} 个目录 · {format} 格式
+          {t('{bookmarks} 条书签 · {folders} 个目录 · {format} 格式', { ...selection, format })}
         </p>
-        <p className="hint">保留目录层级和原始链接。点击下载后，在浏览器下载记录中查看文件。</p>
+        <p className="hint">{t('保留目录层级和原始链接。点击下载后，在浏览器下载记录中查看文件。')}</p>
         <div className="workflow-footer">
           <button disabled={busy} onClick={() => setStep(2)}>
-            上一步
+            {t('上一步')}
           </button>
           <button className="primary" disabled={busy || !!scopeError} onClick={() => manual(format)}>
-            下载 {format}
+            {t('下载 {format}', { format })}
           </button>
         </div>
       </div>
-      {scopeError && !!scope.roots.length && <p role="alert">{scopeError}</p>}
-      <p role="status">{message}</p>
+      {scopeError && !!scope.roots.length && <p role="alert">{translateMessage(scopeError)}</p>}
+      <p role="status">
+        {message === undefined
+          ? t(
+              step === 1
+                ? '勾选要导出的文件夹或书签，再点击下一步。'
+                : step === 2
+                  ? '选择导出格式'
+                  : '确认所选内容和格式后，点击下载。',
+            )
+          : typeof message === 'string'
+            ? translateMessage(message)
+            : t('已发起 {format} 下载；请在浏览器下载记录中确认完成。', message)}
+      </p>
       <details className="workflow-help">
-        <summary>导出内容说明</summary>
-        <p>JSON、HTML、Markdown 保留原始 URL 和空目录，不包含模型、密钥、规则或日志。导出文件不是完整恢复备份。</p>
+        <summary>{t('导出内容说明')}</summary>
+        <p>
+          {t('JSON、HTML、Markdown 保留原始 URL 和空目录，不包含模型、密钥、规则或日志。导出文件不是完整恢复备份。')}
+        </p>
       </details>
       <details className="workflow-help">
-        <summary>自动更新 JSON 文件（可选）</summary>
-        <h3>自动 JSON 专用文件</h3>
+        <summary>{t('自动更新 JSON 文件（可选）')}</summary>
+        <h3>{t('自动 JSON 专用文件')}</h3>
         <p>
-          首次授权后会覆盖此专用输出文件及外部修改，不反向同步，不逐次确认，不自动换路径。后台是唯一自动写入者；浏览器关闭时不运行。文件关闭成功且持久回执匹配后才记录成功；中断可能已更新文件但没有成功回执。
+          {t(
+            '首次授权后会覆盖此专用输出文件及外部修改，不反向同步，不逐次确认，不自动换路径。后台是唯一自动写入者；浏览器关闭时不运行。文件关闭成功且持久回执匹配后才记录成功；中断可能已更新文件但没有成功回执。',
+          )}
         </p>
         <label className="check">
           <input type="checkbox" checked={consent} disabled={busy} onChange={e => setConsent(e.target.checked)} />
-          我同意专用输出覆盖规则
+          {t('我同意专用输出覆盖规则')}
         </label>
-        {!supported && <p role="alert">此环境不支持自动文件选择或持久句柄；仍可手动下载。不承诺后台文件输出。</p>}
+        {!supported && (
+          <p role="alert">{t('此环境不支持自动文件选择或持久句柄；仍可手动下载。不承诺后台文件输出。')}</p>
+        )}
         <p>
-          当前文件：
-          {(record?.handle as GestureHandle | undefined)?.name ?? (record ? '已授权文件（名称不可用）' : '未配置')}
+          {t('当前文件：{name}', {
+            name:
+              (record?.handle as GestureHandle | undefined)?.name ??
+              (record ? t('已授权文件（名称不可用）') : t('未配置')),
+          })}
         </p>
         <p>
-          当前输出根：{record?.scope.roots.map(label).join('、') || '无'}；排除：
-          {[...(record?.scope.excludedFolders ?? []), ...(record?.scope.excludedBookmarks ?? [])]
-            .map(label)
-            .join('、') || '无'}
+          {t('当前输出根：{roots}；排除：{excluded}', {
+            roots: record?.scope.roots.map(label).join('、') || t('无'),
+            excluded:
+              [...(record?.scope.excludedFolders ?? []), ...(record?.scope.excludedBookmarks ?? [])]
+                .map(label)
+                .join('、') || t('无'),
+          })}
         </p>
         <p>
-          持久状态：{record?.status ?? '未配置'}；最近成功：{record?.lastSuccess ?? '无'}
+          {t('持久状态：{status}；最近成功：{time}', {
+            status: record?.status ?? t('未配置'),
+            time: record?.lastSuccess ?? t('无'),
+          })}
         </p>
         {record && ['paused', 'needs-permission', 'scope-invalid'].includes(record.status) && (
           <p role="alert">
-            输出已暂停。权限或文件错误请明确重新授权；范围失效请清空并重新选择目录，再选择文件启用。不会自动重试或回退全树。
+            {t(
+              '输出已暂停。权限或文件错误请明确重新授权；范围失效请清空并重新选择目录，再选择文件启用。不会自动重试或回退全树。',
+            )}
           </p>
         )}
         <div className="actions">
           <button disabled={busy || !supported || !consent || !!scopeError} onClick={pick}>
-            选择专用 JSON 文件
+            {t('选择专用 JSON 文件')}
           </button>
           {candidate && (
             <>
-              <span>候选文件：{candidate.name ?? '名称不可用'}</span>
+              <span>{t('候选文件：{name}', { name: candidate.name ?? t('名称不可用') })}</span>
               <button
                 disabled={busy || !consent || !!scopeError || !candidate.requestPermission}
                 onClick={() => authorize(true)}
               >
-                授权并启用所选文件
+                {t('授权并启用所选文件')}
               </button>
               <button disabled={busy} onClick={() => setCandidate(undefined)}>
-                放弃候选文件
+                {t('放弃候选文件')}
               </button>
             </>
           )}
-          {candidate && !candidate.requestPermission && <p role="alert">此句柄不支持显式授权，不能启用自动输出。</p>}
+          {candidate && !candidate.requestPermission && (
+            <p role="alert">{t('此句柄不支持显式授权，不能启用自动输出。')}</p>
+          )}
           <button
             disabled={
               busy ||
@@ -385,13 +417,13 @@ export function ExportSettings({ visible }: { visible: boolean }) {
             }
             onClick={() => authorize(false)}
           >
-            重新授权并补写当前快照
+            {t('重新授权并补写当前快照')}
           </button>
           <button disabled={busy || !supported} onClick={() => void stop()}>
-            停止自动输出
+            {t('停止自动输出')}
           </button>
           <button disabled={busy} onClick={() => void refresh()}>
-            刷新输出状态
+            {t('刷新输出状态')}
           </button>
         </div>
       </details>
