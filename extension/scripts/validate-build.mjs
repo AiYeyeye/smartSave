@@ -76,11 +76,33 @@ export function assertClassicScript(code) {
   rejectDynamicImports(ast);
 }
 
+/** Store/action icons must be local PNGs with their declared pixel dimensions. */
+export async function validateIcons(root, manifest) {
+  for (const size of [16, 32, 48, 128]) {
+    const path = manifest.icons?.[size];
+    if (typeof path !== 'string' || !path.endsWith('.png')) throw new Error(`Missing PNG icon: ${size}`);
+    const file = resolve(root, path);
+    if (relative(root, file).startsWith('..')) throw new Error('Icon escapes distribution');
+    const bytes = await readFile(file);
+    if (
+      bytes.length < 24 ||
+      !bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) ||
+      bytes.readUInt32BE(16) !== size ||
+      bytes.readUInt32BE(20) !== size
+    )
+      throw new Error(`Invalid PNG icon dimensions: ${size}`);
+    if (size !== 128 && manifest.action?.default_icon?.[size] !== path)
+      throw new Error(`Action icon differs from extension icon: ${size}`);
+  }
+}
+
 export async function validateBuild(directory) {
   const root = resolve(directory);
   const manifest = manifestSchema.parse(JSON.parse(await readFile(resolve(root, 'manifest.json'), 'utf8')));
   // Use the raw manifest too: command descriptions must be checked, not stripped by the schema.
-  await validateLocales(root, JSON.parse(await readFile(resolve(root, 'manifest.json'), 'utf8')));
+  const rawManifest = JSON.parse(await readFile(resolve(root, 'manifest.json'), 'utf8'));
+  await validateLocales(root, rawManifest);
+  await validateIcons(root, rawManifest);
   const visited = new Set();
   async function check(file) {
     if (relative(root, file).startsWith('..')) throw new Error('Asset escapes distribution');

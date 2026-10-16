@@ -1,15 +1,54 @@
-# Privacy and permission boundaries
+# 智栏隐私政策
 
-No product account, backend, official proxy, default provider or telemetry pipeline is implemented. BYOK does **not** mean nothing leaves your computer. Explicit AI requests go to the configured endpoint; provider retention cannot be guaranteed. Local mode has no automatic cloud fallback. Native bookmarks remain the browser's authoritative tree; browser-account sync is controlled by the browser, not this extension.
+生效及更新日期：2026 年 10 月 15 日。适用于 Astraxine 维护的智栏 / Zhilan 浏览器扩展 `0.1.0` 当前候选版本。联系：[mmgnosit@gmail.com](mailto:mmgnosit@gmail.com)。[English](privacy.en.md)。
 
-`bookmarks`, `storage`, `activeTab`, `scripting`, `contextMenus`, `favicon` are the current required permissions. The UI is a toolbar popup plus the options page; nothing is injected into web pages and no extension page is web-accessible. No mandatory host access or default content script; optional HTTP/HTTPS host declarations allow explicit model-host consent, not automatic all-host grants. Browser grants are scheme/host, not port/path; the transport pins exact endpoint route and rejects redirects. Body extraction uses on-demand active-tab scripting; restricted pages/refusal fall back to manual save. No background bookmark-page crawling.
+## 我们如何处理信息
 
-API Key defaults to **page-memory**, not a browser-session credential shared between pages. Closing/reloading that page loses it; changing route clears the UI key. `明确记住密钥（本地明文存储）` opts into the atomic local modelSecurity envelope, not an OS vault or encrypted secret store. No storage.sync key. `删除密钥` revokes the local credential authority; local-machine/profile access can still expose remembered secrets. Exports, backups and ordinary errors must not contain keys or raw provider bodies. Do not share profile files, Authorization headers or screenshots with keys.
+智栏帮助你管理浏览器原生书签。无需智栏账号，当前没有智栏运营的后端、遥测、广告或分析服务。维护者不会自动接收你的书签、API Key 或调试日志。**这不代表所有数据都只在本机：启用 AI 后，允许的信息会发送给你选择的模型服务；浏览器自身也可能同步书签和偏好。**
 
-`发送完整网址（含查询参数和片段）` defaults ON: parameters may contain credentials. Turning it off strips query/fragment from permitted AI URL fields only; it does not rewrite native URLs, exact-URL deduplication, backup or export. Internal/loopback bookmark addresses are not automatically excluded from AI: use explicit AI privacy exclusions. Selected excluded folders and descendants are filtered from all AI contexts and folder references, but remain locally browsable/searchable; export scope is independent. An excluded import target cannot bypass classification by silently importing unclassified items.
+## 本机保存什么
 
-Body assistance defaults OFF, only active save can send up to1500 characters transiently; no persistent body/summary/tags. Search sends query and at most8 local candidates. Organizer sends selected eligible scope; import sends bounded parsed provenance, not arbitrary page fetches. Model output is data, not executable code or native-write authority.
+- 读取书签标题、原始网址、目录层级和浏览器节点标识，用于显示、搜索、分类、导入导出和恢复。浏览器原生书签仍是事实源。
+- 本地保存 AI 连接、模型分配、隐私选项、网站规则、收藏处理回执、生成的搜索关键词、整理任务/导入草稿，以及写入日志、备份和恢复记录。部分记录含标题和原始网址。
+- 勾选“记住密钥”会将 API Key **明文保存在扩展本地存储**，不是系统密钥保险箱。添加连接的表单当前默认勾选记住。取消后，临时密钥仅在对应页面或任务内存中保留，关闭/刷新原页面或后台任务终止后可能丢失，不能作为跨页面会话密钥使用。
+- Token 统计在本地保存用量、模型和用途等信息，不保存 Key、提示词、服务地址或书签正文。当前保留累计统计、约 30 天的每日分组及最近 100 次请求记录；没有单独清空统计的按钮。
+- 调试日志默认关闭。开启后会在本地保留经过脱敏、截断的请求/响应细节，**仍可能包含书签标题、网址和启用正文辅助时的正文片段**。最多 400 条、约 1 MiB，单个正文最多 64 Ki 字符。可在“收藏记录与调试”关闭并清空日志。分享前仍应自行检查。
 
-Local IDB journals/backups/import drafts and external JSON contain private titles and original URLs. Protect the profile and output directory. Recovery cleanup is eligibility-checked and retains dedupe evidence, not arbitrary deletion. The release checker covers obvious secret markers, static references, CSP, permission shape, direct license metadata and notices: regex absence is **not** a security proof. Encoded secrets, arbitrary exfiltration, full transitive licensing, provider runtime and browser storage inspections require independent review/manual P4 evidence.
+语言、明暗模式、主题色可通过浏览器 `storage.sync` 同步；模型密钥、服务地址、目录规则、书签关键词和恢复日志不通过此偏好同步功能发送。浏览器账号对原生书签的同步由浏览器自身设置控制。系统或浏览器配置备份可能另行复制本地数据。
 
-No new P4 evidence was collected during task12 source validation. The missing P4 manual remains a release blocker even when static secret-marker checks pass. See release-evidence.md for per-AC separation and recovery.md for preservation of sensitive local journals.
+## 哪些信息可能发送给 AI
+
+配置连接并启用对应功能后，请求直接发往你指定的服务地址，使用该服务所需的凭据。该服务及你配置的中转/网关会接收请求和连接元数据（例如 IP）。不同功能使用不同范围：
+
+- **新收藏自动归类：** 新书签标题、允许发送的网址、目标目录信息及分类偏好。点星标或 `Ctrl+D` 创建书签后可能自动调用，不要求每次另点 AI 按钮；命中本地规则时可不调用。
+- **当前页收藏/试分类：** 当前页标题、网址及允许的目录上下文。试分类需要主动确认发送，不创建或移动书签，也不发送正文。显式收藏的正文辅助默认关闭，仅在相关开关启用时按需提取并发送最多 1,500 个 Unicode 字符，不后台遍历网站。
+- **AI 搜索：** 普通搜索不发送请求。主动使用快速 AI 搜索时发送查询及最多 80 条候选的标题、网址和目录；书签超过 80 条时，先仅发送查询以扩展关键词，再在本地选候选。主动“深度搜索”会分批发送整个允许范围的书签元信息，再比较候选。
+- **AI 整理：** 所选允许范围内的目录层级、数量、少量标题样本、分批书签标题/网址、目标目录及你的整理要求。
+- **导入分类：** 从文件解析出的书签标题/网址、来源路径/样本和目标目录上下文，不抓取导入网址的网页。
+- **模型列表及连接测试：** 列表请求使用服务凭据；连接测试发送合成测试内容。当前页试分类与合成连接测试是不同功能。
+
+“发送完整网址（含查询参数和片段）”当前默认开启，参数可能包含私人信息。关闭后只清理发往 AI 的对应网址字段，不改写书签、导出或备份中的原始网址。排除目录及其子目录不会进入 AI 上下文；内网/回环网址不自动视作私密，请按需排除。AI 排除范围与手动导出范围分别设置。模型输出作为数据校验，不能执行远程代码；批量书签写入仍需预览确认。
+
+所选服务可能在不同国家/地区处理和保留数据。其留存、训练用途、分包商和删除机制由该服务的条款决定；智栏无法替其保证或删除已发送数据。请先查阅实际服务商或自建网关的隐私政策。选择本地模型不会自动回退到云服务。
+
+## 其他连接与权限
+
+可选的 OpenRouter 登录会在你主动操作后请求 `identity` 和对应主机权限，打开 OpenRouter 登录/授权页，并通过授权码与 PKCE 交换 API 凭据。账号密码由该服务处理，智栏不读取。第三方条款见 [OpenRouter 隐私政策](https://openrouter.ai/privacy)。
+
+书签图标通过浏览器自己的 favicon API 读取，没有接入第三方图标网站；浏览器如何获取/缓存图标由浏览器决定。主动打开书签后，目标网站按其政策处理访问。使用 GitHub 反馈或邮箱联系时，你主动提供的信息会交给对应平台及维护者处理，用于回复和解决问题。
+
+`bookmarks` 用于书签管理；`storage` 用于本地数据及上述偏好同步；`activeTab`/`scripting` 用于用户触发的当前页读取和侧栏注入；`contextMenus` 提供收藏菜单；`favicon` 显示图标；`sidePanel` 提供浏览器侧边栏。可选 `identity` 用于上述登录；可选 HTTP(S) 主机权限按实际模型地址授权，不在安装时授予全部网站访问。只有侧栏文档被声明为网页可访问资源；没有常驻的 manifest 内容脚本。完整理由见 [权限说明](store/permissions.md)。
+
+## 保留、导出与删除
+
+收藏回执当前保留最近 30 条；关键词、任务、设置及恢复记录按各自容量和状态保存在本机，不承诺统一自动到期。恢复清理会保留必要的去重证据，并可能拒绝清理结果未知或被引用的记录。导入草稿、用量统计等目前没有完整的一键清理功能。
+
+你可停用 AI、撤销对应站点权限、删除连接和清理调试日志。**连接存储和兼容配置中可能分别保留密钥：删除连接或某一处密钥不能保证清除所有副本。** 如需完全撤销凭据，请到服务商处撤销；如需清除扩展本地数据，先完成未知操作核对、备份所需信息、停止自动输出，再按浏览器方式清除扩展数据或卸载。卸载会丢失本地恢复能力，但不会由智栏主动删除浏览器原生书签或已导出的文件。
+
+手动书签导出含所选标题、目录和原始网址，不含模型配置、密钥、规则或日志；公开 AI 配置导出不含密钥，但可含服务地址和模型分配。自动 JSON 输出仅写入你选择并授权的专用文件，后续更新会覆盖内容；停止或卸载不会删除外部文件。已导出文件、浏览器同步副本和模型服务已接收的数据需分别管理。
+
+## 数据用途承诺与政策更新
+
+智栏仅为所披露的书签管理、用户选择的 AI 辅助及必要运行使用数据，不出售用户数据，不用于广告、信用评估或无关用途；维护者不自动读取用户内容。智栏对通过 Google API 获得信息的使用和转移遵守 Chrome Web Store 用户数据政策，包括 Limited Use 限制。
+
+本政策将随功能或数据流变化更新，并标明更新日期；新增需要同意的处理应在产品内提示。隐私问题、你主动提供的支持信息的查阅/删除请求，请联系 Astraxine：[mmgnosit@gmail.com](mailto:mmgnosit@gmail.com)。本政策无法替你选择的第三方服务执行删除。

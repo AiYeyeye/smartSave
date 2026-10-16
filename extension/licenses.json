@@ -2,8 +2,12 @@
   "MIT": [
     {
       "name": "eventsource-parser",
-      "versions": ["4.1.1"],
-      "paths": ["node_modules/eventsource-parser"],
+      "versions": [
+        "4.1.1"
+      ],
+      "paths": [
+        "node_modules/eventsource-parser"
+      ],
       "license": "MIT",
       "author": "Espen Hovlandsdal",
       "homepage": "https://github.com/rexxars/eventsource-parser",
@@ -15,7 +19,7 @@
         "4.5.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@adobe+css-tools@4.5.0\\node_modules\\@adobe\\css-tools"
+        "node_modules/.pnpm/@adobe+css-tools@4.5.0/node_modules/@adobe/css-tools"
       ],
       "license": "MIT",
       "author": "TJ Holowaychuk",
@@ -28,7 +32,7 @@
         "6.0.7"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@asamuzakjp+css-color@6.0.7\\node_modules\\@asamuzakjp\\css-color"
+        "node_modules/.pnpm/@asamuzakjp+css-color@6.0.7/node_modules/@asamuzakjp/css-color"
       ],
       "license": "MIT",
       "author": "asamuzaK",
@@ -41,7 +45,7 @@
         "8.3.2"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@asamuzakjp+dom-selector@8.3.2\\node_modules\\@asamuzakjp\\dom-selector"
+        "node_modules/.pnpm/@asamuzakjp+dom-selector@8.3.2/node_modules/@asamuzakjp/dom-selector"
       ],
       "license": "MIT",
       "author": "asamuzaK",
@@ -54,7 +58,7 @@
         "7.29.7"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@babel+code-frame@7.29.7\\node_modules\\@babel\\code-frame"
+        "node_modules/.pnpm/@babel+code-frame@7.29.7/node_modules/@babel/code-frame"
       ],
       "license": "MIT",
       "author": "The Babel Team",
@@ -67,7 +71,7 @@
         "7.29.7"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@babel+helper-validator-identifier@7.29.7\\node_modules\\@babel\\helper-validator-identifier"
+        "node_modules/.pnpm/@babel+helper-validator-identifier@7.29.7/node_modules/@babel/helper-validator-identifier"
       ],
       "license": "MIT",
       "author": "The Babel Team",
@@ -80,7 +84,7 @@
         "7.29.7"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@babel+runtime@7.29.7\\node_modules\\@babel\\runtime"
+        "node_modules/.pnpm/@babel+runtime@7.29.7/node_modules/@babel/runtime"
       ],
       "license": "MIT",
       "author": "The Babel Team",
@@ -93,7 +97,7 @@
         "2.4.2"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@bramus+specificity@2.4.2\\node_modules\\@bramus\\specificity"
+        "node_modules/.pnpm/@bramus+specificity@2.4.2/node_modules/@bramus/specificity"
       ],
       "license": "MIT",
       "author": "Bramus Van Damme",
@@ -106,7 +110,7 @@
         "2.2.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@cacheable+memory@2.2.0\\node_modules\\@cacheable\\memory"
+        "node_modules/.pnpm/@cacheable+memory@2.2.0/node_modules/@cacheable/memory"
       ],
       "license": "MIT",
       "author": "Jared Wray",
@@ -119,7 +123,7 @@
         "2.5.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@cacheable+utils@2.5.0\\node_modules\\@cacheable\\utils"
+        "node_modules/.pnpm/@cacheable+utils@2.5.0/node_modules/@cacheable/utils"
       ],
       "license": "MIT",
       "author": "Jared Wray",
@@ -132,7 +136,7 @@
         "3.3.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@csstools+css-calc@3.3.0_@c_4dbc5b05e8dbfe1f32044d24572a798f\\node_modules\\@csstools\\css-calc"
+        "node_modules/.pnpm/@csstools+css-calc@3.3.0_@c_4dbc5b05e8dbfe1f32044d24572a798f/node_modules/@csstools/css-calc"
       ],
       "license": "MIT",
       "homepage": "https://github.com/csstools/postcss-plugins/tree/main/packages/css-calc#readme",
@@ -144,7 +148,7 @@
         "4.2.2"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@csstools+css-color-parser@_1d3b05f209729bcf9b583d9629c407d3\\node_modules\\@csstools\\css-color-parser"
+        "node_modules/.pnpm/@csstools+css-color-parser@_1d3b05f209729bcf9b583d9629c407d3/node_modules/@csstools/css-color-parser"
       ],
       "license": "MIT",
       "homepage": "https://github.com/csstools/postcss-plugins/tree/main/packages/css-color-parser#readme",
@@ -156,7 +160,7 @@
         "4.0.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@csstools+css-parser-algori_b9ad755ebdc6dc54abc499015fcb7df0\\node_modules\\@csstools\\css-parser-algorithms"
+        "node_modules/.pnpm/@csstools+css-parser-algori_b9ad755ebdc6dc54abc499015fcb7df0/node_modules/@csstools/css-parser-algorithms"
       ],
       "license": "MIT",
       "homepage": "https://github.com/csstools/postcss-plugins/tree/main/packages/css-parser-algorithms#readme",
@@ -168,7 +172,7 @@
         "4.0.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@csstools+css-tokenizer@4.0.0\\node_modules\\@csstools\\css-tokenizer"
+        "node_modules/.pnpm/@csstools+css-tokenizer@4.0.0/node_modules/@csstools/css-tokenizer"
       ],
       "license": "MIT",
       "homepage": "https://github.com/csstools/postcss-plugins/tree/main/packages/css-tokenizer#readme",
@@ -180,7 +184,7 @@
         "4.10.1"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@eslint-community+eslint-utils@4.10.1_eslint@10.10.0\\node_modules\\@eslint-community\\eslint-utils"
+        "node_modules/.pnpm/@eslint-community+eslint-utils@4.10.1_eslint@10.10.0/node_modules/@eslint-community/eslint-utils"
       ],
       "license": "MIT",
       "author": "Toru Nagashima",
@@ -193,7 +197,7 @@
         "4.12.2"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@eslint-community+regexpp@4.12.2\\node_modules\\@eslint-community\\regexpp"
+        "node_modules/.pnpm/@eslint-community+regexpp@4.12.2/node_modules/@eslint-community/regexpp"
       ],
       "license": "MIT",
       "author": "Toru Nagashima",
@@ -206,7 +210,7 @@
         "10.0.1"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@eslint+js@10.0.1_eslint@10.10.0\\node_modules\\@eslint\\js"
+        "node_modules/.pnpm/@eslint+js@10.0.1_eslint@10.10.0/node_modules/@eslint/js"
       ],
       "license": "MIT",
       "homepage": "https://eslint.org",
@@ -218,7 +222,7 @@
         "1.15.1"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@exodus+bytes@1.15.1\\node_modules\\@exodus\\bytes"
+        "node_modules/.pnpm/@exodus+bytes@1.15.1/node_modules/@exodus/bytes"
       ],
       "license": "MIT",
       "author": "Exodus Movement, Inc.",
@@ -231,7 +235,7 @@
         "27.0.2"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@jest+types@27.0.2\\node_modules\\@jest\\types"
+        "node_modules/.pnpm/@jest+types@27.0.2/node_modules/@jest/types"
       ],
       "license": "MIT",
       "homepage": "https://github.com/facebook/jest#readme"
@@ -242,7 +246,7 @@
         "3.1.2"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@jridgewell+resolve-uri@3.1.2\\node_modules\\@jridgewell\\resolve-uri"
+        "node_modules/.pnpm/@jridgewell+resolve-uri@3.1.2/node_modules/@jridgewell/resolve-uri"
       ],
       "license": "MIT",
       "author": "Justin Ridgewell",
@@ -255,7 +259,7 @@
         "1.6.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@jridgewell+sourcemap-codec@1.6.0\\node_modules\\@jridgewell\\sourcemap-codec"
+        "node_modules/.pnpm/@jridgewell+sourcemap-codec@1.6.0/node_modules/@jridgewell/sourcemap-codec"
       ],
       "license": "MIT",
       "author": "Justin Ridgewell",
@@ -268,7 +272,7 @@
         "0.3.31"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@jridgewell+trace-mapping@0.3.31\\node_modules\\@jridgewell\\trace-mapping"
+        "node_modules/.pnpm/@jridgewell+trace-mapping@0.3.31/node_modules/@jridgewell/trace-mapping"
       ],
       "license": "MIT",
       "author": "Justin Ridgewell",
@@ -281,7 +285,7 @@
         "1.3.1"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@keyv+bigmap@1.3.1_keyv@5.6.0\\node_modules\\@keyv\\bigmap"
+        "node_modules/.pnpm/@keyv+bigmap@1.3.1_keyv@5.6.0/node_modules/@keyv/bigmap"
       ],
       "license": "MIT",
       "author": "Jared Wray",
@@ -294,7 +298,7 @@
         "1.1.1"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@keyv+serialize@1.1.1\\node_modules\\@keyv\\serialize"
+        "node_modules/.pnpm/@keyv+serialize@1.1.1/node_modules/@keyv/serialize"
       ],
       "license": "MIT",
       "author": "Jared Wray",
@@ -307,7 +311,7 @@
         "0.148.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@oxc-project+types@0.148.0\\node_modules\\@oxc-project\\types"
+        "node_modules/.pnpm/@oxc-project+types@0.148.0/node_modules/@oxc-project/types"
       ],
       "license": "MIT",
       "author": "Boshen and oxc contributors",
@@ -320,7 +324,7 @@
         "1.2.7"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@rolldown+binding-win32-x64-msvc@1.2.7\\node_modules\\@rolldown\\binding-win32-x64-msvc"
+        "node_modules/.pnpm/@rolldown+binding-win32-x64-msvc@1.2.7/node_modules/@rolldown/binding-win32-x64-msvc"
       ],
       "license": "MIT",
       "homepage": "https://rolldown.rs/",
@@ -332,7 +336,7 @@
         "1.0.1"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@rolldown+pluginutils@1.0.1\\node_modules\\@rolldown\\pluginutils"
+        "node_modules/.pnpm/@rolldown+pluginutils@1.0.1/node_modules/@rolldown/pluginutils"
       ],
       "license": "MIT",
       "homepage": "https://github.com/rolldown/plugins/tree/main/packages/pluginutils#readme",
@@ -344,7 +348,7 @@
         "10.4.1"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@testing-library+dom@10.4.1\\node_modules\\@testing-library\\dom"
+        "node_modules/.pnpm/@testing-library+dom@10.4.1/node_modules/@testing-library/dom"
       ],
       "license": "MIT",
       "author": "Kent C. Dodds",
@@ -357,7 +361,7 @@
         "7.0.1"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@testing-library+jest-dom@7_7e382510facd4fafeece112eac2c552c\\node_modules\\@testing-library\\jest-dom"
+        "node_modules/.pnpm/@testing-library+jest-dom@7_7e382510facd4fafeece112eac2c552c/node_modules/@testing-library/jest-dom"
       ],
       "license": "MIT",
       "author": "Ernesto Garcia",
@@ -370,7 +374,7 @@
         "16.3.3"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@testing-library+react@16.3_294b079d2235d4867a74a0615f686169\\node_modules\\@testing-library\\react"
+        "node_modules/.pnpm/@testing-library+react@16.3_294b079d2235d4867a74a0615f686169/node_modules/@testing-library/react"
       ],
       "license": "MIT",
       "author": "Kent C. Dodds",
@@ -383,7 +387,7 @@
         "14.6.7"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@testing-library+user-event_d7b3f2932c5e15106207b5019ef105b0\\node_modules\\@testing-library\\user-event"
+        "node_modules/.pnpm/@testing-library+user-event_d7b3f2932c5e15106207b5019ef105b0/node_modules/@testing-library/user-event"
       ],
       "license": "MIT",
       "author": "Giorgio Polvara",
@@ -396,7 +400,7 @@
         "5.0.4"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@types+aria-query@5.0.4\\node_modules\\@types\\aria-query"
+        "node_modules/.pnpm/@types+aria-query@5.0.4/node_modules/@types/aria-query"
       ],
       "license": "MIT",
       "homepage": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/aria-query",
@@ -408,7 +412,7 @@
         "5.2.3"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@types+chai@5.2.3\\node_modules\\@types\\chai"
+        "node_modules/.pnpm/@types+chai@5.2.3/node_modules/@types/chai"
       ],
       "license": "MIT",
       "homepage": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/chai",
@@ -420,7 +424,7 @@
         "0.2.9"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@types+chrome@0.2.9\\node_modules\\@types\\chrome"
+        "node_modules/.pnpm/@types+chrome@0.2.9/node_modules/@types/chrome"
       ],
       "license": "MIT",
       "homepage": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/chrome",
@@ -432,7 +436,7 @@
         "4.1.13"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@types+debug@4.1.13\\node_modules\\@types\\debug"
+        "node_modules/.pnpm/@types+debug@4.1.13/node_modules/@types/debug"
       ],
       "license": "MIT",
       "homepage": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/debug",
@@ -444,7 +448,7 @@
         "4.0.2"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@types+deep-eql@4.0.2\\node_modules\\@types\\deep-eql"
+        "node_modules/.pnpm/@types+deep-eql@4.0.2/node_modules/@types/deep-eql"
       ],
       "license": "MIT",
       "homepage": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/deep-eql",
@@ -456,7 +460,7 @@
         "4.3.1"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@types+esrecurse@4.3.1\\node_modules\\@types\\esrecurse"
+        "node_modules/.pnpm/@types+esrecurse@4.3.1/node_modules/@types/esrecurse"
       ],
       "license": "MIT",
       "homepage": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/esrecurse",
@@ -468,7 +472,7 @@
         "1.0.9"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@types+estree@1.0.9\\node_modules\\@types\\estree"
+        "node_modules/.pnpm/@types+estree@1.0.9/node_modules/@types/estree"
       ],
       "license": "MIT",
       "homepage": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/estree",
@@ -480,7 +484,7 @@
         "0.0.36"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@types+filesystem@0.0.36\\node_modules\\@types\\filesystem"
+        "node_modules/.pnpm/@types+filesystem@0.0.36/node_modules/@types/filesystem"
       ],
       "license": "MIT",
       "homepage": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/filesystem",
@@ -492,7 +496,7 @@
         "0.0.33"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@types+filewriter@0.0.33\\node_modules\\@types\\filewriter"
+        "node_modules/.pnpm/@types+filewriter@0.0.33/node_modules/@types/filewriter"
       ],
       "license": "MIT",
       "homepage": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/filewriter",
@@ -504,7 +508,7 @@
         "1.2.16"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@types+har-format@1.2.16\\node_modules\\@types\\har-format"
+        "node_modules/.pnpm/@types+har-format@1.2.16/node_modules/@types/har-format"
       ],
       "license": "MIT",
       "homepage": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/har-format",
@@ -516,7 +520,7 @@
         "2.0.6"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@types+istanbul-lib-coverage@2.0.6\\node_modules\\@types\\istanbul-lib-coverage"
+        "node_modules/.pnpm/@types+istanbul-lib-coverage@2.0.6/node_modules/@types/istanbul-lib-coverage"
       ],
       "license": "MIT",
       "homepage": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/istanbul-lib-coverage",
@@ -528,7 +532,7 @@
         "3.0.3"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@types+istanbul-lib-report@3.0.3\\node_modules\\@types\\istanbul-lib-report"
+        "node_modules/.pnpm/@types+istanbul-lib-report@3.0.3/node_modules/@types/istanbul-lib-report"
       ],
       "license": "MIT",
       "homepage": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/istanbul-lib-report",
@@ -540,7 +544,7 @@
         "3.0.4"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@types+istanbul-reports@3.0.4\\node_modules\\@types\\istanbul-reports"
+        "node_modules/.pnpm/@types+istanbul-reports@3.0.4/node_modules/@types/istanbul-reports"
       ],
       "license": "MIT",
       "homepage": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/istanbul-reports",
@@ -552,7 +556,7 @@
         "7.0.15"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@types+json-schema@7.0.15\\node_modules\\@types\\json-schema"
+        "node_modules/.pnpm/@types+json-schema@7.0.15/node_modules/@types/json-schema"
       ],
       "license": "MIT",
       "homepage": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/json-schema",
@@ -564,7 +568,7 @@
         "4.0.4"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@types+mdast@4.0.4\\node_modules\\@types\\mdast"
+        "node_modules/.pnpm/@types+mdast@4.0.4/node_modules/@types/mdast"
       ],
       "license": "MIT",
       "homepage": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/mdast",
@@ -576,7 +580,7 @@
         "2.1.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@types+ms@2.1.0\\node_modules\\@types\\ms"
+        "node_modules/.pnpm/@types+ms@2.1.0/node_modules/@types/ms"
       ],
       "license": "MIT",
       "homepage": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/ms",
@@ -588,7 +592,7 @@
         "26.5.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@types+node@26.5.0\\node_modules\\@types\\node"
+        "node_modules/.pnpm/@types+node@26.5.0/node_modules/@types/node"
       ],
       "license": "MIT",
       "homepage": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/node",
@@ -600,7 +604,7 @@
         "19.2.18"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@types+react@19.2.18\\node_modules\\@types\\react"
+        "node_modules/.pnpm/@types+react@19.2.18/node_modules/@types/react"
       ],
       "license": "MIT",
       "homepage": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/react",
@@ -612,7 +616,7 @@
         "19.2.7"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@types+react-dom@19.2.7_@types+react@19.2.18\\node_modules\\@types\\react-dom"
+        "node_modules/.pnpm/@types+react-dom@19.2.7_@types+react@19.2.18/node_modules/@types/react-dom"
       ],
       "license": "MIT",
       "homepage": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/react-dom",
@@ -624,7 +628,7 @@
         "3.0.3"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@types+unist@3.0.3\\node_modules\\@types\\unist"
+        "node_modules/.pnpm/@types+unist@3.0.3/node_modules/@types/unist"
       ],
       "license": "MIT",
       "homepage": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/unist",
@@ -636,7 +640,7 @@
         "16.0.11"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@types+yargs@16.0.11\\node_modules\\@types\\yargs"
+        "node_modules/.pnpm/@types+yargs@16.0.11/node_modules/@types/yargs"
       ],
       "license": "MIT",
       "homepage": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/yargs",
@@ -648,7 +652,7 @@
         "21.0.3"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@types+yargs-parser@21.0.3\\node_modules\\@types\\yargs-parser"
+        "node_modules/.pnpm/@types+yargs-parser@21.0.3/node_modules/@types/yargs-parser"
       ],
       "license": "MIT",
       "homepage": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/yargs-parser",
@@ -660,7 +664,7 @@
         "8.70.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@typescript-eslint+eslint-p_14ee09ae53143a3f27556394be5ab7bb\\node_modules\\@typescript-eslint\\eslint-plugin"
+        "node_modules/.pnpm/@typescript-eslint+eslint-p_14ee09ae53143a3f27556394be5ab7bb/node_modules/@typescript-eslint/eslint-plugin"
       ],
       "license": "MIT",
       "homepage": "https://typescript-eslint.io/packages/eslint-plugin",
@@ -672,7 +676,7 @@
         "8.70.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@typescript-eslint+parser@8_65d24f058a72db305c892d42542b2ab2\\node_modules\\@typescript-eslint\\parser"
+        "node_modules/.pnpm/@typescript-eslint+parser@8_65d24f058a72db305c892d42542b2ab2/node_modules/@typescript-eslint/parser"
       ],
       "license": "MIT",
       "homepage": "https://typescript-eslint.io/packages/parser",
@@ -684,7 +688,7 @@
         "8.70.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@typescript-eslint+project-service@8.70.0_typescript@6.0.3\\node_modules\\@typescript-eslint\\project-service"
+        "node_modules/.pnpm/@typescript-eslint+project-service@8.70.0_typescript@6.0.3/node_modules/@typescript-eslint/project-service"
       ],
       "license": "MIT",
       "homepage": "https://typescript-eslint.io",
@@ -696,7 +700,7 @@
         "8.70.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@typescript-eslint+scope-manager@8.70.0\\node_modules\\@typescript-eslint\\scope-manager"
+        "node_modules/.pnpm/@typescript-eslint+scope-manager@8.70.0/node_modules/@typescript-eslint/scope-manager"
       ],
       "license": "MIT",
       "homepage": "https://typescript-eslint.io/packages/scope-manager",
@@ -708,7 +712,7 @@
         "8.70.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@typescript-eslint+tsconfig-utils@8.70.0_typescript@6.0.3\\node_modules\\@typescript-eslint\\tsconfig-utils"
+        "node_modules/.pnpm/@typescript-eslint+tsconfig-utils@8.70.0_typescript@6.0.3/node_modules/@typescript-eslint/tsconfig-utils"
       ],
       "license": "MIT",
       "homepage": "https://typescript-eslint.io",
@@ -720,7 +724,7 @@
         "8.70.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@typescript-eslint+type-uti_a710c820497419cc4984445fa15e17b2\\node_modules\\@typescript-eslint\\type-utils"
+        "node_modules/.pnpm/@typescript-eslint+type-uti_a710c820497419cc4984445fa15e17b2/node_modules/@typescript-eslint/type-utils"
       ],
       "license": "MIT",
       "homepage": "https://typescript-eslint.io",
@@ -732,7 +736,7 @@
         "8.70.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@typescript-eslint+types@8.70.0\\node_modules\\@typescript-eslint\\types"
+        "node_modules/.pnpm/@typescript-eslint+types@8.70.0/node_modules/@typescript-eslint/types"
       ],
       "license": "MIT",
       "homepage": "https://typescript-eslint.io",
@@ -744,7 +748,7 @@
         "8.70.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@typescript-eslint+typescript-estree@8.70.0_typescript@6.0.3\\node_modules\\@typescript-eslint\\typescript-estree"
+        "node_modules/.pnpm/@typescript-eslint+typescript-estree@8.70.0_typescript@6.0.3/node_modules/@typescript-eslint/typescript-estree"
       ],
       "license": "MIT",
       "homepage": "https://typescript-eslint.io/packages/typescript-estree",
@@ -756,7 +760,7 @@
         "8.70.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@typescript-eslint+utils@8._4548a90c8ad3cce6628d0d624035a3c6\\node_modules\\@typescript-eslint\\utils"
+        "node_modules/.pnpm/@typescript-eslint+utils@8._4548a90c8ad3cce6628d0d624035a3c6/node_modules/@typescript-eslint/utils"
       ],
       "license": "MIT",
       "homepage": "https://typescript-eslint.io/packages/utils",
@@ -768,7 +772,7 @@
         "8.70.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@typescript-eslint+visitor-keys@8.70.0\\node_modules\\@typescript-eslint\\visitor-keys"
+        "node_modules/.pnpm/@typescript-eslint+visitor-keys@8.70.0/node_modules/@typescript-eslint/visitor-keys"
       ],
       "license": "MIT",
       "homepage": "https://typescript-eslint.io",
@@ -780,7 +784,7 @@
         "6.1.1"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@vitejs+plugin-react@6.1.1_vite@8.2.2_@types+node@26.5.0_\\node_modules\\@vitejs\\plugin-react"
+        "node_modules/.pnpm/@vitejs+plugin-react@6.1.1_vite@8.2.2_@types+node@26.5.0_/node_modules/@vitejs/plugin-react"
       ],
       "license": "MIT",
       "author": "Evan You",
@@ -793,7 +797,7 @@
         "5.0.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@vitest+mocker@5.0.0_vite@8.2.2_@types+node@26.5.0_\\node_modules\\@vitest\\mocker"
+        "node_modules/.pnpm/@vitest+mocker@5.0.0_vite@8.2.2_@types+node@26.5.0_/node_modules/@vitest/mocker"
       ],
       "license": "MIT",
       "homepage": "https://github.com/vitest-dev/vitest/tree/main/packages/mocker",
@@ -805,7 +809,7 @@
         "5.0.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@vitest+spy@5.0.0\\node_modules\\@vitest\\spy"
+        "node_modules/.pnpm/@vitest+spy@5.0.0/node_modules/@vitest/spy"
       ],
       "license": "MIT",
       "homepage": "https://vitest.dev/api/mock",
@@ -817,7 +821,7 @@
         "8.18.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\acorn@8.18.0\\node_modules\\acorn"
+        "node_modules/.pnpm/acorn@8.18.0/node_modules/acorn"
       ],
       "license": "MIT",
       "homepage": "https://github.com/acornjs/acorn",
@@ -829,7 +833,7 @@
         "5.3.2"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\acorn-jsx@5.3.2_acorn@8.18.0\\node_modules\\acorn-jsx"
+        "node_modules/.pnpm/acorn-jsx@5.3.2_acorn@8.18.0/node_modules/acorn-jsx"
       ],
       "license": "MIT",
       "homepage": "https://github.com/acornjs/acorn-jsx",
@@ -841,7 +845,7 @@
         "6.15.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\ajv@6.15.0\\node_modules\\ajv"
+        "node_modules/.pnpm/ajv@6.15.0/node_modules/ajv"
       ],
       "license": "MIT",
       "author": "Evgeny Poberezkin",
@@ -854,7 +858,7 @@
         "5.0.1"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\ansi-regex@5.0.1\\node_modules\\ansi-regex"
+        "node_modules/.pnpm/ansi-regex@5.0.1/node_modules/ansi-regex"
       ],
       "license": "MIT",
       "author": "Sindre Sorhus",
@@ -868,8 +872,8 @@
         "5.0.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\ansi-styles@4.1.0\\node_modules\\ansi-styles",
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\ansi-styles@5.0.0\\node_modules\\ansi-styles"
+        "node_modules/.pnpm/ansi-styles@4.1.0/node_modules/ansi-styles",
+        "node_modules/.pnpm/ansi-styles@5.0.0/node_modules/ansi-styles"
       ],
       "license": "MIT",
       "author": "Sindre Sorhus",
@@ -882,7 +886,7 @@
         "2.0.1"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\assertion-error@2.0.1\\node_modules\\assertion-error"
+        "node_modules/.pnpm/assertion-error@2.0.1/node_modules/assertion-error"
       ],
       "license": "MIT",
       "author": "Jake Luer",
@@ -895,7 +899,7 @@
         "4.0.4"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\balanced-match@4.0.4\\node_modules\\balanced-match"
+        "node_modules/.pnpm/balanced-match@4.0.4/node_modules/balanced-match"
       ],
       "license": "MIT",
       "homepage": "https://github.com/juliangruber/balanced-match#readme",
@@ -907,7 +911,7 @@
         "1.1.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\bidi-js@1.1.0\\node_modules\\bidi-js"
+        "node_modules/.pnpm/bidi-js@1.1.0/node_modules/bidi-js"
       ],
       "license": "MIT",
       "author": "Jason Johnston",
@@ -920,7 +924,7 @@
         "5.0.9"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\brace-expansion@5.0.9\\node_modules\\brace-expansion"
+        "node_modules/.pnpm/brace-expansion@5.0.9/node_modules/brace-expansion"
       ],
       "license": "MIT",
       "homepage": "https://github.com/juliangruber/brace-expansion#readme",
@@ -932,7 +936,7 @@
         "2.5.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\cacheable@2.5.0\\node_modules\\cacheable"
+        "node_modules/.pnpm/cacheable@2.5.0/node_modules/cacheable"
       ],
       "license": "MIT",
       "author": "Jared Wray",
@@ -945,7 +949,7 @@
         "6.2.2"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\chai@6.2.2\\node_modules\\chai"
+        "node_modules/.pnpm/chai@6.2.2/node_modules/chai"
       ],
       "license": "MIT",
       "author": "Jake Luer",
@@ -958,7 +962,7 @@
         "4.0.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\chalk@4.0.0\\node_modules\\chalk"
+        "node_modules/.pnpm/chalk@4.0.0/node_modules/chalk"
       ],
       "license": "MIT",
       "homepage": "https://github.com/chalk/chalk#readme",
@@ -970,7 +974,7 @@
         "2.0.2"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\character-entities@2.0.2\\node_modules\\character-entities"
+        "node_modules/.pnpm/character-entities@2.0.2/node_modules/character-entities"
       ],
       "license": "MIT",
       "author": "Titus Wormer",
@@ -983,7 +987,7 @@
         "2.0.1"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\color-convert@2.0.1\\node_modules\\color-convert"
+        "node_modules/.pnpm/color-convert@2.0.1/node_modules/color-convert"
       ],
       "license": "MIT",
       "author": "Heather Arthur",
@@ -996,7 +1000,7 @@
         "1.1.4"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\color-name@1.1.4\\node_modules\\color-name"
+        "node_modules/.pnpm/color-name@1.1.4/node_modules/color-name"
       ],
       "license": "MIT",
       "author": "DY",
@@ -1009,7 +1013,7 @@
         "7.0.6"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\cross-spawn@7.0.6\\node_modules\\cross-spawn"
+        "node_modules/.pnpm/cross-spawn@7.0.6/node_modules/cross-spawn"
       ],
       "license": "MIT",
       "author": "André Cruz",
@@ -1022,7 +1026,7 @@
         "3.2.1"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\css-tree@3.2.1\\node_modules\\css-tree"
+        "node_modules/.pnpm/css-tree@3.2.1/node_modules/css-tree"
       ],
       "license": "MIT",
       "author": "Roman Dvornov",
@@ -1035,7 +1039,7 @@
         "1.5.1"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\css.escape@1.5.1\\node_modules\\css.escape"
+        "node_modules/.pnpm/css.escape@1.5.1/node_modules/css.escape"
       ],
       "license": "MIT",
       "author": "Mathias Bynens",
@@ -1048,7 +1052,7 @@
         "3.2.3"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\csstype@3.2.3\\node_modules\\csstype"
+        "node_modules/.pnpm/csstype@3.2.3/node_modules/csstype"
       ],
       "license": "MIT",
       "author": "Fredrik Nicol",
@@ -1061,7 +1065,7 @@
         "7.0.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\data-urls@7.0.0\\node_modules\\data-urls"
+        "node_modules/.pnpm/data-urls@7.0.0/node_modules/data-urls"
       ],
       "license": "MIT",
       "author": "Domenic Denicola",
@@ -1074,7 +1078,7 @@
         "4.4.3"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\debug@4.4.3\\node_modules\\debug"
+        "node_modules/.pnpm/debug@4.4.3/node_modules/debug"
       ],
       "license": "MIT",
       "author": "Josh Junon",
@@ -1087,7 +1091,7 @@
         "10.6.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\decimal.js@10.6.0\\node_modules\\decimal.js"
+        "node_modules/.pnpm/decimal.js@10.6.0/node_modules/decimal.js"
       ],
       "license": "MIT",
       "author": "Michael Mclaughlin",
@@ -1100,7 +1104,7 @@
         "1.3.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\decode-named-character-reference@1.3.0\\node_modules\\decode-named-character-reference"
+        "node_modules/.pnpm/decode-named-character-reference@1.3.0/node_modules/decode-named-character-reference"
       ],
       "license": "MIT",
       "author": "Titus Wormer",
@@ -1113,7 +1117,7 @@
         "0.1.4"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\deep-is@0.1.4\\node_modules\\deep-is"
+        "node_modules/.pnpm/deep-is@0.1.4/node_modules/deep-is"
       ],
       "license": "MIT",
       "author": "Thorsten Lorenz",
@@ -1126,7 +1130,7 @@
         "2.0.3"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\dequal@2.0.3\\node_modules\\dequal"
+        "node_modules/.pnpm/dequal@2.0.3/node_modules/dequal"
       ],
       "license": "MIT",
       "author": "Luke Edwards",
@@ -1139,7 +1143,7 @@
         "1.1.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\devlop@1.1.0\\node_modules\\devlop"
+        "node_modules/.pnpm/devlop@1.1.0/node_modules/devlop"
       ],
       "license": "MIT",
       "author": "Titus Wormer",
@@ -1153,8 +1157,8 @@
         "0.6.3"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\dom-accessibility-api@0.5.16\\node_modules\\dom-accessibility-api",
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\dom-accessibility-api@0.6.3\\node_modules\\dom-accessibility-api"
+        "node_modules/.pnpm/dom-accessibility-api@0.5.16/node_modules/dom-accessibility-api",
+        "node_modules/.pnpm/dom-accessibility-api@0.6.3/node_modules/dom-accessibility-api"
       ],
       "license": "MIT",
       "homepage": "https://github.com/eps1lon/dom-accessibility-api#readme",
@@ -1166,7 +1170,7 @@
         "2.3.2"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\es-module-lexer@2.3.2\\node_modules\\es-module-lexer"
+        "node_modules/.pnpm/es-module-lexer@2.3.2/node_modules/es-module-lexer"
       ],
       "license": "MIT",
       "author": "Guy Bedford",
@@ -1179,7 +1183,7 @@
         "4.0.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\escape-string-regexp@4.0.0\\node_modules\\escape-string-regexp"
+        "node_modules/.pnpm/escape-string-regexp@4.0.0/node_modules/escape-string-regexp"
       ],
       "license": "MIT",
       "author": "Sindre Sorhus",
@@ -1192,7 +1196,7 @@
         "10.10.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\eslint@10.10.0\\node_modules\\eslint"
+        "node_modules/.pnpm/eslint@10.10.0/node_modules/eslint"
       ],
       "license": "MIT",
       "author": "Nicholas C. Zakas",
@@ -1205,7 +1209,7 @@
         "3.0.3"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\estree-walker@3.0.3\\node_modules\\estree-walker"
+        "node_modules/.pnpm/estree-walker@3.0.3/node_modules/estree-walker"
       ],
       "license": "MIT",
       "author": "Rich Harris",
@@ -1218,7 +1222,7 @@
         "3.1.3"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\fast-deep-equal@3.1.3\\node_modules\\fast-deep-equal"
+        "node_modules/.pnpm/fast-deep-equal@3.1.3/node_modules/fast-deep-equal"
       ],
       "license": "MIT",
       "author": "Evgeny Poberezkin",
@@ -1231,7 +1235,7 @@
         "2.1.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\fast-json-stable-stringify@2.1.0\\node_modules\\fast-json-stable-stringify"
+        "node_modules/.pnpm/fast-json-stable-stringify@2.1.0/node_modules/fast-json-stable-stringify"
       ],
       "license": "MIT",
       "author": "James Halliday",
@@ -1244,7 +1248,7 @@
         "2.0.6"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\fast-levenshtein@2.0.6\\node_modules\\fast-levenshtein"
+        "node_modules/.pnpm/fast-levenshtein@2.0.6/node_modules/fast-levenshtein"
       ],
       "license": "MIT",
       "author": "Ramesh Nair",
@@ -1257,7 +1261,7 @@
         "6.5.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\fdir@6.5.0_picomatch@4.0.7\\node_modules\\fdir"
+        "node_modules/.pnpm/fdir@6.5.0_picomatch@4.0.7/node_modules/fdir"
       ],
       "license": "MIT",
       "author": "thecodrr",
@@ -1270,7 +1274,7 @@
         "11.1.5"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\file-entry-cache@11.1.5\\node_modules\\file-entry-cache"
+        "node_modules/.pnpm/file-entry-cache@11.1.5/node_modules/file-entry-cache"
       ],
       "license": "MIT",
       "author": "Jared Wray",
@@ -1283,7 +1287,7 @@
         "5.0.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\find-up@5.0.0\\node_modules\\find-up"
+        "node_modules/.pnpm/find-up@5.0.0/node_modules/find-up"
       ],
       "license": "MIT",
       "author": "Sindre Sorhus",
@@ -1296,7 +1300,7 @@
         "6.1.23"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\flat-cache@6.1.23\\node_modules\\flat-cache"
+        "node_modules/.pnpm/flat-cache@6.1.23/node_modules/flat-cache"
       ],
       "license": "MIT",
       "author": "Jared Wray",
@@ -1309,7 +1313,7 @@
         "17.12.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\globals@17.12.0\\node_modules\\globals"
+        "node_modules/.pnpm/globals@17.12.0/node_modules/globals"
       ],
       "license": "MIT",
       "author": "Sindre Sorhus",
@@ -1322,7 +1326,7 @@
         "4.0.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\has-flag@4.0.0\\node_modules\\has-flag"
+        "node_modules/.pnpm/has-flag@4.0.0/node_modules/has-flag"
       ],
       "license": "MIT",
       "author": "Sindre Sorhus",
@@ -1335,7 +1339,7 @@
         "1.5.1"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\hashery@1.5.1\\node_modules\\hashery"
+        "node_modules/.pnpm/hashery@1.5.1/node_modules/hashery"
       ],
       "license": "MIT",
       "author": "Jared Wray",
@@ -1349,8 +1353,8 @@
         "2.2.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\hookified@1.15.1\\node_modules\\hookified",
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\hookified@2.2.0\\node_modules\\hookified"
+        "node_modules/.pnpm/hookified@1.15.1/node_modules/hookified",
+        "node_modules/.pnpm/hookified@2.2.0/node_modules/hookified"
       ],
       "license": "MIT",
       "author": "Jared Wray",
@@ -1363,7 +1367,7 @@
         "6.0.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\html-encoding-sniffer@6.0.0\\node_modules\\html-encoding-sniffer"
+        "node_modules/.pnpm/html-encoding-sniffer@6.0.0/node_modules/html-encoding-sniffer"
       ],
       "license": "MIT",
       "author": "Domenic Denicola",
@@ -1377,8 +1381,8 @@
         "7.0.8"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\ignore@5.2.0\\node_modules\\ignore",
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\ignore@7.0.8\\node_modules\\ignore"
+        "node_modules/.pnpm/ignore@5.2.0/node_modules/ignore",
+        "node_modules/.pnpm/ignore@7.0.8/node_modules/ignore"
       ],
       "license": "MIT",
       "author": "kael",
@@ -1391,7 +1395,7 @@
         "0.1.4"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\imurmurhash@0.1.4\\node_modules\\imurmurhash"
+        "node_modules/.pnpm/imurmurhash@0.1.4/node_modules/imurmurhash"
       ],
       "license": "MIT",
       "author": "Jens Taylor",
@@ -1404,7 +1408,7 @@
         "4.0.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\indent-string@4.0.0\\node_modules\\indent-string"
+        "node_modules/.pnpm/indent-string@4.0.0/node_modules/indent-string"
       ],
       "license": "MIT",
       "author": "Sindre Sorhus",
@@ -1417,7 +1421,7 @@
         "2.1.1"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\is-extglob@2.1.1\\node_modules\\is-extglob"
+        "node_modules/.pnpm/is-extglob@2.1.1/node_modules/is-extglob"
       ],
       "license": "MIT",
       "author": "Jon Schlinkert",
@@ -1430,7 +1434,7 @@
         "4.0.3"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\is-glob@4.0.3\\node_modules\\is-glob"
+        "node_modules/.pnpm/is-glob@4.0.3/node_modules/is-glob"
       ],
       "license": "MIT",
       "author": "Jon Schlinkert",
@@ -1443,7 +1447,7 @@
         "1.0.1"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\is-potential-custom-element-name@1.0.1\\node_modules\\is-potential-custom-element-name"
+        "node_modules/.pnpm/is-potential-custom-element-name@1.0.1/node_modules/is-potential-custom-element-name"
       ],
       "license": "MIT",
       "author": "Mathias Bynens",
@@ -1456,7 +1460,7 @@
         "4.0.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\js-tokens@4.0.0\\node_modules\\js-tokens"
+        "node_modules/.pnpm/js-tokens@4.0.0/node_modules/js-tokens"
       ],
       "license": "MIT",
       "author": "Simon Lydell",
@@ -1469,7 +1473,7 @@
         "30.0.1"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\jsdom@30.0.1\\node_modules\\jsdom"
+        "node_modules/.pnpm/jsdom@30.0.1/node_modules/jsdom"
       ],
       "license": "MIT",
       "homepage": "https://github.com/jsdom/jsdom#readme",
@@ -1481,7 +1485,7 @@
         "0.4.1"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\json-schema-traverse@0.4.1\\node_modules\\json-schema-traverse"
+        "node_modules/.pnpm/json-schema-traverse@0.4.1/node_modules/json-schema-traverse"
       ],
       "license": "MIT",
       "author": "Evgeny Poberezkin",
@@ -1494,7 +1498,7 @@
         "1.0.1"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\json-stable-stringify-without-jsonify@1.0.1\\node_modules\\json-stable-stringify-without-jsonify"
+        "node_modules/.pnpm/json-stable-stringify-without-jsonify@1.0.1/node_modules/json-stable-stringify-without-jsonify"
       ],
       "license": "MIT",
       "author": "James Halliday",
@@ -1507,7 +1511,7 @@
         "3.3.1"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\jsonc-parser@3.3.1\\node_modules\\jsonc-parser"
+        "node_modules/.pnpm/jsonc-parser@3.3.1/node_modules/jsonc-parser"
       ],
       "license": "MIT",
       "author": "Microsoft Corporation",
@@ -1520,7 +1524,7 @@
         "5.6.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\keyv@5.6.0\\node_modules\\keyv"
+        "node_modules/.pnpm/keyv@5.6.0/node_modules/keyv"
       ],
       "license": "MIT",
       "author": "Jared Wray",
@@ -1533,7 +1537,7 @@
         "0.4.1"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\levn@0.4.1\\node_modules\\levn"
+        "node_modules/.pnpm/levn@0.4.1/node_modules/levn"
       ],
       "license": "MIT",
       "author": "George Zahariev",
@@ -1546,7 +1550,7 @@
         "6.0.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\locate-path@6.0.0\\node_modules\\locate-path"
+        "node_modules/.pnpm/locate-path@6.0.0/node_modules/locate-path"
       ],
       "license": "MIT",
       "author": "Sindre Sorhus",
@@ -1559,7 +1563,7 @@
         "1.5.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\lz-string@1.5.0\\node_modules\\lz-string"
+        "node_modules/.pnpm/lz-string@1.5.0/node_modules/lz-string"
       ],
       "license": "MIT",
       "author": "pieroxy",
@@ -1572,7 +1576,7 @@
         "1.2.3"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\magic-string@1.2.3\\node_modules\\magic-string"
+        "node_modules/.pnpm/magic-string@1.2.3/node_modules/magic-string"
       ],
       "license": "MIT",
       "author": "Rich Harris",
@@ -1585,7 +1589,7 @@
         "2.0.3"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\mdast-util-from-markdown@2.0.3\\node_modules\\mdast-util-from-markdown"
+        "node_modules/.pnpm/mdast-util-from-markdown@2.0.3/node_modules/mdast-util-from-markdown"
       ],
       "license": "MIT",
       "author": "Titus Wormer",
@@ -1598,7 +1602,7 @@
         "4.0.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\mdast-util-to-string@4.0.0\\node_modules\\mdast-util-to-string"
+        "node_modules/.pnpm/mdast-util-to-string@4.0.0/node_modules/mdast-util-to-string"
       ],
       "license": "MIT",
       "author": "Titus Wormer",
@@ -1611,7 +1615,7 @@
         "4.0.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\micromark@4.0.0\\node_modules\\micromark"
+        "node_modules/.pnpm/micromark@4.0.0/node_modules/micromark"
       ],
       "license": "MIT",
       "author": "Titus Wormer",
@@ -1624,7 +1628,7 @@
         "2.0.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\micromark-core-commonmark@2.0.0\\node_modules\\micromark-core-commonmark"
+        "node_modules/.pnpm/micromark-core-commonmark@2.0.0/node_modules/micromark-core-commonmark"
       ],
       "license": "MIT",
       "author": "Titus Wormer",
@@ -1637,7 +1641,7 @@
         "2.0.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\micromark-factory-destination@2.0.0\\node_modules\\micromark-factory-destination"
+        "node_modules/.pnpm/micromark-factory-destination@2.0.0/node_modules/micromark-factory-destination"
       ],
       "license": "MIT",
       "author": "Titus Wormer",
@@ -1650,7 +1654,7 @@
         "2.0.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\micromark-factory-label@2.0.0\\node_modules\\micromark-factory-label"
+        "node_modules/.pnpm/micromark-factory-label@2.0.0/node_modules/micromark-factory-label"
       ],
       "license": "MIT",
       "author": "Titus Wormer",
@@ -1663,7 +1667,7 @@
         "2.0.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\micromark-factory-space@2.0.0\\node_modules\\micromark-factory-space"
+        "node_modules/.pnpm/micromark-factory-space@2.0.0/node_modules/micromark-factory-space"
       ],
       "license": "MIT",
       "author": "Titus Wormer",
@@ -1676,7 +1680,7 @@
         "2.0.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\micromark-factory-title@2.0.0\\node_modules\\micromark-factory-title"
+        "node_modules/.pnpm/micromark-factory-title@2.0.0/node_modules/micromark-factory-title"
       ],
       "license": "MIT",
       "author": "Titus Wormer",
@@ -1689,7 +1693,7 @@
         "2.0.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\micromark-factory-whitespace@2.0.0\\node_modules\\micromark-factory-whitespace"
+        "node_modules/.pnpm/micromark-factory-whitespace@2.0.0/node_modules/micromark-factory-whitespace"
       ],
       "license": "MIT",
       "author": "Titus Wormer",
@@ -1702,7 +1706,7 @@
         "2.0.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\micromark-util-character@2.0.0\\node_modules\\micromark-util-character"
+        "node_modules/.pnpm/micromark-util-character@2.0.0/node_modules/micromark-util-character"
       ],
       "license": "MIT",
       "author": "Titus Wormer",
@@ -1715,7 +1719,7 @@
         "2.0.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\micromark-util-chunked@2.0.0\\node_modules\\micromark-util-chunked"
+        "node_modules/.pnpm/micromark-util-chunked@2.0.0/node_modules/micromark-util-chunked"
       ],
       "license": "MIT",
       "author": "Titus Wormer",
@@ -1728,7 +1732,7 @@
         "2.0.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\micromark-util-classify-character@2.0.0\\node_modules\\micromark-util-classify-character"
+        "node_modules/.pnpm/micromark-util-classify-character@2.0.0/node_modules/micromark-util-classify-character"
       ],
       "license": "MIT",
       "author": "Titus Wormer",
@@ -1741,7 +1745,7 @@
         "2.0.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\micromark-util-combine-extensions@2.0.0\\node_modules\\micromark-util-combine-extensions"
+        "node_modules/.pnpm/micromark-util-combine-extensions@2.0.0/node_modules/micromark-util-combine-extensions"
       ],
       "license": "MIT",
       "author": "Titus Wormer",
@@ -1754,7 +1758,7 @@
         "2.0.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\micromark-util-decode-numeric-character-reference@2.0.0\\node_modules\\micromark-util-decode-numeric-character-reference"
+        "node_modules/.pnpm/micromark-util-decode-numeric-character-reference@2.0.0/node_modules/micromark-util-decode-numeric-character-reference"
       ],
       "license": "MIT",
       "author": "Titus Wormer",
@@ -1767,7 +1771,7 @@
         "2.0.1"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\micromark-util-decode-string@2.0.1\\node_modules\\micromark-util-decode-string"
+        "node_modules/.pnpm/micromark-util-decode-string@2.0.1/node_modules/micromark-util-decode-string"
       ],
       "license": "MIT",
       "author": "Titus Wormer",
@@ -1780,7 +1784,7 @@
         "2.0.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\micromark-util-encode@2.0.0\\node_modules\\micromark-util-encode"
+        "node_modules/.pnpm/micromark-util-encode@2.0.0/node_modules/micromark-util-encode"
       ],
       "license": "MIT",
       "author": "Titus Wormer",
@@ -1793,7 +1797,7 @@
         "2.0.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\micromark-util-html-tag-name@2.0.0\\node_modules\\micromark-util-html-tag-name"
+        "node_modules/.pnpm/micromark-util-html-tag-name@2.0.0/node_modules/micromark-util-html-tag-name"
       ],
       "license": "MIT",
       "author": "Titus Wormer",
@@ -1806,7 +1810,7 @@
         "2.0.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\micromark-util-normalize-identifier@2.0.0\\node_modules\\micromark-util-normalize-identifier"
+        "node_modules/.pnpm/micromark-util-normalize-identifier@2.0.0/node_modules/micromark-util-normalize-identifier"
       ],
       "license": "MIT",
       "author": "Titus Wormer",
@@ -1819,7 +1823,7 @@
         "2.0.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\micromark-util-resolve-all@2.0.0\\node_modules\\micromark-util-resolve-all"
+        "node_modules/.pnpm/micromark-util-resolve-all@2.0.0/node_modules/micromark-util-resolve-all"
       ],
       "license": "MIT",
       "author": "Titus Wormer",
@@ -1832,7 +1836,7 @@
         "2.0.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\micromark-util-sanitize-uri@2.0.0\\node_modules\\micromark-util-sanitize-uri"
+        "node_modules/.pnpm/micromark-util-sanitize-uri@2.0.0/node_modules/micromark-util-sanitize-uri"
       ],
       "license": "MIT",
       "author": "Titus Wormer",
@@ -1845,7 +1849,7 @@
         "2.0.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\micromark-util-subtokenize@2.0.0\\node_modules\\micromark-util-subtokenize"
+        "node_modules/.pnpm/micromark-util-subtokenize@2.0.0/node_modules/micromark-util-subtokenize"
       ],
       "license": "MIT",
       "author": "Titus Wormer",
@@ -1858,7 +1862,7 @@
         "2.0.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\micromark-util-symbol@2.0.0\\node_modules\\micromark-util-symbol"
+        "node_modules/.pnpm/micromark-util-symbol@2.0.0/node_modules/micromark-util-symbol"
       ],
       "license": "MIT",
       "author": "Titus Wormer",
@@ -1871,7 +1875,7 @@
         "2.0.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\micromark-util-types@2.0.0\\node_modules\\micromark-util-types"
+        "node_modules/.pnpm/micromark-util-types@2.0.0/node_modules/micromark-util-types"
       ],
       "license": "MIT",
       "author": "Titus Wormer",
@@ -1884,7 +1888,7 @@
         "1.0.1"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\min-indent@1.0.1\\node_modules\\min-indent"
+        "node_modules/.pnpm/min-indent@1.0.1/node_modules/min-indent"
       ],
       "license": "MIT",
       "author": "James Kyle",
@@ -1897,7 +1901,7 @@
         "2.1.3"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\ms@2.1.3\\node_modules\\ms"
+        "node_modules/.pnpm/ms@2.1.3/node_modules/ms"
       ],
       "license": "MIT",
       "homepage": "https://github.com/vercel/ms#readme",
@@ -1909,7 +1913,7 @@
         "3.3.18"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\nanoid@3.3.18\\node_modules\\nanoid"
+        "node_modules/.pnpm/nanoid@3.3.18/node_modules/nanoid"
       ],
       "license": "MIT",
       "author": "Andrey Sitnik",
@@ -1922,7 +1926,7 @@
         "1.4.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\natural-compare@1.4.0\\node_modules\\natural-compare"
+        "node_modules/.pnpm/natural-compare@1.4.0/node_modules/natural-compare"
       ],
       "license": "MIT",
       "author": "Lauri Rooden",
@@ -1935,7 +1939,7 @@
         "2.1.4"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\obug@2.1.4\\node_modules\\obug"
+        "node_modules/.pnpm/obug@2.1.4/node_modules/obug"
       ],
       "license": "MIT",
       "author": "Kevin Deng",
@@ -1948,7 +1952,7 @@
         "0.9.4"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\optionator@0.9.4\\node_modules\\optionator"
+        "node_modules/.pnpm/optionator@0.9.4/node_modules/optionator"
       ],
       "license": "MIT",
       "author": "George Zahariev",
@@ -1961,7 +1965,7 @@
         "3.0.2"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\p-limit@3.0.2\\node_modules\\p-limit"
+        "node_modules/.pnpm/p-limit@3.0.2/node_modules/p-limit"
       ],
       "license": "MIT",
       "author": "Sindre Sorhus",
@@ -1974,7 +1978,7 @@
         "5.0.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\p-locate@5.0.0\\node_modules\\p-locate"
+        "node_modules/.pnpm/p-locate@5.0.0/node_modules/p-locate"
       ],
       "license": "MIT",
       "author": "Sindre Sorhus",
@@ -1987,7 +1991,7 @@
         "2.2.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\p-try@2.2.0\\node_modules\\p-try"
+        "node_modules/.pnpm/p-try@2.2.0/node_modules/p-try"
       ],
       "license": "MIT",
       "author": "Sindre Sorhus",
@@ -2000,7 +2004,7 @@
         "8.0.1"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\parse5@8.0.1\\node_modules\\parse5"
+        "node_modules/.pnpm/parse5@8.0.1/node_modules/parse5"
       ],
       "license": "MIT",
       "author": "Ivan Nikulin",
@@ -2013,7 +2017,7 @@
         "4.0.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\path-exists@4.0.0\\node_modules\\path-exists"
+        "node_modules/.pnpm/path-exists@4.0.0/node_modules/path-exists"
       ],
       "license": "MIT",
       "author": "Sindre Sorhus",
@@ -2026,7 +2030,7 @@
         "3.1.1"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\path-key@3.1.1\\node_modules\\path-key"
+        "node_modules/.pnpm/path-key@3.1.1/node_modules/path-key"
       ],
       "license": "MIT",
       "author": "Sindre Sorhus",
@@ -2039,7 +2043,7 @@
         "4.0.7"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\picomatch@4.0.7\\node_modules\\picomatch"
+        "node_modules/.pnpm/picomatch@4.0.7/node_modules/picomatch"
       ],
       "license": "MIT",
       "author": "Jon Schlinkert",
@@ -2052,7 +2056,7 @@
         "3.29.3"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\pinyin-pro@3.29.3\\node_modules\\pinyin-pro"
+        "node_modules/.pnpm/pinyin-pro@3.29.3/node_modules/pinyin-pro"
       ],
       "license": "MIT",
       "author": "zh-lx",
@@ -2065,7 +2069,7 @@
         "8.5.28"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\postcss@8.5.28\\node_modules\\postcss"
+        "node_modules/.pnpm/postcss@8.5.28/node_modules/postcss"
       ],
       "license": "MIT",
       "author": "Andrey Sitnik",
@@ -2078,7 +2082,7 @@
         "1.2.1"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\prelude-ls@1.2.1\\node_modules\\prelude-ls"
+        "node_modules/.pnpm/prelude-ls@1.2.1/node_modules/prelude-ls"
       ],
       "license": "MIT",
       "author": "George Zahariev",
@@ -2091,7 +2095,7 @@
         "3.9.8"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\prettier@3.9.8\\node_modules\\prettier"
+        "node_modules/.pnpm/prettier@3.9.8/node_modules/prettier"
       ],
       "license": "MIT",
       "author": "James Long",
@@ -2104,7 +2108,7 @@
         "27.0.2"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\pretty-format@27.0.2\\node_modules\\pretty-format"
+        "node_modules/.pnpm/pretty-format@27.0.2/node_modules/pretty-format"
       ],
       "license": "MIT",
       "author": "James Kyle",
@@ -2117,7 +2121,7 @@
         "2.3.1"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\punycode@2.3.1\\node_modules\\punycode"
+        "node_modules/.pnpm/punycode@2.3.1/node_modules/punycode"
       ],
       "license": "MIT",
       "author": "Mathias Bynens",
@@ -2130,7 +2134,7 @@
         "0.10.1"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\qified@0.10.1\\node_modules\\qified"
+        "node_modules/.pnpm/qified@0.10.1/node_modules/qified"
       ],
       "license": "MIT",
       "author": "Jared Wray",
@@ -2143,7 +2147,7 @@
         "19.2.8"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\react@19.2.8\\node_modules\\react"
+        "node_modules/.pnpm/react@19.2.8/node_modules/react"
       ],
       "license": "MIT",
       "homepage": "https://react.dev/",
@@ -2155,7 +2159,7 @@
         "19.2.8"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\react-dom@19.2.8_react@19.2.8\\node_modules\\react-dom"
+        "node_modules/.pnpm/react-dom@19.2.8_react@19.2.8/node_modules/react-dom"
       ],
       "license": "MIT",
       "homepage": "https://react.dev/",
@@ -2167,7 +2171,7 @@
         "17.0.1"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\react-is@17.0.1\\node_modules\\react-is"
+        "node_modules/.pnpm/react-is@17.0.1/node_modules/react-is"
       ],
       "license": "MIT",
       "homepage": "https://reactjs.org/",
@@ -2179,7 +2183,7 @@
         "3.0.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\redent@3.0.0\\node_modules\\redent"
+        "node_modules/.pnpm/redent@3.0.0/node_modules/redent"
       ],
       "license": "MIT",
       "author": "Sindre Sorhus",
@@ -2192,7 +2196,7 @@
         "2.0.2"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\require-from-string@2.0.2\\node_modules\\require-from-string"
+        "node_modules/.pnpm/require-from-string@2.0.2/node_modules/require-from-string"
       ],
       "license": "MIT",
       "author": "Vsevolod Strukchinsky",
@@ -2205,7 +2209,7 @@
         "1.2.7"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\rolldown@1.2.7\\node_modules\\rolldown"
+        "node_modules/.pnpm/rolldown@1.2.7/node_modules/rolldown"
       ],
       "license": "MIT",
       "homepage": "https://rolldown.rs/",
@@ -2217,7 +2221,7 @@
         "0.27.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\scheduler@0.27.0\\node_modules\\scheduler"
+        "node_modules/.pnpm/scheduler@0.27.0/node_modules/scheduler"
       ],
       "license": "MIT",
       "homepage": "https://react.dev/",
@@ -2229,7 +2233,7 @@
         "2.0.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\shebang-command@2.0.0\\node_modules\\shebang-command"
+        "node_modules/.pnpm/shebang-command@2.0.0/node_modules/shebang-command"
       ],
       "license": "MIT",
       "author": "Kevin Mårtensson",
@@ -2242,7 +2246,7 @@
         "3.0.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\shebang-regex@3.0.0\\node_modules\\shebang-regex"
+        "node_modules/.pnpm/shebang-regex@3.0.0/node_modules/shebang-regex"
       ],
       "license": "MIT",
       "author": "Sindre Sorhus",
@@ -2255,7 +2259,7 @@
         "0.0.2"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\stackback@0.0.2\\node_modules\\stackback"
+        "node_modules/.pnpm/stackback@0.0.2/node_modules/stackback"
       ],
       "license": "MIT",
       "author": "Roman Shtylman",
@@ -2268,7 +2272,7 @@
         "4.2.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\std-env@4.2.0\\node_modules\\std-env"
+        "node_modules/.pnpm/std-env@4.2.0/node_modules/std-env"
       ],
       "license": "MIT",
       "homepage": "https://github.com/unjs/std-env#readme",
@@ -2280,7 +2284,7 @@
         "3.0.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\strip-indent@3.0.0\\node_modules\\strip-indent"
+        "node_modules/.pnpm/strip-indent@3.0.0/node_modules/strip-indent"
       ],
       "license": "MIT",
       "author": "Sindre Sorhus",
@@ -2293,7 +2297,7 @@
         "7.1.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\supports-color@7.1.0\\node_modules\\supports-color"
+        "node_modules/.pnpm/supports-color@7.1.0/node_modules/supports-color"
       ],
       "license": "MIT",
       "author": "Sindre Sorhus",
@@ -2306,7 +2310,7 @@
         "3.2.4"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\symbol-tree@3.2.4\\node_modules\\symbol-tree"
+        "node_modules/.pnpm/symbol-tree@3.2.4/node_modules/symbol-tree"
       ],
       "license": "MIT",
       "author": "Joris van der Wel",
@@ -2319,7 +2323,7 @@
         "6.1.4"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\tinybench@6.1.4\\node_modules\\tinybench"
+        "node_modules/.pnpm/tinybench@6.1.4/node_modules/tinybench"
       ],
       "license": "MIT",
       "homepage": "https://github.com/tinylibs/tinybench#readme",
@@ -2331,7 +2335,7 @@
         "1.3.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\tinyexec@1.3.0\\node_modules\\tinyexec"
+        "node_modules/.pnpm/tinyexec@1.3.0/node_modules/tinyexec"
       ],
       "license": "MIT",
       "author": "James Garbutt",
@@ -2344,7 +2348,7 @@
         "0.2.17"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\tinyglobby@0.2.17\\node_modules\\tinyglobby"
+        "node_modules/.pnpm/tinyglobby@0.2.17/node_modules/tinyglobby"
       ],
       "license": "MIT",
       "author": "Superchupu",
@@ -2357,7 +2361,7 @@
         "7.4.12"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\tldts@7.4.12\\node_modules\\tldts"
+        "node_modules/.pnpm/tldts@7.4.12/node_modules/tldts"
       ],
       "license": "MIT",
       "author": "Rémi Berson",
@@ -2370,7 +2374,7 @@
         "7.4.12"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\tldts-core@7.4.12\\node_modules\\tldts-core"
+        "node_modules/.pnpm/tldts-core@7.4.12/node_modules/tldts-core"
       ],
       "license": "MIT",
       "author": "Rémi Berson",
@@ -2383,7 +2387,7 @@
         "6.0.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\tr46@6.0.0\\node_modules\\tr46"
+        "node_modules/.pnpm/tr46@6.0.0/node_modules/tr46"
       ],
       "license": "MIT",
       "author": "Sebastian Mayr",
@@ -2396,7 +2400,7 @@
         "2.5.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\ts-api-utils@2.5.0_typescript@6.0.3\\node_modules\\ts-api-utils"
+        "node_modules/.pnpm/ts-api-utils@2.5.0_typescript@6.0.3/node_modules/ts-api-utils"
       ],
       "license": "MIT",
       "author": "JoshuaKGoldberg",
@@ -2409,7 +2413,7 @@
         "0.4.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\type-check@0.4.0\\node_modules\\type-check"
+        "node_modules/.pnpm/type-check@0.4.0/node_modules/type-check"
       ],
       "license": "MIT",
       "author": "George Zahariev",
@@ -2422,7 +2426,7 @@
         "8.70.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\typescript-eslint@8.70.0_eslint@10.10.0_typescript@6.0.3\\node_modules\\typescript-eslint"
+        "node_modules/.pnpm/typescript-eslint@8.70.0_eslint@10.10.0_typescript@6.0.3/node_modules/typescript-eslint"
       ],
       "license": "MIT",
       "homepage": "https://typescript-eslint.io/packages/typescript-eslint",
@@ -2434,7 +2438,7 @@
         "8.10.2"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\undici@8.10.2\\node_modules\\undici"
+        "node_modules/.pnpm/undici@8.10.2/node_modules/undici"
       ],
       "license": "MIT",
       "homepage": "https://undici.nodejs.org",
@@ -2446,7 +2450,7 @@
         "8.9.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\undici-types@8.9.0\\node_modules\\undici-types"
+        "node_modules/.pnpm/undici-types@8.9.0/node_modules/undici-types"
       ],
       "license": "MIT",
       "homepage": "https://undici.nodejs.org",
@@ -2458,7 +2462,7 @@
         "4.0.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\unist-util-stringify-position@4.0.0\\node_modules\\unist-util-stringify-position"
+        "node_modules/.pnpm/unist-util-stringify-position@4.0.0/node_modules/unist-util-stringify-position"
       ],
       "license": "MIT",
       "author": "Titus Wormer",
@@ -2471,7 +2475,7 @@
         "8.2.2"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\vite@8.2.2_@types+node@26.5.0\\node_modules\\vite"
+        "node_modules/.pnpm/vite@8.2.2_@types+node@26.5.0/node_modules/vite"
       ],
       "license": "MIT",
       "author": "Evan You",
@@ -2484,7 +2488,7 @@
         "5.0.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\vitest@5.0.0_@types+node@26_178c8fdd1a0951304eaf907a92b48245\\node_modules\\vitest"
+        "node_modules/.pnpm/vitest@5.0.0_@types+node@26_178c8fdd1a0951304eaf907a92b48245/node_modules/vitest"
       ],
       "license": "MIT",
       "author": "Anthony Fu",
@@ -2497,7 +2501,7 @@
         "5.0.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\w3c-xmlserializer@5.0.0\\node_modules\\w3c-xmlserializer"
+        "node_modules/.pnpm/w3c-xmlserializer@5.0.0/node_modules/w3c-xmlserializer"
       ],
       "license": "MIT",
       "homepage": "https://github.com/jsdom/w3c-xmlserializer#readme",
@@ -2509,7 +2513,7 @@
         "5.0.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\whatwg-mimetype@5.0.0\\node_modules\\whatwg-mimetype"
+        "node_modules/.pnpm/whatwg-mimetype@5.0.0/node_modules/whatwg-mimetype"
       ],
       "license": "MIT",
       "author": "Domenic Denicola",
@@ -2523,8 +2527,8 @@
         "17.1.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\whatwg-url@16.0.1\\node_modules\\whatwg-url",
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\whatwg-url@17.1.0\\node_modules\\whatwg-url"
+        "node_modules/.pnpm/whatwg-url@16.0.1/node_modules/whatwg-url",
+        "node_modules/.pnpm/whatwg-url@17.1.0/node_modules/whatwg-url"
       ],
       "license": "MIT",
       "author": "Sebastian Mayr",
@@ -2537,7 +2541,7 @@
         "2.3.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\why-is-node-running@2.3.0\\node_modules\\why-is-node-running"
+        "node_modules/.pnpm/why-is-node-running@2.3.0/node_modules/why-is-node-running"
       ],
       "license": "MIT",
       "author": "Mathias Buus",
@@ -2550,7 +2554,7 @@
         "1.2.5"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\word-wrap@1.2.5\\node_modules\\word-wrap"
+        "node_modules/.pnpm/word-wrap@1.2.5/node_modules/word-wrap"
       ],
       "license": "MIT",
       "author": "Jon Schlinkert",
@@ -2563,7 +2567,7 @@
         "2.2.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\xmlchars@2.2.0\\node_modules\\xmlchars"
+        "node_modules/.pnpm/xmlchars@2.2.0/node_modules/xmlchars"
       ],
       "license": "MIT",
       "author": "Louis-Dominique Dubeau",
@@ -2576,7 +2580,7 @@
         "4.5.4"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\zod@4.5.4\\node_modules\\zod"
+        "node_modules/.pnpm/zod@4.5.4/node_modules/zod"
       ],
       "license": "MIT",
       "author": "Colin McDonnell",
@@ -2591,7 +2595,7 @@
         "6.1.1"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@csstools+color-helpers@6.1.1\\node_modules\\@csstools\\color-helpers"
+        "node_modules/.pnpm/@csstools+color-helpers@6.1.1/node_modules/@csstools/color-helpers"
       ],
       "license": "MIT-0",
       "homepage": "https://github.com/csstools/postcss-plugins/tree/main/packages/color-helpers#readme",
@@ -2603,7 +2607,7 @@
         "1.1.12"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@csstools+css-syntax-patche_f4c7f2b36c9ea8ab3d13ec8f3df0881f\\node_modules\\@csstools\\css-syntax-patches-for-csstree"
+        "node_modules/.pnpm/@csstools+css-syntax-patche_f4c7f2b36c9ea8ab3d13ec8f3df0881f/node_modules/@csstools/css-syntax-patches-for-csstree"
       ],
       "license": "MIT-0",
       "homepage": "https://github.com/csstools/postcss-plugins/tree/main/packages/css-syntax-patches-for-csstree#readme",
@@ -2617,7 +2621,7 @@
         "0.23.5"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@eslint+config-array@0.23.5\\node_modules\\@eslint\\config-array"
+        "node_modules/.pnpm/@eslint+config-array@0.23.5/node_modules/@eslint/config-array"
       ],
       "license": "Apache-2.0",
       "author": "Nicholas C. Zakas",
@@ -2630,7 +2634,7 @@
         "0.7.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@eslint+config-helpers@0.7.0\\node_modules\\@eslint\\config-helpers"
+        "node_modules/.pnpm/@eslint+config-helpers@0.7.0/node_modules/@eslint/config-helpers"
       ],
       "license": "Apache-2.0",
       "homepage": "https://github.com/eslint/rewrite/tree/main/packages/config-helpers#readme",
@@ -2642,7 +2646,7 @@
         "1.2.1"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@eslint+core@1.2.1\\node_modules\\@eslint\\core"
+        "node_modules/.pnpm/@eslint+core@1.2.1/node_modules/@eslint/core"
       ],
       "license": "Apache-2.0",
       "author": "Nicholas C. Zakas",
@@ -2655,7 +2659,7 @@
         "3.0.5"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@eslint+object-schema@3.0.5\\node_modules\\@eslint\\object-schema"
+        "node_modules/.pnpm/@eslint+object-schema@3.0.5/node_modules/@eslint/object-schema"
       ],
       "license": "Apache-2.0",
       "author": "Nicholas C. Zakas",
@@ -2668,7 +2672,7 @@
         "0.7.3"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@eslint+plugin-kit@0.7.3\\node_modules\\@eslint\\plugin-kit"
+        "node_modules/.pnpm/@eslint+plugin-kit@0.7.3/node_modules/@eslint/plugin-kit"
       ],
       "license": "Apache-2.0",
       "author": "Nicholas C. Zakas",
@@ -2681,7 +2685,7 @@
         "0.19.2"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@humanfs+core@0.19.2\\node_modules\\@humanfs\\core"
+        "node_modules/.pnpm/@humanfs+core@0.19.2/node_modules/@humanfs/core"
       ],
       "license": "Apache-2.0",
       "author": "Nicholas C. Zakas",
@@ -2694,7 +2698,7 @@
         "0.16.8"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@humanfs+node@0.16.8\\node_modules\\@humanfs\\node"
+        "node_modules/.pnpm/@humanfs+node@0.16.8/node_modules/@humanfs/node"
       ],
       "license": "Apache-2.0",
       "author": "Nicholas C. Zakas",
@@ -2707,7 +2711,7 @@
         "0.15.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@humanfs+types@0.15.0\\node_modules\\@humanfs\\types"
+        "node_modules/.pnpm/@humanfs+types@0.15.0/node_modules/@humanfs/types"
       ],
       "license": "Apache-2.0",
       "author": "Nicholas C. Zakas",
@@ -2720,7 +2724,7 @@
         "1.0.1"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@humanwhocodes+module-importer@1.0.1\\node_modules\\@humanwhocodes\\module-importer"
+        "node_modules/.pnpm/@humanwhocodes+module-importer@1.0.1/node_modules/@humanwhocodes/module-importer"
       ],
       "license": "Apache-2.0",
       "author": "Nicholas C. Zaks",
@@ -2733,7 +2737,7 @@
         "0.4.3"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\@humanwhocodes+retry@0.4.3\\node_modules\\@humanwhocodes\\retry"
+        "node_modules/.pnpm/@humanwhocodes+retry@0.4.3/node_modules/@humanwhocodes/retry"
       ],
       "license": "Apache-2.0",
       "author": "Nicholas C. Zaks",
@@ -2747,8 +2751,8 @@
         "5.3.2"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\aria-query@5.3.0\\node_modules\\aria-query",
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\aria-query@5.3.2\\node_modules\\aria-query"
+        "node_modules/.pnpm/aria-query@5.3.0/node_modules/aria-query",
+        "node_modules/.pnpm/aria-query@5.3.2/node_modules/aria-query"
       ],
       "license": "Apache-2.0",
       "author": "Jesse Beach",
@@ -2761,7 +2765,7 @@
         "2.1.2"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\detect-libc@2.1.2\\node_modules\\detect-libc"
+        "node_modules/.pnpm/detect-libc@2.1.2/node_modules/detect-libc"
       ],
       "license": "Apache-2.0",
       "author": "Lovell Fuller",
@@ -2775,8 +2779,8 @@
         "5.0.1"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\eslint-visitor-keys@3.4.3\\node_modules\\eslint-visitor-keys",
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\eslint-visitor-keys@5.0.1\\node_modules\\eslint-visitor-keys"
+        "node_modules/.pnpm/eslint-visitor-keys@3.4.3/node_modules/eslint-visitor-keys",
+        "node_modules/.pnpm/eslint-visitor-keys@5.0.1/node_modules/eslint-visitor-keys"
       ],
       "license": "Apache-2.0",
       "author": "Toru Nagashima",
@@ -2789,7 +2793,7 @@
         "1.4.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\expect-type@1.4.0\\node_modules\\expect-type"
+        "node_modules/.pnpm/expect-type@1.4.0/node_modules/expect-type"
       ],
       "license": "Apache-2.0",
       "homepage": "https://github.com/mmkal/expect-type#readme"
@@ -2800,7 +2804,7 @@
         "6.2.5"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\fake-indexeddb@6.2.5\\node_modules\\fake-indexeddb"
+        "node_modules/.pnpm/fake-indexeddb@6.2.5/node_modules/fake-indexeddb"
       ],
       "license": "Apache-2.0",
       "author": "Jeremy Scheff",
@@ -2813,7 +2817,7 @@
         "6.0.3"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\typescript@6.0.3\\node_modules\\typescript"
+        "node_modules/.pnpm/typescript@6.0.3/node_modules/typescript"
       ],
       "license": "Apache-2.0",
       "author": "Microsoft Corp.",
@@ -2826,7 +2830,7 @@
         "5.0.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\xml-name-validator@5.0.0\\node_modules\\xml-name-validator"
+        "node_modules/.pnpm/xml-name-validator@5.0.0/node_modules/xml-name-validator"
       ],
       "license": "Apache-2.0",
       "author": "Domenic Denicola",
@@ -2841,7 +2845,7 @@
         "8.1.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\entities@8.1.0\\node_modules\\entities"
+        "node_modules/.pnpm/entities@8.1.0/node_modules/entities"
       ],
       "license": "BSD-2-Clause",
       "author": "Felix Boehm",
@@ -2854,7 +2858,7 @@
         "9.1.2"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\eslint-scope@9.1.2\\node_modules\\eslint-scope"
+        "node_modules/.pnpm/eslint-scope@9.1.2/node_modules/eslint-scope"
       ],
       "license": "BSD-2-Clause",
       "homepage": "https://github.com/eslint/js/blob/main/packages/eslint-scope/README.md",
@@ -2866,7 +2870,7 @@
         "11.2.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\espree@11.2.0\\node_modules\\espree"
+        "node_modules/.pnpm/espree@11.2.0/node_modules/espree"
       ],
       "license": "BSD-2-Clause",
       "author": "Nicholas C. Zakas",
@@ -2879,7 +2883,7 @@
         "4.3.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\esrecurse@4.3.0\\node_modules\\esrecurse"
+        "node_modules/.pnpm/esrecurse@4.3.0/node_modules/esrecurse"
       ],
       "license": "BSD-2-Clause",
       "homepage": "https://github.com/estools/esrecurse",
@@ -2891,7 +2895,7 @@
         "5.3.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\estraverse@5.3.0\\node_modules\\estraverse"
+        "node_modules/.pnpm/estraverse@5.3.0/node_modules/estraverse"
       ],
       "license": "BSD-2-Clause",
       "homepage": "https://github.com/estools/estraverse",
@@ -2903,7 +2907,7 @@
         "2.0.3"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\esutils@2.0.3\\node_modules\\esutils"
+        "node_modules/.pnpm/esutils@2.0.3/node_modules/esutils"
       ],
       "license": "BSD-2-Clause",
       "homepage": "https://github.com/estools/esutils",
@@ -2915,7 +2919,7 @@
         "4.4.1"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\uri-js@4.4.1\\node_modules\\uri-js"
+        "node_modules/.pnpm/uri-js@4.4.1/node_modules/uri-js"
       ],
       "license": "BSD-2-Clause",
       "author": "Gary Court",
@@ -2928,7 +2932,7 @@
         "8.0.1"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\webidl-conversions@8.0.1\\node_modules\\webidl-conversions"
+        "node_modules/.pnpm/webidl-conversions@8.0.1/node_modules/webidl-conversions"
       ],
       "license": "BSD-2-Clause",
       "author": "Domenic Denicola",
@@ -2943,7 +2947,7 @@
         "1.7.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\esquery@1.7.0\\node_modules\\esquery"
+        "node_modules/.pnpm/esquery@1.7.0/node_modules/esquery"
       ],
       "license": "BSD-3-Clause",
       "author": "Joel Feenstra",
@@ -2956,7 +2960,7 @@
         "1.2.1"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\source-map-js@1.2.1\\node_modules\\source-map-js"
+        "node_modules/.pnpm/source-map-js@1.2.1/node_modules/source-map-js"
       ],
       "license": "BSD-3-Clause",
       "author": "Valentin 7rulnik Semirulnik",
@@ -2969,7 +2973,7 @@
         "6.0.2"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\tough-cookie@6.0.2\\node_modules\\tough-cookie"
+        "node_modules/.pnpm/tough-cookie@6.0.2/node_modules/tough-cookie"
       ],
       "license": "BSD-3-Clause",
       "author": "Jeremy Stashewsky",
@@ -2984,7 +2988,7 @@
         "3.4.4"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\flatted@3.4.4\\node_modules\\flatted"
+        "node_modules/.pnpm/flatted@3.4.4/node_modules/flatted"
       ],
       "license": "ISC",
       "author": "Andrea Giammarchi",
@@ -2997,7 +3001,7 @@
         "6.0.2"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\glob-parent@6.0.2\\node_modules\\glob-parent"
+        "node_modules/.pnpm/glob-parent@6.0.2/node_modules/glob-parent"
       ],
       "license": "ISC",
       "author": "Gulp Team",
@@ -3010,7 +3014,7 @@
         "2.0.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\isexe@2.0.0\\node_modules\\isexe"
+        "node_modules/.pnpm/isexe@2.0.0/node_modules/isexe"
       ],
       "license": "ISC",
       "author": "Isaac Z. Schlueter",
@@ -3023,7 +3027,7 @@
         "1.42.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\lucide-react@1.42.0_react@19.2.8\\node_modules\\lucide-react"
+        "node_modules/.pnpm/lucide-react@1.42.0_react@19.2.8/node_modules/lucide-react"
       ],
       "license": "ISC",
       "author": "Eric Fennis",
@@ -3036,7 +3040,7 @@
         "1.1.1"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\picocolors@1.1.1\\node_modules\\picocolors"
+        "node_modules/.pnpm/picocolors@1.1.1/node_modules/picocolors"
       ],
       "license": "ISC",
       "author": "Alexey Raspopov",
@@ -3049,7 +3053,7 @@
         "6.0.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\saxes@6.0.0\\node_modules\\saxes"
+        "node_modules/.pnpm/saxes@6.0.0/node_modules/saxes"
       ],
       "license": "ISC",
       "author": "Louis-Dominique Dubeau",
@@ -3062,7 +3066,7 @@
         "7.8.5"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\semver@7.8.5\\node_modules\\semver"
+        "node_modules/.pnpm/semver@7.8.5/node_modules/semver"
       ],
       "license": "ISC",
       "author": "GitHub Inc.",
@@ -3075,7 +3079,7 @@
         "2.0.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\siginfo@2.0.0\\node_modules\\siginfo"
+        "node_modules/.pnpm/siginfo@2.0.0/node_modules/siginfo"
       ],
       "license": "ISC",
       "author": "Emil Bay",
@@ -3088,7 +3092,7 @@
         "2.0.1"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\which@2.0.1\\node_modules\\which"
+        "node_modules/.pnpm/which@2.0.1/node_modules/which"
       ],
       "license": "ISC",
       "author": "Isaac Z. Schlueter",
@@ -3103,7 +3107,7 @@
         "1.33.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\lightningcss@1.33.0\\node_modules\\lightningcss"
+        "node_modules/.pnpm/lightningcss@1.33.0/node_modules/lightningcss"
       ],
       "license": "MPL-2.0",
       "homepage": "https://github.com/parcel-bundler/lightningcss#readme",
@@ -3115,7 +3119,7 @@
         "1.33.0"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\lightningcss-win32-x64-msvc@1.33.0\\node_modules\\lightningcss-win32-x64-msvc"
+        "node_modules/.pnpm/lightningcss-win32-x64-msvc@1.33.0/node_modules/lightningcss-win32-x64-msvc"
       ],
       "license": "MPL-2.0",
       "homepage": "https://github.com/parcel-bundler/lightningcss#readme",
@@ -3129,7 +3133,7 @@
         "11.5.2"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\lru-cache@11.5.2\\node_modules\\lru-cache"
+        "node_modules/.pnpm/lru-cache@11.5.2/node_modules/lru-cache"
       ],
       "license": "BlueOak-1.0.0",
       "author": "Isaac Z. Schlueter",
@@ -3142,7 +3146,7 @@
         "10.2.6"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\minimatch@10.2.6\\node_modules\\minimatch"
+        "node_modules/.pnpm/minimatch@10.2.6/node_modules/minimatch"
       ],
       "license": "BlueOak-1.0.0",
       "author": "Isaac Z. Schlueter",
@@ -3157,7 +3161,7 @@
         "2.27.1"
       ],
       "paths": [
-        "F:\\opencode\\smartSave\\extension\\node_modules\\.pnpm\\mdn-data@2.27.1\\node_modules\\mdn-data"
+        "node_modules/.pnpm/mdn-data@2.27.1/node_modules/mdn-data"
       ],
       "license": "CC0-1.0",
       "author": "Mozilla Developer Network",

@@ -24,3 +24,7 @@ __pycache__/
 .local-evaluation/
 .DS_Store
 Thumbs.db
+
+# Local release packages and recordings in progress
+release/
+.release-work/

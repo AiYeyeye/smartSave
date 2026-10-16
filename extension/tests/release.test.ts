@@ -33,6 +33,9 @@ async function fixture() {
     await mkdir(join(file, '..'), { recursive: true });
     await writeFile(file, text);
   }
+  await mkdir(join(root, 'dist/icons'), { recursive: true });
+  for (const size of [16, 32, 48, 128])
+    await writeFile(join(root, `dist/icons/icon-${size}.png`), await readFile(`public/icons/icon-${size}.png`));
   return root;
 }
 it('inventories a hermetic complete fixture without promoting it to release', async () => {
@@ -110,7 +113,7 @@ it.each(['csp', 'notice', 'lock', 'classic', 'asset'])('rejects %s corruption', 
   if (defect === 'asset') await writeFile(join(root, 'dist/panel/index.html'), '<script src="missing.js"></script>');
   expect((await checkRelease(root)).sourceErrors.length).toBeGreaterThan(0);
 });
-it('accepts the approved minimum 114 and keeps a lower manifest floor plus every missing manual as distinct ready blockers', async () => {
+it('accepts the approved minimum and keeps a lower manifest floor plus every missing manual as distinct ready blockers', async () => {
   const root = await fixture();
   const result = await checkRelease(root);
   expect(result.sourceErrors).toEqual([]);

@@ -1,2 +1,9 @@
 # RFC 4180 fixture must retain CRLF, including its quoted multiline field.
 extension/import/fixtures/bookmarks.csv text eol=crlf
+
+# Applies to git archive only; does not remove tracked files or Git history.
+.trellis export-ignore
+.agents export-ignore
+.codex export-ignore
+experiments export-ignore
+ui export-ignore

@@ -1,20 +1,33 @@
-# Local Windows candidate installation (release BLOCKED)
+# 安装智栏 / Install Zhilan
 
-This is an unpublished 0.1.0 source candidate, not an accepted trial release. No account, telemetry service, default provider, sample bookmarks or browser installation is required by the product. Do not use daily profiles for validation.
+当前为未上架的 `0.1.0` 开发候选。源代码公开，仅限 [许可证](../LICENSE) 允许的非商业用途；商用请联系维护者。Chrome Web Store 链接将在正式发布后补充。
 
-## Build and identify
-Use Node >=22.12 and package manager pnpm 11.7.0: `pnpm --dir extension install --frozen-lockfile`, then `lint`, `typecheck`, `test --maxWorkers=2`, `test:integration`, `build`, `release:source`. Run `release:ready` separately: it must currently exit nonzero. `extension/release-candidate.json` inventories each dist file and source file with SHA256 and byte count plus the lock hash. No Git commit is invented for the unborn repository. Rebuild and compare inventories (excluding machine-specific license inventory paths); this run does not establish byte-for-byte reproducibility across environments. Keep the whole `extension/dist` directory together; no publication or ZIP upload is performed.
+## 从源码安装
 
-## Future manual installation only
-Create a new isolated Chrome/Edge profile, do not sign in or import user data. On Windows, open `chrome://extensions` or `edge://extensions`, enable Developer mode, choose Load unpacked (localized browser label may differ), select `extension/dist`. Record full Windows/build and browser version, actual extension ID, candidate inventory hash and extension errors. Pin 智栏; clicking the toolbar icon (title `打开智栏`) opens the native popup, and the popup's AI 整理 / 导入 / 导出 entries open the options page in a new tab. The save shortcut has no default key: configure it explicitly and check conflicts in that isolated profile. On Chrome 127+ the shortcut and the page context menu open the popup directly; on 114–126 they mark the tab's toolbar icon with a badge and the popup shows the captured page when you open it. No browser was launched here.
+需要 Node.js >=22.12、pnpm 11.7.0，以及 Chrome / Edge 116+。最低版本来自 manifest 与发布检查器，不等于所有版本已验收。
 
-The manifest advertises Chrome 114 and, since 2026-09-22, 114 is the approved minimum enforced by `release:ready` (`approvedMinimumChromeVersion` in `extension/checks/release.mjs`); no shipped code path depends on `sidePanel.open` (116) any more. Edge minimum and actual production Chrome/Edge compatibility are not accepted. Historical Chrome153 probe results are not production installation evidence.
+```sh
+git clone https://github.com/AiYeyeye/smartSave.git
+cd smartSave
+pnpm --dir extension install --frozen-lockfile
+pnpm --dir extension build
+```
 
-## Export setup
-Create your own dedicated test directory and disposable JSON output file. In 导出, choose 包含目录 and optional 排除子树. `下载 JSON`, `下载 HTML`, `下载 Markdown` are manual downloads. For automatic JSON only, read the overwrite notice, check `我同意专用输出覆盖规则`, click `选择专用 JSON 文件`, then `授权并启用所选文件`. Browser picker/permission controls are browser-owned: record actual names and choice, never promise a permanent grant. External edits to this dedicated file are overwritten on next update; put notes elsewhere, consumers must read only. No directory-wide permission or other-file overwrite is intended. `刷新输出状态` reads durable status; command acknowledgement alone is not success. Use `重新授权并补写当前快照` after loss of permission, or `停止自动输出`. Unsupported picker/handle/IDB disables auto action honestly. Never expect updates while the browser is closed.
+1. 打开 `chrome://extensions` 或 `edge://extensions`。
+2. 开启“开发者模式”，点击“加载已解压的扩展”，选择仓库中的 **`extension/dist`**，不是整个仓库。
+3. 将智栏固定到工具栏，点击图标打开侧栏。默认是网页左侧浮层；在“外观”可切换为浏览器侧边栏。浏览器内部页面使用侧边栏。
+4. 无需模型即可浏览、管理、本地搜索和手动导出。需要 AI 时，再去“AI 服务”连接你已有的服务并分配模型。
 
-## Upgrade/uninstall
-Keep the same unpacked location and identity when testing reload/upgrade; verify the actual ID. Stop new tasks and automatic output first. Keep evidence/journals and copies of the authorized output outside the installation directory. Uninstall removes extension-local settings, remembered key, rules, handles, drafts and recovery records; reinstall does not recover them. Native bookmarks remain browser-owned and are not deliberately deleted by uninstall. Exported external files remain. Do not uninstall/clear extension storage as an unknown-operation recovery technique. See [recovery](recovery.md) before rollback.
+下载候选 ZIP 后，先解压到固定目录，再加载该目录；ZIP 内根目录应直接有 `manifest.json`。开发和验收使用独立配置及演示书签。
 
-## Candidate identity boundary
-The inventory's `sourceFiles` covers `extension/` excluding node_modules, dist and the generated release-candidate.json; it is not a repository-wide Git snapshot. `sourceInventoryHash` and `artifactInventoryHash` hash the JSON arrays of path/byte/SHA256 entries, not a ZIP. See task12 validation.md for exact paths, candidate-file hash and command logs. Documentation is outside that source inventory; do not treat its digest as a signature or provenance attestation.
+## 更新、卸载与故障
+
+源码更新后重新构建，在扩展管理页点击“重新加载”。测试升级时保持目录和扩展 ID 稳定，并先暂停新任务与自动输出。重新加载前未保存的临时密钥可能丢失。
+
+卸载会删除扩展本地设置、密钥、规则和恢复记录；不会由智栏主动删除原生书签和已导出的文件。**操作结果未知时，先看 [恢复说明](recovery.md)，不要卸载或清空存储。**
+
+扩展图标打不开时，检查是否加载了正确的 dist、查看扩展错误，并尝试浏览器侧边栏。快捷键冲突请到 `chrome://extensions/shortcuts` / `edge://extensions/shortcuts` 调整。
+
+开发验证命令见 [开发文档](../extension/README.md)，日常用法见 [简明手册](user-guide.md)。
+
+English: build with the commands above, open your browser's extension manager, enable Developer mode and load `extension/dist`. Pin the toolbar icon. Chrome/Edge 116+ is the declared minimum, not a complete compatibility claim. Local bookmark functions need no model. Rebuild and reload to update; keep the path/ID stable for upgrade tests. Preserve recovery records before clearing data or uninstalling.

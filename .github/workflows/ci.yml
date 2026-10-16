@@ -1,0 +1,33 @@
+name: CI
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  extension:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+      - run: pnpm --dir extension install --frozen-lockfile
+      - run: pnpm --dir extension lint
+      - run: pnpm --dir extension typecheck
+      - run: pnpm --dir extension test --maxWorkers=2
+      - run: pnpm --dir extension test:integration
+      - run: pnpm --dir extension build
+      - run: pnpm --dir extension release:source
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python tools/check-docs.py
+      - run: python tools/package-release.py --candidate
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zhilan-candidate
+          path: release/*.zip

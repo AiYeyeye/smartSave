@@ -4,6 +4,12 @@
 
 Chrome / Edge 的浏览器原生书签助手。点星标后自动归类，用本地规则减少等待；批量整理先预览、再确认，写入保留备份和回执。
 
+**源码公开，仅限非商业用途。** 自有代码采用 [PolyForm Noncommercial 1.0.0](LICENSE)，商用需另行书面授权；这不是 OSI 定义的开源许可。[许可说明](docs/licensing.md) · 维护者 Astraxine · [联系邮箱](mailto:mmgnosit@gmail.com)。
+
+[使用手册](docs/user-guide.md) · [安装说明](docs/install.md) · [演示视频](docs/media/zhilan-quick-tour.mp4) · [隐私政策](docs/privacy.md) · [商店上架资料](docs/store/README.md)
+
+![智栏书签目录（虚构演示数据）](docs/media/screenshots/01-bookmarks.png)
+
 ## 可以做什么
 
 - **收藏即归类**：优先使用已确认的网站规则和有把握的同域名归类，再调用你配置的 AI。超时保留原位，回执支持纠正和撤销；纠正后可单独确认网站规则。
@@ -37,7 +43,7 @@ pnpm --dir extension build
 - **地址栏输入 `zl`**，按 Tab 或空格，再输入关键词。选择候选打开书签，直接回车打开完整搜索页。
 - **智栏界面内 Ctrl+K**（Mac：⌘K）：回到搜索并聚焦输入框。
 
-语言入口位于快速设置和外观设置。中英切换正在分步接入：导航、外观、搜索、AI 服务配置与新手引导已支持英文，其他工作台仍在迁移。切换语言保留正在编辑的配置，不会翻译或修改你的书签标题、目录名与模型 ID。
+语言入口位于快速设置和外观设置，中英文覆盖导航、搜索、AI 服务和各工作台。切换语言保留正在编辑的配置，不会翻译或修改你的书签标题、目录名与模型 ID。
 
 ## 验证状态
 
@@ -46,6 +52,8 @@ pnpm --dir extension build
 人工标注的 200 条模型评测集尚未准备，因此没有宣称真实分类准确率、收藏三秒或五百条三分钟达标。发布人工门仍然开放；源码检查通过不代表可以发布。
 
 - [开发与测试命令](extension/README.md)
+- [参与贡献](CONTRIBUTING.md) · [问题反馈](SUPPORT.md) · [安全报告](SECURITY.md) · [社区规范](CODE_OF_CONDUCT.md)
+- [更新日志](CHANGELOG.md) · [第三方许可](docs/third-party-licenses.md) · [发布待办清单](docs/open-source-release.md)
 - [优化建议原文](docs/research/zhilan-optimization-plan-2026-10-14.md)
 - [执行进度与验收证据](.trellis/tasks/10-12-model-protocol-repair/optimization-progress.md)
 - [产品需求](docs/PRD-1.0.md) · [界面设计简报](docs/design-brief-2026-09-23.md)

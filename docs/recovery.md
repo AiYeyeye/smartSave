@@ -3,7 +3,7 @@
 Native bookmarks are authoritative. Backups, receipts and unknown outcomes are extension-local evidence, not a second bookmark library. Never delete logs, clear IndexedDB, uninstall or replay an old request to make an error disappear. Native multi-step calls are not atomic; a timeout is not proof of failure or success.
 
 ## Interrupted or partial operations
-Since 2026-09-22 the recovery panel (设置 → 导出与备份) opens with two plain sections: **撤销最近操作** lists finished batches you can preview and undo, **需要你处理** lists attempts whose outcome is unknown. Merge recovery, new-copy recovery, snapshot cleanup and the full per-step record list live under the collapsed **高级** section. The buttons below keep their names.
+Open 设置 → 导出与备份 and expand **备份与恢复记录**. The recovery panel has two sections: **撤销最近操作** lists finished batches you can preview and undo, **需要你处理** lists attempts whose outcome is unknown. Merge recovery, new-copy recovery, snapshot cleanup and the full per-step record list live under the collapsed **高级** section. The buttons below keep their names.
 
 1. Stop starting new tasks. `停止未发起步骤` stops only calls not yet issued, not calls already in progress.
 2. In 需要你处理, click `核对当前状态（不重放）`. Preserve request ID, timestamps, shown status, receipt count and sanitized screenshots. Inspect the browser bookmark manager without editing evidence away. `刷新恢复记录` rereads the journal at any time.

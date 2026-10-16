@@ -4,6 +4,12 @@ English · [简体中文](README.md)
 
 A Chrome / Edge extension for browser bookmarks. Classify new bookmarks when you use the browser's star, search locally, and review bulk changes before applying them.
 
+**Source available for noncommercial purposes.** Project-owned code uses [PolyForm Noncommercial 1.0.0](LICENSE); commercial use requires separate written authorization. This is not an OSI-approved open-source license. [License details](docs/licensing.md). Maintainer: Astraxine · [Contact](mailto:mmgnosit@gmail.com).
+
+[Quick guide](docs/user-guide.en.md) · [Install](docs/install.md) · [Demo video](docs/media/zhilan-quick-tour.mp4) · [Privacy](docs/privacy.en.md) · [Store publication kit](docs/store/README.md)
+
+![Zhilan bookmark workspace with synthetic demonstration data](docs/media/screenshots/01-bookmarks.png)
+
 ## Features
 
 - **Classify as you save.** Confirmed website rules and confident same-domain matches run locally before AI. A timeout leaves the bookmark where it is. Receipts offer correction and undo; saving a website rule requires separate confirmation.
@@ -37,7 +43,7 @@ The sidebar overlays the left edge of a webpage by default. Appearance settings 
 - Type **`zl`** in the address bar, press Tab or Space, then enter keywords. Select a suggestion to open a bookmark, or press Enter on the default item to open full search.
 - Within the extension, **Ctrl+K** (Mac: ⌘K) returns to search and focuses its input.
 
-The language selector is in quick settings and Appearance. English localization is in progress: navigation, appearance, search, AI service settings and onboarding are available; other workspaces are still being migrated. Switching languages preserves bookmark titles, folder names, model IDs and unsaved input.
+The language selector is in quick settings and Appearance. Chinese and English cover navigation, search, AI service settings and workspaces. Switching languages preserves bookmark titles, folder names, model IDs and unsaved input.
 
 ## Validation and release status
 
@@ -46,6 +52,8 @@ The project has unit/integration tests and isolated Chromium acceptance scripts 
 A manually labeled 200-bookmark evaluation set is still pending. There is no verified claim of model accuracy, a three-second median save time or organizing 500 bookmarks in three minutes. Manual release gates remain open; passing source checks does not make a release ready.
 
 - [Development and test commands](extension/README.md)
+- [Contributing](CONTRIBUTING.md) · [Support](SUPPORT.md) · [Security](SECURITY.md) · [Code of conduct](CODE_OF_CONDUCT.md)
+- [Changelog](CHANGELOG.md) · [Third-party licenses](docs/third-party-licenses.md) · [Release checklist](docs/open-source-release.md)
 - [Optimization plan (Chinese)](docs/research/zhilan-optimization-plan-2026-10-14.md)
 - [Implementation progress and evidence](.trellis/tasks/10-12-model-protocol-repair/optimization-progress.md)
 - [Product requirements (Chinese)](docs/PRD-1.0.md)

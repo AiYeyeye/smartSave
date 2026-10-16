@@ -1,0 +1,27 @@
+name: 问题反馈 / Bug report
+description: 描述可复现的问题；请勿附上密钥或私人书签
+body:
+  - type: input
+    id: version
+    attributes:
+      label: 扩展、系统与浏览器版本 / Versions
+      placeholder: "Zhilan 0.1.0 / Windows 11 / Chrome xxx"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤 / Steps to reproduce
+      description: 使用演示数据；不要粘贴密钥、真实收藏或模型请求正文。
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: 预期与实际结果 / Expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 已脱敏的截图或错误码 / Sanitized evidence

@@ -1,0 +1,62 @@
+"""Check release-document links, contact/license consistency and PNG dimensions."""
+import json
+from pathlib import Path
+import re
+import struct
+from urllib.parse import unquote, urlsplit
+
+ROOT = Path(__file__).resolve().parents[1]
+errors = []
+files = [ROOT / name for name in ['README.md', 'README.en.md', 'CONTRIBUTING.md', 'SECURITY.md',
+                                  'SUPPORT.md', 'CODE_OF_CONDUCT.md', 'CHANGELOG.md']]
+files += [path for path in (ROOT / 'docs').rglob('*.md') if 'research' not in path.parts]
+for path in files:
+    content = path.read_text(encoding='utf-8')
+    content = re.sub(r'```.*?```', '', content, flags=re.S)
+    for link in re.findall(r'\]\(([^)]+)\)', content):
+        link = link.strip().split(' "')[0].strip('<>')
+        parsed = urlsplit(link)
+        if parsed.scheme or parsed.netloc or not parsed.path:
+            continue
+        target = (path.parent / unquote(parsed.path)).resolve()
+        if not target.exists():
+            errors.append(f'{path.relative_to(ROOT)}: missing local target {link}')
+
+manifest = json.loads((ROOT / 'extension/public/manifest.json').read_text(encoding='utf-8'))
+package = json.loads((ROOT / 'extension/package.json').read_text(encoding='utf-8'))
+publisher = json.loads((ROOT / 'docs/store/publisher.json').read_text(encoding='utf-8'))
+if package.get('license') != 'PolyForm-Noncommercial-1.0.0':
+    errors.append('package license is not PolyForm-Noncommercial-1.0.0')
+if (ROOT / 'LICENSE').read_bytes() != (ROOT / 'extension/public/LICENSE.txt').read_bytes():
+    errors.append('Project and shipped licenses differ')
+for name in ['docs/privacy.md', 'docs/privacy.en.md', 'docs/privacy.html', 'SECURITY.md']:
+    text = (ROOT / name).read_text(encoding='utf-8')
+    if publisher['maintainerName'] not in text or publisher['publicContactEmail'] not in text:
+        errors.append(f'{name}: publisher/contact missing')
+
+
+def check_png(path, width, height):
+    if not path.exists():
+        errors.append(f'Missing image: {path.relative_to(ROOT)}')
+        return
+    data = path.read_bytes()
+    if data[:8] != b'\x89PNG\r\n\x1a\n' or struct.unpack('>II', data[16:24]) != (width, height):
+        errors.append(f'Unexpected image dimensions: {path.relative_to(ROOT)}')
+
+
+for size in [16, 32, 48, 128]:
+    value = manifest.get('icons', {}).get(str(size))
+    if not value:
+        errors.append(f'Manifest icon {size} missing')
+    else:
+        check_png(ROOT / 'extension/public' / value, size, size)
+for name in ['01-bookmarks', '02-search', '03-organize', '04-export', '05-privacy']:
+    check_png(ROOT / f'docs/media/screenshots/{name}.png', 1280, 800)
+check_png(ROOT / 'docs/media/store-tile-440x280.png', 440, 280)
+check_png(ROOT / 'docs/media/store-marquee-1400x560.png', 1400, 560)
+if not (ROOT / 'docs/media/zhilan-quick-tour.mp4').exists():
+    errors.append('Demo MP4 missing')
+if errors:
+    raise SystemExit('\n'.join(errors))
+print(f'PASS: {len(files)} document links, licenses, contact fields and media dimensions')
+print('Privacy-policy URL: ' + (publisher['privacyPolicyUrl'] or 'PENDING DEPLOYMENT (not a live URL)'))
