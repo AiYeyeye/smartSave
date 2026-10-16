@@ -112,6 +112,43 @@ with sync_playwright() as playwright:
         options.get_by_role('button', name='保存并继续', exact=True).click()
         options.get_by_role('heading', name='在网页侧栏试一次', exact=True).wait_for()
         options.screenshot(path=str(root / 'setup-trial.png'), full_page=True)
+        guide_geometry = []
+        language_page = context.new_page()
+        language_page.goto(f'chrome-extension://{extension_id}/options/index.html#appearance')
+        for language in ['zh-CN', 'en']:
+            language_page.locator('select[aria-label="语言"], select[aria-label="Language"]').select_option(language)
+            expect(options.get_by_role('list', name='试分类操作图解' if language == 'zh-CN' else 'Illustrated page-trial steps', exact=True)).to_be_visible()
+            for width in [320, 340, 480, 1024]:
+                options.set_viewport_size({'width': width, 'height': 900})
+                expect(options.locator('.ai-trial-guide [role="img"]')).to_have_count(4)
+                options.evaluate('()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))')
+                geometry = options.evaluate('''() => {
+                  const dialog=document.querySelector('.ai-svc-wizard');
+                  const body=document.querySelector('.ai-svc-wizard-body');
+                  const pictures=[...document.querySelectorAll('.ai-trial-illustration')];
+                  return {width:innerWidth,scroll:document.documentElement.scrollWidth,
+                    dialogWidth:dialog.getBoundingClientRect().width,dialogScroll:dialog.scrollWidth,
+                    bodyWidth:body.clientWidth,bodyScroll:body.scrollWidth,
+                    pictures:pictures.map(p=>({width:p.clientWidth,scroll:p.scrollWidth,
+                      height:p.clientHeight,scrollHeight:p.scrollHeight}))};
+                }''')
+                assert geometry['scroll'] <= width + 1 and geometry['dialogScroll'] <= geometry['dialogWidth'] + 1, geometry
+                assert geometry['bodyScroll'] <= geometry['bodyWidth'] + 1, geometry
+                assert all(p['scroll'] <= p['width'] + 1 and p['scrollHeight'] <= p['height'] + 1 for p in geometry['pictures']), geometry
+                assert options.locator('.ai-trial-guide button').count() == 0
+                options.locator('.ai-svc-wizard-body').evaluate('e=>{e.scrollTop=0}')
+                options.screenshot(path=str(root / f'setup-trial-guide-{language}-{width}.png'), full_page=True)
+                options.locator('.ai-svc-dialog').screenshot(path=str(root / f'setup-trial-guide-{language}-{width}-dialog.png'))
+                guide_geometry.append({'language':language,**geometry})
+                assert events == [], 'viewing illustrated instructions must not send a model request'
+        language_page.get_by_role('radio', name='Dark', exact=True).click()
+        options.set_viewport_size({'width':1024,'height':900})
+        expect(options.locator('.ai-svc-dialog')).to_have_css('background-color', 'rgb(23, 24, 28)')
+        options.screenshot(path=str(root / 'setup-trial-guide-en-dark.png'), full_page=True)
+        language_page.get_by_role('radio', name='Light', exact=True).click()
+        language_page.locator('select[aria-label="语言"], select[aria-label="Language"]').select_option('zh-CN')
+        language_page.close()
+        options.set_viewport_size({'width':1024,'height':900})
         options.get_by_role('button', name='完成，稍后试分类', exact=True).click()
         assert events == [], 'onboarding must not silently classify'
         services = worker.evaluate("async () => (await chrome.storage.local.get('aiServices')).aiServices")
@@ -194,6 +231,7 @@ with sync_playwright() as playwright:
             assert len(events) == 2
         result = {'status': 'PASS', 'browser': context.browser.version, 'evidence': str(root), 'widths': widths, 'motion': args.motion, 'language': args.language,
                   'requests': len(events), 'trialNativeTreeUnchanged': True, 'keywordNativeSaveMoveSearchDelete': args.keywords,
+                  'trialGuideGeometry': guide_geometry,
                   'productionWorkerSHA256': hashlib.sha256(production_worker).hexdigest(),
                   'scope': 'Fresh profile; production UI/HTML/CSS unchanged. Worker toolbar listener captured by a prelude; copied manifest grants loopback only. Local synthetic provider; no actual toolbar gesture or live-provider performance claim.'}
         (root / 'results.json').write_text(json.dumps(result, indent=2), encoding='utf-8')

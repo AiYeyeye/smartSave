@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { expect, it, vi } from 'vitest';
 import { recommendAssignments, recommendModels, SetupWizard } from '../options/ai-services/SetupWizard';
@@ -60,6 +60,14 @@ it('English onboarding retains model input and existing assignments across langu
   );
   expect(assigned.mock.calls[1]![0]).toHaveLength(4);
   expect(saved.mock.calls).toHaveLength(2);
+  const guide = screen.getByRole('list', { name: '试分类操作图解' });
+  expect(within(guide).getAllByRole('img')).toHaveLength(4);
+  expect(within(guide).queryByRole('button')).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('语言'), { target: { value: 'en' } });
+  expect(screen.getByRole('list', { name: 'Illustrated page-trial steps' })).toBe(guide);
+  expect(within(guide).getByText('Open sidebar settings')).toBeVisible();
+  expect(saved.mock.calls).toHaveLength(2);
+  expect(assigned.mock.calls).toHaveLength(2);
 });
 
 it('recommends a fast model for per-bookmark work and a stronger one for whole-tree work, never embeddings', () => {
@@ -169,6 +177,8 @@ it('onboards with one model, preserves existing assignments and provides an expl
     })),
   );
   expect(onClose).not.toHaveBeenCalled();
+  expect(screen.getByRole('list', { name: '试分类操作图解' })).toBeVisible();
+  expect(screen.getByText('遵循隐私设置；不读取正文，不会创建或移动书签。')).toBeVisible();
   await user.click(screen.getByRole('button', { name: '完成，稍后试分类' }));
   expect(onClose).toHaveBeenCalledOnce();
 });

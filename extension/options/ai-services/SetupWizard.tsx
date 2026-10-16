@@ -4,6 +4,7 @@ import { Check, Search, Sparkles, X, Zap } from 'lucide-react';
 import type { ConnectedService, FeatureAssignment } from './mock-data';
 import { Avatar } from './Avatar';
 import { DialogPortal } from './portal';
+import { TrialGuide } from './TrialGuide';
 
 /** Small / fast model ids: good for per-bookmark work that should feel instant and cost little. */
 const FAST = /(mini|flash|haiku|lite|nano|small|turbo|instant|air|8b|7b|3b|1\.5b)/i;
@@ -314,16 +315,7 @@ export function SetupWizard({
           </div>
         ) : step === 'trial' ? (
           <div className="ai-svc-dialog-body ai-svc-wizard-body">
-            <h3>{t('在网页侧栏试一次')}</h3>
-            <ol>
-              <li>{t('回到你想分类的网页，点击智栏图标打开侧栏。')}</li>
-              <li>{t('打开侧栏设置，选择「试分类当前网页」。')}</li>
-              <li>{t('检查网页标题和网址，再点击「发送并试分类」。')}</li>
-            </ol>
-            <p>
-              {t('使用「智能收藏」分配的模型，遵循现有隐私设置，不读取正文。试分类只显示建议，不会创建或移动书签。')}
-            </p>
-            <p>{t('若密钥只保留在当前设置页，请先在服务设置中启用「记住密钥」，才能在侧栏或后台使用。')}</p>
+            <TrialGuide />
             <footer className="ai-svc-dialog-foot">
               <button
                 type="button"
