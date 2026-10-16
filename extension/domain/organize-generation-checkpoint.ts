@@ -1,6 +1,11 @@
 import { serializeAiPayload } from './ai-payload';
 import { approvedOrganizeFolders, type OrganizeRequest } from './organize-batches';
-import { organizeCheckpointContext, organizeCheckpointSchema, type OrganizeCheckpoint } from './organize-checkpoint';
+import {
+  legacyOrganizeScopeDigest,
+  organizeCheckpointContext,
+  organizeCheckpointSchema,
+  type OrganizeCheckpoint,
+} from './organize-checkpoint';
 import { organizeProgressTiming } from './organize-progress';
 import {
   organizeCandidates,
@@ -8,6 +13,7 @@ import {
   organizeCompilation,
   organizePrivacy,
   organizeProposal,
+  scopeNodes,
   type OrganizeAction,
   type OrganizeProposal,
 } from './organize-proposal';
@@ -59,13 +65,14 @@ export async function exportOrganizeGeneration(
     installationId: baseline.installationId,
     root: baseline.nodes.find(node => node.ref.nativeId === run.request.rootId)!.ref,
     baseline,
-    ...(await organizeCheckpointContext({ ...run.context, tree: baseline }, run.request.rootId)),
+    ...(await organizeCheckpointContext({ ...run.context, tree: baseline }, run.request.rootId, run.bookmarkIds)),
     requiresCredential: run.requiresCredential ?? !!run.context.key,
     preference: run.preference,
     options: {
       batchSize: options.batchSize ?? 100,
       ...(options.cleanupEmpty === undefined ? {} : { cleanupEmpty: options.cleanupEmpty }),
       ...(options.allowRename === undefined ? {} : { allowRename: options.allowRename }),
+      ...(options.levels === undefined ? {} : { levels: options.levels }),
       ...(options.unfiledOnly === undefined ? {} : { unfiledOnly: options.unfiledOnly }),
       ...(options.protectedFolderIds === undefined ? {} : { protectedFolderIds: options.protectedFolderIds }),
       ...(options.rejectedSignatures === undefined ? {} : { rejectedSignatures: options.rejectedSignatures }),
@@ -130,10 +137,11 @@ export async function restoreOrganizeGeneration(
   if (!current.config) throw Error('model-unconfigured');
   if (value.requiresCredential && !current.key && !restoreOptions.allowMissingCredential)
     throw Error('organize-credential-required');
-  const digests = await organizeCheckpointContext(current, rootId);
+  const digests = await organizeCheckpointContext(current, rootId, value.bookmarkIds);
   if (
     value.installationId !== current.tree.installationId ||
-    value.scopeDigest !== digests.scopeDigest ||
+    (value.scopeDigest !== digests.scopeDigest &&
+      value.scopeDigest !== (await legacyOrganizeScopeDigest(current.tree, rootId))) ||
     value.settingsDigest !== digests.settingsDigest ||
     value.settingsRevision !== digests.settingsRevision
   )
@@ -146,13 +154,15 @@ export async function restoreOrganizeGeneration(
     organizePrivacy(current.tree, current.privacy, options.protectedFolderIds),
   );
   const nodes = new Map(current.tree.nodes.map(node => [node.ref.nativeId, node]));
-  const bookmarkIds = candidates.items
+  const currentBookmarkIds = candidates.items
     .map(item => item.id)
     .filter(
       id => nodes.get(id)?.ref.kind === 'bookmark' && (!options.unfiledOnly || nodes.get(id)?.parentId === rootId),
     );
-  if (bookmarkIds.length !== value.bookmarkIds.length || bookmarkIds.some(id => !value.bookmarkIds.includes(id)))
-    throw Error('stale-context');
+  // Bookmarks saved into the scope after the run started are left out of it; planned ones must all still be here.
+  const present = new Set(currentBookmarkIds);
+  if (value.bookmarkIds.some(id => !present.has(id))) throw Error('stale-context');
+  const bookmarkIds = value.bookmarkIds;
   const request: OrganizeRequest = {
     task: 'organize',
     stage: 'folders',
@@ -197,6 +207,16 @@ export async function restoreOrganizeGeneration(
         output.removeFolders?.length)
     )
       throw Error('invalid-organize-checkpoint');
+    // Rebuilding structural actions from a fresh tree must not silently add children to a reviewed move/merge.
+    const movedFolders = new Set([
+      ...output.merges.map(merge => merge.sourceId),
+      ...output.moves.filter(move => nodes.get(move.itemId)?.ref.kind === 'folder').map(move => move.itemId),
+    ]);
+    for (const sourceId of movedFolders) {
+      const original = new Set(scopeNodes(value.baseline, sourceId).map(node => node.ref.nativeId));
+      if (scopeNodes(current.tree, sourceId).some(node => !original.has(node.ref.nativeId)))
+        throw Error('stale-context');
+    }
     run.folderOutput = output;
     proposal = organizeProposal(current.tree, rootId, output, current.privacy, options);
     validateSelection(proposal, value.folderPlan);

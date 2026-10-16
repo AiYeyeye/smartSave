@@ -79,7 +79,7 @@ with sync_playwright() as playwright:
         search = opened.value
         expect(search.get_by_role('searchbox')).to_have_value('cqdx')
         expect(search.get_by_role('searchbox')).to_be_focused()
-        expect(search.locator('.search-hit-list button')).to_have_count(1)
+        expect(search.locator('.search-hit-list .search-hit-open')).to_have_count(1)
         search.wait_for_url('**/index.html#browse')
         assert 'cqdx' not in search.url
         search.get_by_role('button', name='外观', exact=True).click()
@@ -99,7 +99,7 @@ with sync_playwright() as playwright:
             worker.evaluate("""text=>__searchEvents.entered[0](text,'newForegroundTab')""", suggestions[0]['content'])
         stale = opened.value
         expect(stale.get_by_role('searchbox')).to_have_value('cqdx')
-        expect(stale.locator('.search-hit-list button')).to_have_count(0)
+        expect(stale.locator('.search-hit-list .search-hit-open')).to_have_count(0)
         with context.expect_page() as opened:
             worker.evaluate("""()=>__searchEvents.command.forEach(listener=>listener('search-bookmarks'))""")
         command = opened.value

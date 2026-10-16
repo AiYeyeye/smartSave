@@ -23,7 +23,7 @@ import { modelOutputTokenLimit, modelStreaming } from '../domain/model-route';
 import { organizeProgressPreview } from '../domain/organize-progress';
 import { organizePreference, type OrganizePreference } from '../domain/organize-preferences';
 import { defaultOrganizeScope, organizeRejectionKey } from '../domain/organize-review';
-import { DEFAULT_CLASSIFICATION_POLICY } from '../domain/classification-policy';
+import { organizePolicy, PLAN_FEEDBACK } from '../domain/classification-policy';
 import { dependencyDigest, settingsIdentity } from '../domain/context-dependencies';
 import type { TreeSnapshot, TreeState } from '../domain/node-reference';
 import {
@@ -46,8 +46,17 @@ import { openOrganizerLease, type OpenOrganizerLease, type OrganizerLease } from
 import type { OrganizeState, GenerationOptions, StagedRun } from '../domain/organize-state';
 export type { OrganizeState } from '../domain/organize-state';
 /** The organize scope is the selected root and every descendant; changes elsewhere in the tree are not this task's concern. */
-const scopeDependencies = (tree: TreeSnapshot, rootId: string) =>
-  dependencyDigest(tree, { task: 'organize', rootId, itemIds: [], folderIds: [] });
+/**
+ * Staged AI runs depend on the scope's folders plus the bookmarks they organize, so a bookmark saved into the scope
+ * meanwhile does not void them. Duplicate scans (no bookmark list) depend on every node in scope.
+ */
+const scopeDependencies = (tree: TreeSnapshot, rootId: string, bookmarkIds?: string[]) =>
+  dependencyDigest(tree, {
+    task: 'organize',
+    rootId,
+    folderIds: [],
+    ...(bookmarkIds ? { stage: 'bookmarks' as const, itemIds: bookmarkIds } : { itemIds: [] }),
+  });
 const PREPARE_TIMEOUT_MS = 10_000;
 export class OrganizeController {
   private state: OrganizeState = {
@@ -70,6 +79,7 @@ export class OrganizeController {
   private scanTree?: Extract<TreeState, { status: 'ready' }>['snapshot'];
   /** Scope digest recorded when the retained baseline (scan or proposal) was taken. */
   private scopeDigest?: string;
+  private scopeBookmarks?: string[];
   private operation?: { generation: number; controller: AbortController; timer: ReturnType<typeof setTimeout> };
   private reviewing = false;
   private staged?: StagedRun;
@@ -191,7 +201,7 @@ export class OrganizeController {
       !this.state.invalid &&
       (this.state.proposal || this.scanTree) &&
       this.scopeDigest !== undefined &&
-      scopeDependencies(tree.snapshot, this.state.scopeId) !== this.scopeDigest
+      scopeDependencies(tree.snapshot, this.state.scopeId, this.scopeBookmarks) !== this.scopeDigest
     )
       this.invalidate(undefined, 'scope-tree-changed');
     this.publish();
@@ -271,6 +281,7 @@ export class OrganizeController {
     try {
       this.scanTree = structuredClone(this.state.tree.snapshot);
       this.state.duplicates = duplicateGroups(this.scanTree, this.state.scopeId);
+      this.scopeBookmarks = undefined;
       this.scopeDigest = scopeDependencies(this.scanTree, this.state.scopeId);
       this.state.choices = {};
       this.state.proposal = undefined;
@@ -451,75 +462,93 @@ export class OrganizeController {
       this.state.message = `AI 正在分析 ${candidates.items.length} 项内容，生成整理方案…`;
       phase = '模型生成';
       this.publish();
-      const result = options.unfiledOnly
-        ? { status: 'completed' as const, output: { moves: [], newFolders: [], merges: [] } }
-        : await cancellable(
-            this.model.run({
-              diagnosticRunId: this.runId,
-              ...context,
-              config: context.config,
-              signal: operation.controller.signal,
-              timeoutMs,
-              policy: { ...DEFAULT_CLASSIFICATION_POLICY, allowRename: options.allowRename ?? true },
-              onProgress: progress => {
-                if (generation !== this.generation || operation.controller.signal.aborted) return;
-                const preview =
-                  progress.phase === 'validating'
-                    ? (this.state.progress?.preview ?? [])
-                    : organizeProgressPreview(
-                        progress.text,
-                        options.staged
-                          ? JSON.parse(serializeAiPayload(context.tree, context.privacy, request))
-                          : candidates,
-                      );
-                this.state.progress = {
-                  phase: progress.phase,
-                  streaming: progress.streaming,
-                  receivedChars: progress.receivedChars,
-                  preview,
-                  timeoutSeconds: Math.ceil(timeoutMs / 1000),
-                  bookmarkCount,
-                  outputTokenLimit,
-                };
-                this.state.message = progress.retry
-                  ? `服务繁忙，${progress.retry.delaySeconds} 秒后重试（${progress.retry.attempt}/3），可随时取消。`
-                  : progress.phase === 'validating'
-                    ? '正在校验返回的整理内容…'
-                    : progress.receivedChars > 0
-                      ? '正在接收 AI 整理建议…'
-                      : progress.phase === 'receiving'
-                        ? '模型服务已响应，正在生成整理建议…'
-                        : '正在等待 AI 返回整理建议…';
-                this.publish();
-              },
-              request,
-            }),
-            operation.controller.signal,
+      const config = context.config;
+      const model = this.model;
+      const runModel = async (retryFeedback?: string) =>
+        options.unfiledOnly
+          ? { status: 'completed' as const, output: { moves: [], newFolders: [], merges: [] } }
+          : await cancellable(
+              model!.run({
+                diagnosticRunId: this.runId,
+                ...context,
+                config,
+                signal: operation.controller.signal,
+                timeoutMs,
+                policy: { ...organizePolicy(options), ...(retryFeedback ? { retryFeedback } : {}) },
+                onProgress: progress => {
+                  if (generation !== this.generation || operation.controller.signal.aborted) return;
+                  const preview =
+                    progress.phase === 'validating'
+                      ? (this.state.progress?.preview ?? [])
+                      : organizeProgressPreview(
+                          progress.text,
+                          options.staged
+                            ? JSON.parse(serializeAiPayload(context.tree, context.privacy, request))
+                            : candidates,
+                        );
+                  this.state.progress = {
+                    phase: progress.phase,
+                    streaming: progress.streaming,
+                    receivedChars: progress.receivedChars,
+                    preview,
+                    timeoutSeconds: Math.ceil(timeoutMs / 1000),
+                    bookmarkCount,
+                    outputTokenLimit,
+                  };
+                  this.state.message = progress.retry
+                    ? `服务繁忙，${progress.retry.delaySeconds} 秒后重试（${progress.retry.attempt}/3），可随时取消。`
+                    : progress.phase === 'validating'
+                      ? '正在校验返回的整理内容…'
+                      : progress.receivedChars > 0
+                        ? '正在接收 AI 整理建议…'
+                        : progress.phase === 'receiving'
+                          ? '模型服务已响应，正在生成整理建议…'
+                          : '正在等待 AI 返回整理建议…';
+                  this.publish();
+                },
+                request,
+              }),
+              operation.controller.signal,
+            );
+      let result = await runModel();
+      let proposal: ReturnType<typeof organizeProposal>;
+      // One correction round: a locally rejected plan goes back to the model with the reason, never more than once.
+      for (let attempt = 0; ; attempt++) {
+        if (generation !== this.generation) throw Error('stale');
+        if (result.status !== 'completed') throw Error(result.detail ?? result.reason ?? 'model-failed');
+        phase = '方案校验';
+        try {
+          if (options.staged) {
+            const output = parseModelOutput(result.output, {
+              ...JSON.parse(serializeAiPayload(context.tree, context.privacy, request)),
+              rootId,
+            });
+            if (!('moves' in output)) throw Error('invalid-organize-stage');
+            this.staged!.folderOutput = output;
+          }
+          proposal = organizeProposal(
+            context.tree,
+            rootId,
+            result.output,
+            context.privacy,
+            options.staged ? { ...options, cleanupEmpty: options.cleanupEmpty === false ? false : undefined } : options,
           );
-      if (generation !== this.generation) throw Error('stale');
-      if (result.status !== 'completed') throw Error(result.detail ?? result.reason ?? 'model-failed');
-      phase = '方案校验';
-      if (options.staged) {
-        const output = parseModelOutput(result.output, {
-          ...JSON.parse(serializeAiPayload(context.tree, context.privacy, request)),
-          rootId,
-        });
-        if (!('moves' in output)) throw Error('invalid-organize-stage');
-        this.staged!.folderOutput = output;
+          break;
+        } catch (error) {
+          const code = error instanceof Error ? error.message : '';
+          if (attempt > 0 || options.unfiledOnly || !Object.hasOwn(PLAN_FEEDBACK, code)) throw error;
+          this.record('plan-correction', { code });
+          phase = '模型生成';
+          this.state.message = '方案有冲突，正在让 AI 修正一次…';
+          this.publish();
+          result = await runModel(PLAN_FEEDBACK[code]);
+        }
       }
       this.scanTree = undefined;
       this.state.duplicates = [];
-      this.scopeDigest = scopeDependencies(context.tree, rootId);
-      this.accept(
-        organizeProposal(
-          context.tree,
-          rootId,
-          result.output,
-          context.privacy,
-          options.staged ? { ...options, cleanupEmpty: options.cleanupEmpty === false ? false : undefined } : options,
-        ),
-        options.rejectedSignatures,
-      );
+      this.scopeBookmarks = options.staged ? this.staged?.bookmarkIds : undefined;
+      this.scopeDigest = scopeDependencies(context.tree, rootId, this.scopeBookmarks);
+      this.accept(proposal, options.rejectedSignatures);
       if (this.state.pipeline) {
         this.state.pipeline = { ...this.state.pipeline, status: 'review' };
         this.state.message = options.unfiledOnly
@@ -719,7 +748,7 @@ export class OrganizeController {
         const current = await cancellable(this.authority!.read(), operation.controller.signal);
         if (run.requiresCredential && !current.key) throw Error('organize-credential-required');
         if (
-          scopeDependencies(current.tree, run.request.rootId) !== this.scopeDigest ||
+          scopeDependencies(current.tree, run.request.rootId, this.scopeBookmarks) !== this.scopeDigest ||
           current.tree.installationId !== run.context.tree.installationId ||
           settingsIdentity(current) !== settingsIdentity(run.context) ||
           current.key !== run.context.key
@@ -913,7 +942,7 @@ export class OrganizeController {
       if (
         generation !== this.generation ||
         this.state.tree.status !== 'ready' ||
-        scopeDependencies(this.state.tree.snapshot, this.state.scopeId) !== this.scopeDigest
+        scopeDependencies(this.state.tree.snapshot, this.state.scopeId, this.scopeBookmarks) !== this.scopeDigest
       )
         throw Error('stale');
       this.accept(duplicateProposal(tree, this.state.scopeId, this.state.choices, true));
@@ -959,8 +988,8 @@ export class OrganizeController {
       const latest = await cancellable(this.authority.read(), operation.controller.signal);
       if (
         latest.tree.installationId !== context.tree.installationId ||
-        scopeDependencies(latest.tree, restored.state.scopeId) !==
-          scopeDependencies(context.tree, restored.state.scopeId) ||
+        scopeDependencies(latest.tree, restored.state.scopeId, restored.run.bookmarkIds) !==
+          scopeDependencies(context.tree, restored.state.scopeId, restored.run.bookmarkIds) ||
         settingsIdentity(latest) !== settingsIdentity(context) ||
         latest.revision !== context.revision ||
         latest.key !== context.key
@@ -970,7 +999,8 @@ export class OrganizeController {
       this.state = restored.state;
       this.staged = restored.run;
       this.scopeInitialized = true;
-      this.scopeDigest = scopeDependencies(context.tree, this.state.scopeId);
+      this.scopeBookmarks = this.staged?.bookmarkIds;
+      this.scopeDigest = scopeDependencies(context.tree, this.state.scopeId, this.scopeBookmarks);
       this.retainReview();
     } catch (error) {
       this.state.invalid = true;

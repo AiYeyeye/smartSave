@@ -50,6 +50,7 @@ export function organizeClientRuntime() {
   };
   const sender = { id: 'extension', url: 'chrome-extension://extension/options/index.html' };
   const log: Record<string, unknown>[] = [];
+  let dropConfirmationReply = false;
   const ports: chrome.runtime.Port[] = [];
   const runtime = {
     id: 'extension',
@@ -95,7 +96,8 @@ export function organizeClientRuntime() {
     },
     sendMessage(input: Record<string, unknown>, reply: (value: unknown) => void) {
       log.push(structuredClone(input));
-      queueMicrotask(() => messages.emit(input, sender, reply));
+      const respond = input.type === 'confirmMutation' && dropConfirmationReply ? () => {} : reply;
+      queueMicrotask(() => messages.emit(input, sender, respond));
     },
   };
   vi.stubGlobal('chrome', {
@@ -185,6 +187,9 @@ export function organizeClientRuntime() {
     tree,
     move,
     log,
+    dropConfirmationReply: () => {
+      dropConfirmationReply = true;
+    },
     ports,
     forgetKey: () => {
       key = '';

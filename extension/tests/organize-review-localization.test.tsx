@@ -184,7 +184,7 @@ it('distinguishes a literal destination named like the deletion label from remov
   );
   expect(screen.getByText('→ 删除重复书签 · Bookmarks: 1')).toBeVisible();
   expect(screen.getByText('→ Delete duplicate bookmarks · Bookmarks: 1')).toBeVisible();
-  expect(screen.getByText('Split across 2 destinations', { exact: false })).toBeVisible();
+  expect(screen.queryByText('Split across 2 destinations', { exact: false })).toBeNull();
   fireEvent.click(screen.getByText('→ 删除重复书签 · Bookmarks: 1'));
   expect(screen.getByText('新增', { exact: true })).toBeVisible();
   switchLanguage('zh-CN');

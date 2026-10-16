@@ -556,7 +556,7 @@ it('bookmark rows use the browser favicon URL and fall back locally on error', a
     expect(node).not.toBeNull();
     return node as HTMLImageElement;
   });
-  expect(image).toHaveAttribute('src', 'chrome-extension://i/_favicon/?pageUrl=https%3A%2F%2Fexample.test%2F&size=16');
+  expect(image).toHaveAttribute('src', 'chrome-extension://i/_favicon/?pageUrl=https%3A%2F%2Fexample.test%2F&size=32');
   expect(image).toHaveAttribute('alt', '');
   fireEvent.error(image);
   expect(container.querySelector('img.bookmark-favicon')).toBeNull();

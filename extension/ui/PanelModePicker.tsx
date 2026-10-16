@@ -41,7 +41,6 @@ export function PanelModePicker() {
           </label>
         ))}
       </div>
-      <p className="hint">{t('浏览器内置页面（如新标签页、设置页）无法放浮层，会自动改用浏览器侧边栏。')}</p>
     </fieldset>
   );
 }

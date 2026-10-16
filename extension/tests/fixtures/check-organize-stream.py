@@ -50,8 +50,7 @@ with sync_playwright() as p:
             finish()
             confirm = page.get_by_role('button', name='确认分类，开始分批整理书签', exact=True)
             expect(confirm).to_be_enabled()
-            expect(page.get_by_role('list', name='整理后分类树', exact=True)).not_to_be_visible()
-            page.get_by_text('完整分类树与内容去向', exact=True).click()
+            expect(page.get_by_role('list', name='整理后分类树', exact=True)).to_be_visible()
             expect(page.get_by_role('list', name='整理后分类树', exact=True)).to_contain_text('写作工具')
             assert count() == 1
             first = page.evaluate('JSON.parse(globalThis.__visualSearchRequests[0].input)')
@@ -60,7 +59,7 @@ with sync_playwright() as p:
             assert page.evaluate('globalThis.__visualSubmitted.length') == 0
             adjustments = page.get_by_role('region', name='详细调整方案', exact=True)
             expect(adjustments).to_be_visible()
-            assert adjustments.evaluate('e => parseFloat(getComputedStyle(e).borderTopWidth) >= 2')
+            assert page.get_by_text('完整分类树与内容去向', exact=True).evaluate('e => parseFloat(getComputedStyle(e).fontSize) >= 17')
             reason = adjustments.locator('.organize-reason').first
             reject = reason.get_by_role('button', name='不再建议', exact=True)
             expect(reject).to_be_visible()

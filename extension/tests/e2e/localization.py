@@ -38,7 +38,7 @@ with sync_playwright() as playwright:
         page.goto(f'chrome-extension://{extension_id}/options/index.html#browse')
         expect(page.get_by_role('searchbox', name='Search bookmarks')).to_be_visible()
         page.get_by_role('searchbox').fill('搜索书签')
-        expect(page.locator('.search-hit-list button')).to_have_text(['搜索书签'])
+        expect(page.locator('.search-hit-list .search-hit-open')).to_have_text(['搜索书签'])
         page.locator('summary', has_text='Search shortcuts').click()
         expect(page.get_by_text('Press Alt+Shift+K to open search.', exact=False)).to_contain_text('zl')
         # Exercise the real storage.sync boundary without signing in or sending fixture data to a cloud account.
@@ -63,7 +63,7 @@ with sync_playwright() as playwright:
                 target.screenshot(path=str(root / f'{name}-{width}.png'), full_page=True)
         preferences.get_by_label('Language', exact=True).select_option('zh-CN')
         expect(page.get_by_role('searchbox', name='搜索书签')).to_have_value('搜索书签')
-        expect(page.locator('.search-hit-list button')).to_have_text(['搜索书签'])
+        expect(page.locator('.search-hit-list .search-hit-open')).to_have_text(['搜索书签'])
         page.reload()
         expect(page.get_by_role('searchbox', name='搜索书签')).to_be_visible()
         # A forged embedded panel must show localized recovery instructions without mounting App.

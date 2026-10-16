@@ -62,7 +62,15 @@ export function dependencyIds(tree: TreeSnapshot, request: AiRequest): string[] 
     case 'organize': {
       ids.add(request.rootId);
       const nodes = new Map(tree.nodes.map(n => [n.ref.nativeId, n]));
-      for (const node of tree.nodes) if (descends(nodes, node, request.rootId)) ids.add(node.ref.nativeId);
+      // Staged runs only depend on what they send: the folder taxonomy, plus the batch's own bookmarks. A bookmark
+      // saved or moved elsewhere in the scope meanwhile must not void a long model call or a plan under review.
+      const items = new Set(request.stage === 'bookmarks' ? request.itemIds : []);
+      for (const node of tree.nodes)
+        if (
+          descends(nodes, node, request.rootId) &&
+          (!request.stage || node.ref.kind === 'folder' || items.has(node.ref.nativeId))
+        )
+          ids.add(node.ref.nativeId);
       break;
     }
     default:

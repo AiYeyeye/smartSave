@@ -7,7 +7,7 @@ import { BookmarkFavicon } from '../ui/BookmarkFavicon';
 it('uses the privacy-safe browser favicon URL for http(s) only', () => {
   const getURL = vi.fn((path: string) => `chrome-extension://ext${path}`);
   const src = bookmarkFaviconUrl('https://store.steampowered.com/app/1', { getURL });
-  expect(src).toBe('chrome-extension://ext/_favicon/?pageUrl=https%3A%2F%2Fstore.steampowered.com%2Fapp%2F1&size=16');
+  expect(src).toBe('chrome-extension://ext/_favicon/?pageUrl=https%3A%2F%2Fstore.steampowered.com%2Fapp%2F1&size=32');
   expect(bookmarkFaviconUrl('javascript:alert(1)', { getURL })).toBeUndefined();
   expect(bookmarkFaviconUrl('https://zhihu.com/', { getURL: undefined as never })).toBeUndefined();
   expect(src).not.toMatch(/google|gstatic|favicon\.ico/i);

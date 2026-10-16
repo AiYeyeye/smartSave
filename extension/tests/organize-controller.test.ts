@@ -232,19 +232,20 @@ it('correlates generation with its lease and cancels a pending folder call on di
 });
 it('labels local plan conflicts separately and never shows raw unknown exception text', async () => {
   const h = setup();
-  h.model.run.mockResolvedValueOnce({
-    status: 'completed',
-    output: {
-      newFolders: [],
-      merges: [{ sourceId: 'left', targetId: 'right' }],
-      moves: [{ itemId: 'a', folderId: 'right' }],
-    },
-  });
+  const unsafe = {
+    status: 'completed' as const,
+    output: { newFolders: [], merges: [], moves: [], removeFolders: [{ folderId: 'left' }] },
+  };
+  // The one correction round repeats the same mistake, so the plan is still rejected.
+  h.model.run.mockResolvedValueOnce(unsafe).mockResolvedValueOnce(unsafe);
   await h.controller.generate();
-  expect(h.state().failure).toMatchObject({ code: 'overlapping-merge', phase: '方案校验' });
-  expect(h.state().message).toContain('操作存在冲突');
+  expect(h.model.run).toHaveBeenCalledTimes(2);
+  expect(h.state().failure).toMatchObject({ code: 'unsafe-folder-removal', phase: '方案校验' });
+  expect(h.state().message).toContain('仍有内容');
+  h.model.run.mockClear();
   h.model.run.mockRejectedValueOnce(Error('secret provider body'));
   await h.controller.generate();
+  expect(h.model.run).toHaveBeenCalledTimes(1);
   expect(h.state().failure?.code).toBe('unknown-error');
   expect(h.state().message).not.toContain('secret');
   expect(h.send).not.toHaveBeenCalled();
@@ -633,4 +634,24 @@ it('a local scan baseline follows the same scope rule for duplicate previews', a
   expect(h.state().invalid).toBe(true);
   await h.controller.apply();
   expect(h.send).not.toHaveBeenCalled();
+});
+
+it('sends a locally rejected plan back once with the reason and accepts the corrected answer', async () => {
+  const h = setup();
+  h.model.run
+    .mockResolvedValueOnce({
+      status: 'completed',
+      output: { newFolders: [], merges: [], moves: [], removeFolders: [{ folderId: 'left' }] },
+    })
+    .mockResolvedValueOnce({
+      status: 'completed',
+      output: { newFolders: [], merges: [], moves: [{ itemId: 'a', folderId: 'right' }] },
+    });
+  await h.controller.generate();
+  expect(h.model.run).toHaveBeenCalledTimes(2);
+  expect(h.model.run.mock.calls[0]![0].policy?.retryFeedback).toBeUndefined();
+  expect(h.model.run.mock.calls[1]![0].policy?.retryFeedback).toContain('removeFolders');
+  expect(h.state().failure).toBeUndefined();
+  expect(h.state().proposal?.actions).toEqual([expect.objectContaining({ kind: 'move', sourceId: 'a' })]);
+  h.controller.dispose();
 });

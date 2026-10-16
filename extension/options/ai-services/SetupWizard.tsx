@@ -79,16 +79,12 @@ export function SetupWizard({
   const { t, message } = useI18n();
   const [step, setStep] = useState<Step>(onboarding ? 'quick' : initialStep);
   const [catalog, setCatalog] = useState(service.catalog);
-  const [enabled, setEnabled] = useState<string[]>(() =>
-    service.enabled.length ? service.enabled : recommendModels(service.catalog.map(m => m.id)).picked,
-  );
+  const [enabled, setEnabled] = useState<string[]>(() => [...service.enabled]);
   const [query, setQuery] = useState('');
   const [customId, setCustomId] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [quickModel, setQuickModel] = useState(
-    () => service.enabled.find(id => !NOT_CHAT.test(id)) ?? service.catalog.find(m => !NOT_CHAT.test(m.id))?.id ?? '',
-  );
+  const [quickModel, setQuickModel] = useState('');
   const rec = useMemo(() => recommendModels(catalog.map(m => m.id)), [catalog]);
   const [choice, setChoice] = useState<Record<string, string>>(() =>
     recommendAssignments(features, service.id, enabled),
@@ -203,11 +199,6 @@ export function SetupWizard({
           <Avatar letter={service.letter} avatarClass={service.avatarClass} size="lg" />
           <div>
             <h2 id="ai-wizard-title">{t('设置 {service}', { service: service.name })}</h2>
-            <p>
-              {onboarding
-                ? t('连接已有服务，选择模型，再用当前网页试分类。也可以稍后继续。')
-                : t('选择模型，再决定每个功能用哪个。可以跳过，之后在「AI 服务」里改。')}
-            </p>
           </div>
           <button
             type="button"
@@ -268,28 +259,49 @@ export function SetupWizard({
 
         {step === 'quick' ? (
           <div className="ai-svc-dialog-body ai-svc-wizard-body">
+            <div className="ai-svc-mini-search">
+              <Search aria-hidden="true" />
+              <input
+                type="search"
+                aria-label={t('搜索模型')}
+                placeholder={t('在 {count} 个模型中搜索…', { count: catalog.length })}
+                value={query}
+                onChange={event => setQuery(event.target.value)}
+              />
+            </div>
+            <ul className="ai-svc-wizard-models" aria-label={t('可选模型')}>
+              {visible.map(model => (
+                <li key={model.id}>
+                  <label className={quickModel === model.id ? 'is-on' : undefined}>
+                    <input
+                      type="radio"
+                      name="onboarding-model"
+                      aria-label={model.id}
+                      checked={quickModel === model.id}
+                      disabled={busy || NOT_CHAT.test(model.id)}
+                      onChange={() => setQuickModel(model.id)}
+                    />
+                    <span className="ai-svc-mid">{model.id}</span>
+                    {NOT_CHAT.test(model.id) && <em className="tag is-muted">{t('非对话')}</em>}
+                    <span className="ai-svc-ctx">{message(model.ctx)}</span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+            {!catalog.length && <p>{t('没有拿到模型列表。可以在下方手动输入模型 ID。')}</p>}
             <div className="ai-svc-field">
               <label htmlFor="ai-setup-model">{t('使用哪个模型')}</label>
               <input
                 id="ai-setup-model"
-                list="ai-setup-models"
                 value={quickModel}
+                placeholder={t('不在列表里？输入模型 ID 添加')}
                 onChange={event => setQuickModel(event.target.value)}
                 autoComplete="off"
                 spellCheck={false}
               />
-              <datalist id="ai-setup-models">
-                {catalog
-                  .filter(model => !NOT_CHAT.test(model.id))
-                  .map(model => (
-                    <option key={model.id} value={model.id} />
-                  ))}
-              </datalist>
             </div>
-            <p>{t('可选择列表中的模型，或填写你已有服务提供的模型 ID。将用于尚未配置的功能，保留现有分配。')}</p>
             <details>
               <summary>{t('高级：多模型与功能分配')}</summary>
-              <p>{t('需要不同功能使用不同模型时，可逐项设置。名称提示仅作参考，尚未进行准确率和速度排名。')}</p>
               <button
                 type="button"
                 className="ai-svc-act ai-svc-act-ghost"

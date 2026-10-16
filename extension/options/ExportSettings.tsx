@@ -252,11 +252,10 @@ export function ExportSettings({ visible }: { visible: boolean }) {
   return (
     <section hidden={!visible} className="surface workflow-workbench" aria-label={t('导出设置')} aria-busy={busy}>
       <h2>{t('导出书签')}</h2>
-      <p>{t('选好内容和格式，即可保存到电脑。')}</p>
       <WorkflowSteps labels={[t('选择内容'), t('选择格式'), t('确认导出')]} current={step} />
       <div hidden={step !== 1} className="workflow-stage">
         <h3>{t('选择要导出的内容')}</h3>
-        <p className="hint">{t('勾选文件夹可选中其中全部内容；展开后也能单独勾选书签。')}</p>
+
         {tree.status === 'loading' && <p role="status">{t('正在读取书签…')}</p>}
         {tree.status === 'error' && <p role="alert">{translateMessage(tree.message)}</p>}
         {snapshot && <ExportTreeSelector tree={snapshot} scope={scope} disabled={busy} onChange={setScope} />}
@@ -312,7 +311,7 @@ export function ExportSettings({ visible }: { visible: boolean }) {
         <p className="workflow-summary">
           {t('{bookmarks} 条书签 · {folders} 个目录 · {format} 格式', { ...selection, format })}
         </p>
-        <p className="hint">{t('保留目录层级和原始链接。点击下载后，在浏览器下载记录中查看文件。')}</p>
+
         <div className="workflow-footer">
           <button disabled={busy} onClick={() => setStep(2)}>
             {t('上一步')}
@@ -323,19 +322,13 @@ export function ExportSettings({ visible }: { visible: boolean }) {
         </div>
       </div>
       {scopeError && !!scope.roots.length && <p role="alert">{translateMessage(scopeError)}</p>}
-      <p role="status">
-        {message === undefined
-          ? t(
-              step === 1
-                ? '勾选要导出的文件夹或书签，再点击下一步。'
-                : step === 2
-                  ? '选择导出格式'
-                  : '确认所选内容和格式后，点击下载。',
-            )
-          : typeof message === 'string'
+      {message !== undefined && (
+        <p role="status">
+          {typeof message === 'string'
             ? translateMessage(message)
             : t('已发起 {format} 下载；请在浏览器下载记录中确认完成。', message)}
-      </p>
+        </p>
+      )}
       <details className="workflow-help">
         <summary>{t('导出内容说明')}</summary>
         <p>

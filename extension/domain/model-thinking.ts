@@ -1,6 +1,19 @@
 import type { ModelConfig } from './model-route';
 
-/** Verified provider/model capabilities only. An OpenAI-shaped gateway is not evidence of a capability. */
+const openaiEffort = (adapter: ModelConfig['adapter'], effort: string) => ({
+  key: `openai-${effort}`,
+  fields: ['reasoning_effort', 'reasoning'],
+  top: adapter === 'openai-responses' ? { reasoning: { effort } } : { reasoning_effort: effort },
+  generation: {},
+});
+/** OpenAI reasoning families, also when a gateway serves them under a vendor prefix (e.g. openai/gpt-5.2). */
+const OPENAI_REASONING_MODEL = /^(?:[\w.-]+\/)*(?:gpt-5|o[134])(?:[.-]|$)/i;
+
+/**
+ * Verified provider/model capabilities first. Other OpenAI-protocol endpoints serving an OpenAI reasoning model get a
+ * low effort: bookmark classification needs little thinking, and its tokens count against the output limit. A gateway
+ * that rejects the field is replayed once without it and remembered for a day (rejectsThinkingParameter).
+ */
 export function modelThinkingPlan(config: ModelConfig) {
   if (config.fastMode === false) return undefined;
   let host: string;
@@ -19,13 +32,7 @@ export function modelThinkingPlan(config: ModelConfig) {
           : config.model === 'gpt-5.1'
             ? 'none'
             : undefined;
-    if (!effort) return undefined;
-    return {
-      key: `openai-${effort}`,
-      fields: ['reasoning_effort', 'reasoning'],
-      top: config.adapter === 'openai-responses' ? { reasoning: { effort } } : { reasoning_effort: effort },
-      generation: {},
-    };
+    if (effort) return openaiEffort(config.adapter, effort);
   }
   if (host === 'generativelanguage.googleapis.com' && config.adapter === 'google-generative-ai') {
     const model = config.model.replace(/^models\//, '');
@@ -70,6 +77,7 @@ export function modelThinkingPlan(config: ModelConfig) {
       generation: {},
     };
   }
+  if (openai && OPENAI_REASONING_MODEL.test(config.model)) return openaiEffort(config.adapter, 'low');
   return undefined;
 }
 

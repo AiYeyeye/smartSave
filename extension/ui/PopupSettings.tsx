@@ -1,4 +1,4 @@
-import { Archive, ChevronRight, Palette, ScrollText, Shield, Sparkles } from 'lucide-react';
+import { Archive, ChartNoAxesCombined, ChevronRight, Palette, ScrollText, Shield, Sparkles } from 'lucide-react';
 import { AiSidebarSummary } from '../options/ai-services';
 import type { AiServicesTab, ConnectedService, FeatureAssignment } from '../options/ai-services';
 import { AccentPicker, ModeSwitch } from './ThemeProvider';
@@ -6,6 +6,7 @@ import { LanguagePicker, useI18n } from './i18n';
 
 const LINKS: { route: string; title: string; icon: typeof Palette }[] = [
   { route: 'ai-services', title: 'AI 服务管理', icon: Sparkles },
+  { route: 'token-usage', title: 'Token 统计', icon: ChartNoAxesCombined },
   { route: 'export', title: '导出与备份', icon: Archive },
   { route: 'privacy', title: '隐私与规则', icon: Shield },
   { route: 'debug', title: '收藏记录与调试日志', icon: ScrollText },

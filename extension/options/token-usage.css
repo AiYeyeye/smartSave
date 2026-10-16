@@ -1,0 +1,39 @@
+.token-usage { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; min-width: 0; }
+.token-usage > * { min-width: 0; }
+.token-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.token-period { display: flex; flex-wrap: wrap; gap: 4px; }
+.token-period button { min-height: 44px; padding: 8px 16px; }
+.token-period button[aria-pressed='true'] { background: var(--accent); color: var(--accent-fg); }
+.token-totals { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0; gap: 24px; }
+.token-totals dt, .token-usage small { color: var(--muted); font-size: 13px; }
+.token-totals dd { margin: 8px 0 0; font-size: clamp(20px, 2.5vw, 30px); font-weight: 700; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.token-note { margin: -6px 0 0; }
+.token-note span { display: inline-block; margin-inline-start: 12px; }
+.token-section h2 { display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px; margin: 0 0 16px; font-size: 17px; }
+.token-section h2 small { font-weight: normal; }
+.token-table-wrap { overflow-x: auto; }
+.token-usage table { border-collapse: collapse; width: 100%; font-size: 14px; }
+.token-usage th, .token-usage td { padding: 14px 10px; text-align: end; font-variant-numeric: tabular-nums; border-bottom: 1px solid var(--line); }
+.token-usage th:first-child { text-align: start; min-width: 120px; max-width: 280px; overflow-wrap: anywhere; }
+.token-usage th small { display: block; font-weight: normal; margin-top: 4px; }
+.token-usage tbody tr:last-child > * { border-bottom: 0; }
+.token-purpose-list, .token-recent-list { list-style: none; margin: 0; padding: 0; }
+.token-purpose-list li, .token-recent-list li { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--line); }
+.token-purpose-list li:last-child, .token-recent-list li:last-child { border: 0; }
+.token-usage li small { display: block; margin-top: 5px; }
+.token-recent-list li > div:first-child { min-width: 0; overflow-wrap: anywhere; }
+.token-recent-list li > div:last-child { text-align: end; flex-shrink: 0; }
+.token-empty h2 { font-size: 17px; }
+.token-empty p { color: var(--muted); }
+@media (max-width: 600px) {
+  .token-totals { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 16px; }
+  .token-period button { padding: 8px 12px; }
+  .token-usage thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .token-usage table, .token-usage tbody { display: block; }
+  .token-usage tbody tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; padding: 20px 0; border-bottom: 1px solid var(--line); }
+  .token-usage tbody tr:first-child { padding-top: 0; }
+  .token-usage tbody tr:last-child { border: 0; padding-bottom: 0; }
+  .token-usage tbody th:first-child { grid-column: 1 / -1; min-width: 0; max-width: none; }
+  .token-usage tbody th, .token-usage tbody td { text-align: start; padding: 0; border: 0; }
+  .token-usage td::before { content: attr(data-label); display: block; margin-bottom: 5px; color: var(--muted); font-size: 13px; }
+}

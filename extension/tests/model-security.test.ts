@@ -443,7 +443,7 @@ it('rejects organize moves into current descendants even without an explicit out
 
 import { modelRequestBody } from '../adapters/model-transport';
 import { modelSystemPrompt } from '../domain/model-prompts';
-import { DEFAULT_CLASSIFICATION_POLICY } from '../domain/classification-policy';
+import { DEFAULT_CLASSIFICATION_POLICY, organizePolicy } from '../domain/classification-policy';
 describe('task prompts and classification policy', () => {
   it.each([
     [
@@ -505,6 +505,19 @@ describe('task prompts and classification policy', () => {
     expect(modelSystemPrompt('organize', DEFAULT_CLASSIFICATION_POLICY)).toContain('at most 3 levels');
     for (const task of ['search', 'import-map'] as const)
       expect(modelSystemPrompt(task, DEFAULT_CLASSIFICATION_POLICY)).not.toMatch(/Depth policy|Title policy/);
+  });
+  it('asks organize runs for a broad/sub taxonomy by default and keeps it out of other tasks', () => {
+    const organize = modelSystemPrompt('organize', organizePolicy({}));
+    expect(organize).toContain('Hierarchy policy: build a 2-level taxonomy');
+    expect(organize).toContain('at most 2 levels below the target root');
+    expect(organize).toContain('知识/数学');
+    expect(modelSystemPrompt('organize', organizePolicy({ levels: 1 }))).toContain('keep a flat taxonomy');
+    expect(modelSystemPrompt('organize', organizePolicy({ levels: 3 }))).toContain('build a 3-level taxonomy');
+    expect(modelSystemPrompt('save', organizePolicy({}))).not.toContain('Hierarchy policy');
+    expect(organize).not.toMatch(/about 5 to 12/);
+    for (const style of ['project follows PARA', 'source groups by the website', 'numbered follows Johnny.Decimal'])
+      expect(organize).toContain(style);
+    expect(organize).toContain('preference.subStyle');
   });
   it('keeps the adapter envelope shape with a compact catalog, schema and unchanged structured-output branches', () => {
     const payload = JSON.stringify({ task: 'save', items: [], folders: [] });

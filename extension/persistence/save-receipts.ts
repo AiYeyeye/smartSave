@@ -173,6 +173,8 @@ export function receiptReasonText(reason: string | undefined): string {
       return 'AI 认为当前位置已经合适';
     case 'excluded':
       return '所在目录在隐私排除范围内';
+    case 'user-placed':
+      return '你已手动选好位置，智栏没有再移动';
     default:
       return reason;
   }

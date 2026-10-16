@@ -89,7 +89,7 @@ export function LanguagePicker() {
           English
         </option>
       </select>
-      <p className="hint">{t('语言立即保存在本机，并尝试通过浏览器同步。浏览器菜单和工具栏提示使用浏览器语言。')}</p>
+
       <p className="hint">
         {t('仅同步语言、明暗模式和主题色；服务密钥、网址、目录规则和书签关键词保留在本机。同步不可用时仍可正常使用。')}
       </p>

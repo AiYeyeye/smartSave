@@ -14,8 +14,9 @@ import { cancellable } from '../domain/cancellable';
 import { OrganizeMemoryStore, emptyOrganizeMemory, type OrganizeMemory } from '../persistence/organize-memory';
 import { Select } from '../ui/Select';
 import { WorkflowSteps } from '../ui/WorkflowSteps';
-import type { OrganizeStyle } from '../domain/organize-preferences';
+import type { OrganizeStyle, OrganizeSubStyle } from '../domain/organize-preferences';
 import { ORGANIZE_BATCH_SIZE } from '../domain/organize-batches';
+import { DEFAULT_ORGANIZE_LEVELS, type OrganizeLevels } from '../domain/classification-policy';
 import { useI18n } from '../ui/i18n';
 import { organizeActionNames as actionNames } from './organize-action-text';
 import { OrganizeReviewStep } from './OrganizeReviewStep';
@@ -42,6 +43,8 @@ export function OrganizeWorkbench({
   const [cleanupEmpty, setCleanupEmpty] = useState(true);
   const [unfiledOnly, setUnfiledOnly] = useState(false);
   const [allowRename, setAllowRename] = useState(true);
+  const [levels, setLevels] = useState<OrganizeLevels>(DEFAULT_ORGANIZE_LEVELS);
+  const [subStyle, setSubStyle] = useState<OrganizeSubStyle | ''>('');
   const [batchSizeInput, setBatchSizeInput] = useState(String(ORGANIZE_BATCH_SIZE));
   const batchSize = Number(batchSizeInput);
   const batchSizeValid = Number.isSafeInteger(batchSize) && batchSize >= 1;
@@ -115,7 +118,10 @@ export function OrganizeWorkbench({
   }, [state.task?.id, state.task?.requestId]);
   const folders = state.tree.status === 'ready' ? state.tree.snapshot.nodes.filter(n => n.childrenWritable) : [];
   const proposal = state.proposal;
-  const installationId = state.tree.status === 'ready' ? state.tree.snapshot.installationId : undefined;
+  const [installationId, setInstallationId] = useState<string>();
+  useEffect(() => {
+    if (state.tree.status === 'ready') setInstallationId(state.tree.snapshot.installationId);
+  }, [state.tree]);
   useEffect(() => {
     if (!installationId) return;
     let active = true;
@@ -154,7 +160,7 @@ export function OrganizeWorkbench({
     }
   };
   const generate = async () => {
-    if (!installationId || memoryOperation.current || !batchSizeValid) return;
+    if (state.tree.status !== 'ready' || !installationId || memoryOperation.current || !batchSizeValid) return;
     memoryOperation.current = true;
     setMemoryBusy(true);
     const read = new AbortController();
@@ -167,11 +173,16 @@ export function OrganizeWorkbench({
       setMemory(latest);
       setMemoryError('');
       await owner.current?.generate(
-        { style, instructions },
+        {
+          style,
+          instructions,
+          ...(subStyle && levels > 1 && !['custom', 'existing', 'numbered'].includes(style) ? { subStyle } : {}),
+        },
         {
           cleanupEmpty,
           unfiledOnly,
           allowRename,
+          levels,
           staged: true,
           batchSize,
           protectedFolderIds: latest.protectedFolderIds,
@@ -299,7 +310,6 @@ export function OrganizeWorkbench({
       aria-busy={state.busy && !state.pipeline?.finished.length}
     >
       <h2>{t('整理书签')}</h2>
-      <p>{t('先确认文件夹分类，再分批查看书签建议，最后统一确认执行。')}</p>
       {state.task && (
         <details className="workflow-help organize-saved-tasks">
           <summary>{t('已保存的整理任务（{count}）', { count: state.task.available.length })}</summary>
@@ -348,9 +358,7 @@ export function OrganizeWorkbench({
           <a href="#ai-services">{t('AI 服务')}</a> {t('重新输入，再明确继续；已完成建议保留。')}
         </p>
       )}
-      {state.task && !state.task.connected && (
-        <p role="alert">{t('整理任务连接不可用，请重新读取进度；不会自动重发分析或书签写入。')}</p>
-      )}
+      {state.task && !state.task.connected && <p role="status">{t('正在重新连接整理任务…方案已保存，不会丢失。')}</p>}
       <WorkflowSteps
         labels={
           method === 'ai'
@@ -375,6 +383,10 @@ export function OrganizeWorkbench({
         setCleanupEmpty={setCleanupEmpty}
         allowRename={allowRename}
         setAllowRename={setAllowRename}
+        levels={levels}
+        setLevels={setLevels}
+        subStyle={subStyle}
+        setSubStyle={setSubStyle}
         batchSizeInput={batchSizeInput}
         setBatchSizeInput={setBatchSizeInput}
         batchSizeValid={batchSizeValid}
@@ -404,15 +416,17 @@ export function OrganizeWorkbench({
         <h3>
           {state.result
             ? t('执行结果')
-            : step === 3
-              ? t('确认所选操作')
-              : folderReview
-                ? t('先核对文件夹分类')
-                : state.pipeline
-                  ? t('分批查看书签建议')
-                  : t('查看并选择建议')}
+            : state.task?.requestId
+              ? t('正在执行整理')
+              : step === 3
+                ? t('确认所选操作')
+                : folderReview
+                  ? t('先核对文件夹分类')
+                  : state.pipeline
+                    ? t('分批查看书签建议')
+                    : t('查看并选择建议')}
         </h3>
-        <div className="actions" hidden={!!state.failure && !state.busy}>
+        <div className="actions" hidden={!!state.result || (!!state.failure && !state.busy)}>
           <button
             disabled={!state.busy && !proposal && !memoryBusy}
             onClick={() => {

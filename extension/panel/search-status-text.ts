@@ -18,8 +18,8 @@ const counts: { pattern: RegExp; key: MessageKey; names: string[] }[] = [
     names: ['count', 'total'],
   },
   {
-    pattern: /^AI 找到 (\d+) 条相关书签，已排在前面；关键词结果仍保留。$/,
-    key: 'AI 找到 {count} 条相关书签，已排在前面；关键词结果仍保留。',
+    pattern: /^AI 找到 (\d+) 条相关书签$/,
+    key: 'AI 找到 {count} 条相关书签',
     names: ['count'],
   },
 ];

@@ -1,5 +1,9 @@
 import type { ModelSettingsReader } from '../adapters/feature-model-settings';
-import { organizeCheckpointContext, type OrganizeCheckpoint } from '../domain/organize-checkpoint';
+import {
+  legacyOrganizeScopeDigest,
+  organizeCheckpointContext,
+  type OrganizeCheckpoint,
+} from '../domain/organize-checkpoint';
 import { restoreOrganizeGeneration } from '../domain/organize-generation-checkpoint';
 import { dependencyDigest } from '../domain/context-dependencies';
 import { organizeRequest } from '../domain/organize-proposal';
@@ -148,9 +152,11 @@ export class OrganizeTaskAuthority {
       if (!equal(checkpoint, prepared.original) && !equal(checkpoint, this.submitted(prepared))) return false;
       const settings = await this.settings.snapshot();
       const tree = await this.projection.fresh();
-      const digests = await organizeCheckpointContext({ ...settings, tree }, prepared.original.root.nativeId);
+      const rootId = prepared.original.root.nativeId;
+      const digests = await organizeCheckpointContext({ ...settings, tree }, rootId, prepared.original.bookmarkIds);
       if (
-        digests.scopeDigest !== prepared.original.scopeDigest ||
+        (digests.scopeDigest !== prepared.original.scopeDigest &&
+          (await legacyOrganizeScopeDigest(tree, rootId)) !== prepared.original.scopeDigest) ||
         digests.settingsDigest !== prepared.original.settingsDigest ||
         digests.settingsRevision !== prepared.original.settingsRevision
       )

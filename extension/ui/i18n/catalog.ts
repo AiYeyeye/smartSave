@@ -9,6 +9,7 @@ import { recoveryEnglish } from './recovery';
 import { exportEnglish } from './export';
 import { importEnglish } from './import';
 import { preferencesEnglish } from './preferences';
+import { tokenUsageEnglish } from './token-usage';
 /** UI-owned messages only. Native bookmark content and provider output never enter this catalog. */
 export const english = {
   'AI 服务配置不可用': 'AI service settings are unavailable',
@@ -43,6 +44,7 @@ export const english = {
   ...exportEnglish,
   ...importEnglish,
   ...preferencesEnglish,
+  ...tokenUsageEnglish,
   智栏: 'Zhilan',
   '智栏 · 书签助手': 'Zhilan · Bookmark assistant',
   语言: 'Language',
@@ -173,10 +175,8 @@ export const english = {
     'Comparing {count} candidate bookmarks… Try Deep search if needed.',
   '深度搜索：已检查 {count} / {total} 条，正在比较相关结果…':
     'Deep search: checked {count} / {total} bookmarks. Comparing relevant results…',
-  'AI 找到 {count} 条相关书签，已排在前面；关键词结果仍保留。':
-    'AI found {count} relevant bookmarks and placed them first. Keyword results are still available.',
-  'AI 没有找到相关书签，保留关键词结果。可以补充用途或大致内容再试。':
-    'AI found no relevant bookmarks. Keyword results are still available. Try describing their purpose or content.',
+  'AI 找到 {count} 条相关书签': 'AI found {count} relevant bookmarks',
+  'AI 没有找到相关书签，换个描述试试': 'AI found no relevant bookmarks. Try another description.',
   'AI 搜索未完成，保留本地结果。{reason}': 'AI search did not finish. Local results are still available. {reason}',
   '读取书签或模型设置超时，请重试。': 'Loading bookmarks or model settings timed out. Try again.',
   '书签正在更新，请连接恢复后重试。': 'Bookmarks are updating. Try again after reconnection.',

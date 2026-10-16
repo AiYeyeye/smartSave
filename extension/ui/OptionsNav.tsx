@@ -1,5 +1,6 @@
 import {
   Archive,
+  ChartNoAxesCombined,
   FolderTree,
   Palette,
   ScrollText,
@@ -13,7 +14,7 @@ import { ModeSwitch } from './ThemeProvider';
 import { useI18n } from './i18n';
 
 export type OptionsRoute =
-  'browse' | 'organize' | 'import' | 'export' | 'ai-services' | 'appearance' | 'privacy' | 'debug';
+  'browse' | 'organize' | 'import' | 'export' | 'ai-services' | 'token-usage' | 'appearance' | 'privacy' | 'debug';
 
 export const ROUTE_META: Record<OptionsRoute, { title: string; desc: string; icon: LucideIcon; wide?: boolean }> = {
   browse: { title: '书签目录', desc: '浏览、搜索与批量管理浏览器原生书签。', icon: FolderTree },
@@ -26,6 +27,7 @@ export const ROUTE_META: Record<OptionsRoute, { title: string; desc: string; ico
     icon: Sparkles,
     wide: true,
   },
+  'token-usage': { title: 'Token 统计', desc: '', icon: ChartNoAxesCombined, wide: true },
   appearance: { title: '外观', desc: '颜色模式与主题色，弹窗和设置页同步。', icon: Palette },
   privacy: { title: '隐私与规则', desc: '控制发送给 AI 的内容、排除目录与网站规则。', icon: Shield },
   debug: { title: '收藏记录与调试', desc: '每次原生收藏的 AI 处理结果，以及可选的调用轨迹。', icon: ScrollText },
@@ -33,7 +35,7 @@ export const ROUTE_META: Record<OptionsRoute, { title: string; desc: string; ico
 
 const GROUPS: { label: string; routes: OptionsRoute[] }[] = [
   { label: '书签', routes: ['browse', 'organize', 'import', 'export'] },
-  { label: 'AI', routes: ['ai-services'] },
+  { label: 'AI', routes: ['ai-services', 'token-usage'] },
   { label: '偏好', routes: ['appearance', 'privacy', 'debug'] },
 ];
 

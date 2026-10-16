@@ -23,17 +23,13 @@ export function OrganizeFlowDetails({ proposal, after }: { proposal: OrganizePro
     }
     return result;
   }, [proposal, after]);
+  if (!groups.size) return null;
   return (
     <section className="organize-flow-details" aria-label={t('分类内容去向')}>
       <h3>{t('分类如何拆分与合并')}</h3>
-      {groups.size === 0 && <p className="hint">{t('当前选择不改变书签的分类路径；目录清理和其他调整见下方。')}</p>}
       {[...groups].map(([from, destinations]) => (
         <article key={from}>
           <h4>{from}</h4>
-          <p className="hint">
-            {destinations.size > 1 ? t('分别归入 {count} 个去向', { count: destinations.size }) : t('整体去向如下')}
-            {t('；下方只列出路径发生变化的书签。')}
-          </p>
           {[...destinations].map(([to, titles]) => (
             <details key={to === null ? 'removed' : `path:${to}`}>
               <summary>

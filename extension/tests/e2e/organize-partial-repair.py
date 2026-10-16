@@ -124,7 +124,7 @@ with sync_playwright() as playwright:
         assert worker.evaluate('(id)=>chrome.bookmarks.getSubTree(id)', fixture['root']) == before
         next_button.click()
         page.get_by_role('button', name=text('确认并执行 2 项操作', 'Confirm and apply operations (2)'), exact=True).click()
-        page.get_by_text(text('状态 completed', 'Status: completed'), exact=False).wait_for()
+        page.get_by_text(text('已完成 · 已完成', 'Completed · Completed'), exact=False).wait_for()
         for key in ['a', 'b']:
             assert worker.evaluate('async id=>(await chrome.bookmarks.get(id))[0].parentId', fixture[key]) == fixture['target']
         result = {'status': 'PASS', 'browser': context.browser.version, 'evidence': str(root), 'geometry': geometry,

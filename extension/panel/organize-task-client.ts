@@ -19,6 +19,10 @@ import { openOrganizerLease, type OpenOrganizerLease, type OrganizerLease } from
 import { submitMutation } from './mutation-client';
 
 type Runtime = Pick<typeof chrome.runtime, 'connect' | 'sendMessage' | 'lastError'>;
+const MUTATION_REPLY_TIMEOUT_MS = 300_000;
+/** Below Chrome's 30 s idle cutoff, so a visible organize page keeps its worker awake. */
+const HEARTBEAT_MS = 20_000;
+const RECONNECT_MAX_MS = 15_000;
 export type OrganizeWorkbenchOwner = Pick<
   OrganizeController,
   'setTree' | 'selectScope' | 'generate' | 'scan' | 'choice' | 'previewDuplicates' | 'apply' | 'dispose'
@@ -52,6 +56,9 @@ export class OrganizeTaskClient implements OrganizeWorkbenchOwner {
   private port?: chrome.runtime.Port;
   private retry?: ReturnType<typeof setTimeout>;
   private retries = 0;
+  private heartbeat?: ReturnType<typeof setInterval>;
+  /** The organize view is on screen (route shown and tab visible). Only then does the page keep the worker awake. */
+  private active = false;
   private queue: Promise<void> = Promise.resolve();
   private editing = 0;
   private lease?: OrganizerLease;
@@ -72,6 +79,16 @@ export class OrganizeTaskClient implements OrganizeWorkbenchOwner {
     }, browserModelAuthority(settings));
     this.connect();
     void this.refreshTasks(true);
+    this.heartbeat = setInterval(() => this.ping(), HEARTBEAT_MS);
+  }
+  /** Only while the organize view is on screen and following a worker task; otherwise the worker may sleep. */
+  private ping() {
+    if (this.closed || !this.port || this.mode !== 'remote' || !this.active) return;
+    try {
+      this.port.postMessage({ version: 1, type: 'ping' });
+    } catch {
+      /* onDisconnect handles reconnection. */
+    }
   }
   private publish() {
     if (this.closed || !this.localState) return;
@@ -79,8 +96,9 @@ export class OrganizeTaskClient implements OrganizeWorkbenchOwner {
     this.emit({
       ...state,
       tree: this.tree,
-      busy: state.busy || this.editing > 0,
-      invalid: state.invalid || (this.mode === 'remote' && !this.connected),
+      // Disconnected is not invalid: the plan stays saved in the worker, so only block actions until reconnected.
+      busy: state.busy || this.editing > 0 || (this.mode === 'remote' && !this.connected),
+      invalid: state.invalid,
       ...(this.mode === 'remote' && this.result ? { result: this.result } : {}),
       ...(this.message ? { message: this.message } : {}),
       task: {
@@ -93,7 +111,7 @@ export class OrganizeTaskClient implements OrganizeWorkbenchOwner {
       },
     });
   }
-  private rpc(input: unknown): Promise<unknown> {
+  private rpc(input: unknown, timeoutMs = 35_000): Promise<unknown> {
     return new Promise((resolve, reject) => {
       let done = false;
       const stop = () => {
@@ -103,7 +121,7 @@ export class OrganizeTaskClient implements OrganizeWorkbenchOwner {
         this.pending.delete(stop);
         reject(Error('organize-task-unavailable'));
       };
-      const timer = setTimeout(stop, 35_000);
+      const timer = setTimeout(stop, timeoutMs);
       this.pending.add(stop);
       try {
         this.runtime.sendMessage(input, (reply: unknown) => {
@@ -136,11 +154,22 @@ export class OrganizeTaskClient implements OrganizeWorkbenchOwner {
   private accept(task: OrganizeTaskView) {
     if (this.closed || (this.current?.id === task.id && task.revision < this.current.revision)) return;
     this.current = task;
-    if (this.port) this.connected = true;
+    if (this.port) {
+      this.connected = true;
+      this.retries = 0;
+    }
     if (task.submission) this.requestId = task.submission.requestId;
     this.publish();
   }
   setVisible(visible: boolean) {
+    this.active = visible;
+    if (visible && !this.port && !this.closed) {
+      // Reconnect only when the user comes back to the view; a hidden page never wakes the worker on its own.
+      clearTimeout(this.retry);
+      this.retries = 0;
+      this.connect();
+      return;
+    }
     if (!visible || this.mode !== 'remote' || !this.current || !this.port) return;
     // Called after React committed the visible task, never by automatic get/list or a hidden observer.
     try {
@@ -164,6 +193,7 @@ export class OrganizeTaskClient implements OrganizeWorkbenchOwner {
       this.connected = !this.current;
       port.onMessage.addListener((input: unknown) => {
         if (this.closed || this.port !== port) return;
+        this.retries = 0;
         const reply = z.strictObject({ version: z.literal(1), task: organizeTaskViewSchema }).safeParse(input);
         if (!reply.success || this.mode !== 'remote' || reply.data.task.id !== this.current?.id) return;
         this.accept(reply.data.task);
@@ -172,13 +202,13 @@ export class OrganizeTaskClient implements OrganizeWorkbenchOwner {
         if (this.closed || this.port !== port) return;
         this.port = undefined;
         this.connected = false;
-        this.message = '整理连接已断开，正在重新读取进度；后台任务不会因页面断开而取消。';
         this.publish();
-        if (++this.retries <= 3) this.retry = setTimeout(() => this.connect(), 1000);
-        else {
-          this.message = '无法连接整理任务，请重新读取已保存任务或重新打开智栏。';
-          this.publish();
-        }
+        // The worker went idle. Waking it reloads the whole saved task, so only do that while the view is on screen;
+        // setVisible(true) reconnects later. On screen, keep retrying with backoff and never give up silently.
+        if (!this.active) return;
+        const delay = Math.min(1000 * 2 ** this.retries++, RECONNECT_MAX_MS);
+        clearTimeout(this.retry);
+        this.retry = setTimeout(() => this.connect(), delay);
       });
       this.watch();
       // Reconnection reads only; an interrupted worker never resumes analysis automatically.
@@ -240,7 +270,18 @@ export class OrganizeTaskClient implements OrganizeWorkbenchOwner {
     const priorRequest = this.current?.id === id ? this.requestId : undefined;
     const priorResult = this.current?.id === id ? this.result : undefined;
     try {
-      const reply = await this.taskRpc({ version: 1, type: 'organizeTask', action: 'get', id });
+      // A just-woken worker may still be restoring the same task for the page subscription; wait and read again.
+      let reply: Awaited<ReturnType<OrganizeTaskClient['taskRpc']>> | undefined;
+      for (let attempt = 0; !reply; attempt++) {
+        try {
+          reply = await this.taskRpc({ version: 1, type: 'organizeTask', action: 'get', id });
+        } catch (error) {
+          const transient =
+            error instanceof Error && ['organize-task-busy', 'organize-task-unavailable'].includes(error.message);
+          if (!transient || attempt >= 4 || this.closed || context !== this.context) throw error;
+          await new Promise(resolve => setTimeout(resolve, 1500));
+        }
+      }
       if (this.closed || context !== this.context || !('task' in reply) || reply.task.id !== id) return;
       this.local.cancel();
       this.mode = 'remote';
@@ -291,6 +332,7 @@ export class OrganizeTaskClient implements OrganizeWorkbenchOwner {
           batchSize: options.batchSize ?? 100,
           cleanupEmpty: options.unfiledOnly ? false : options.cleanupEmpty,
           allowRename: options.unfiledOnly ? false : options.allowRename,
+          ...(options.levels === undefined ? {} : { levels: options.levels }),
           unfiledOnly: options.unfiledOnly,
           protectedFolderIds: options.protectedFolderIds,
           rejectedSignatures: options.rejectedSignatures,
@@ -467,13 +509,18 @@ export class OrganizeTaskClient implements OrganizeWorkbenchOwner {
         )
           throw Error('organize-task-unavailable');
         this.requestId = preview.requestId;
-        this.result = await submitMutation(preview, request => this.rpc(request));
+        this.message = '正在提交书签操作，请等待完成。';
+        this.publish();
+        // Native execution can outlast a short command RPC. Keep its lease until a terminal reply or bounded observation.
+        this.result = await submitMutation(preview, request => this.rpc(request, MUTATION_REPLY_TIMEOUT_MS));
+        if (this.closed) return;
         this.message = this.result.needsReconcile
           ? '执行结果需要核对，请读取同一请求的执行记录；不会重放。'
           : this.result.status === 'completed'
             ? '整理已完成，可从恢复记录核对或撤销。'
             : '执行已停止，请核对执行记录后再处理。';
         this.publish();
+        if (this.result.needsReconcile) await this.observe();
         const reply = await this.taskRpc({ version: 1, type: 'organizeTask', action: 'get', id: task.id });
         if ('task' in reply) this.accept(reply.task);
         void this.refreshTasks();
@@ -486,11 +533,12 @@ export class OrganizeTaskClient implements OrganizeWorkbenchOwner {
   async observe(reconcile = false) {
     const id = this.requestId ?? this.current?.submission?.requestId;
     if (!id) return;
+    const context = this.context;
     try {
       const result = mutationResultSchema.parse(
         await this.rpc({ version: 1, type: reconcile ? 'reconcileMutation' : 'mutationStatus', requestId: id }),
       );
-      if (this.closed || result.requestId !== id) return;
+      if (this.closed || context !== this.context || result.requestId !== id) return;
       this.result =
         result.reason === 'request-not-found' ? { ...result, status: 'unknown', needsReconcile: true } : result;
       this.message = this.result.needsReconcile
@@ -499,6 +547,7 @@ export class OrganizeTaskClient implements OrganizeWorkbenchOwner {
           ? '整理已完成，可从恢复记录核对或撤销。'
           : '执行已停止，请查看恢复记录。';
     } catch {
+      if (this.closed || context !== this.context) return;
       this.message = '无法读取执行结果，请稍后核对同一请求编号；不会重放书签写入。';
     }
     this.publish();
@@ -507,6 +556,7 @@ export class OrganizeTaskClient implements OrganizeWorkbenchOwner {
     this.closed = true;
     this.context++;
     clearTimeout(this.retry);
+    clearInterval(this.heartbeat);
     for (const stop of this.pending) stop();
     this.port?.disconnect();
     this.lease?.close();

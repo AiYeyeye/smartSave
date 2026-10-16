@@ -87,6 +87,20 @@
   margin: 0;
   overflow-wrap: anywhere;
 }
+.organize-workbench .mutation-feedback {
+  padding: 16px;
+  border-radius: var(--r);
+  background: var(--accent-soft);
+  overflow-wrap: anywhere;
+  font-weight: 550;
+}
+.mutation-feedback small {
+  display: block;
+  margin-top: 8px;
+  font-weight: 400;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
 .organize-failure {
   padding: 16px;
   border: 1px solid var(--divider);
@@ -95,8 +109,12 @@
   background: var(--surface-2);
   overflow-wrap: anywhere;
 }
-.organize-failure h3 { margin-top: 0; }
-.organize-failure summary { cursor: pointer; }
+.organize-failure h3 {
+  margin-top: 0;
+}
+.organize-failure summary {
+  cursor: pointer;
+}
 .workflow-workbench button,
 .workflow-help > summary {
   min-height: 44px;
@@ -151,10 +169,25 @@
   min-width: 0;
 }
 .organize-adjustments {
-  margin-top: 32px;
-  padding-top: 24px;
-  border-top: 2px solid var(--accent-ring);
+  padding-top: 12px;
   min-width: 0;
+}
+.organize-review-section {
+  margin: 20px 0;
+  min-width: 0;
+}
+.organize-review-section > summary {
+  min-height: 44px;
+  padding: 12px 16px;
+  border-radius: var(--r);
+  background: var(--accent-soft);
+  color: var(--text);
+  font-size: 17px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.organize-review-section[open] > summary {
+  margin-bottom: 16px;
 }
 .organize-adjustments-heading {
   padding: 14px 16px;
@@ -230,29 +263,122 @@
 .organize-progress li + li {
   margin-top: 8px;
 }
-.organize-tree-preview { display: grid; gap: 12px; margin-block: 18px; min-width: 0; }
-.organize-classification-tree { list-style: none; padding: 10px; margin: 0; max-height: 480px; overflow: auto; background: var(--sunken); border-radius: var(--r); }
-.organize-folder-line { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-height: 44px; }
-.organize-folder-line button { flex: 0 0 32px; padding: 4px; background: transparent; box-shadow: none; }
-.organize-folder-line > svg { flex-shrink: 0; color: var(--folder); }
-.organize-folder-line strong { overflow-wrap: anywhere; min-width: 0; }
-.organize-folder-line span { color: var(--muted); font-size: 12px; }
-.organize-folder-line small { border-radius: var(--r-sm); padding: 3px 6px; background: var(--accent-soft); color: var(--accent-text); }
-.organize-folder-bookmarks { margin-left: 32px; font-size: 13px; overflow-wrap: anywhere; }
-.organize-folder-bookmarks summary { min-height: 44px; padding-block: 10px; cursor: pointer; }
-.organize-folder-bookmarks ul { padding-left: 18px; }
-.organize-option { display: flex !important; align-items: center; gap: 8px; min-height: 44px; overflow-wrap: anywhere; }
-.organize-option input { flex-shrink: 0; }
-.organize-flow-details { display: grid; gap: 14px; overflow-wrap: anywhere; }
-.organize-flow-details article { padding-block: 12px; border-bottom: 1px solid var(--divider); }
-.organize-flow-details summary { min-height: 44px; padding-block: 10px; cursor: pointer; }
-.organize-flow-details ul { padding-left: 20px; }
-.organize-target-review { display: grid; gap: 12px; min-width: 0; overflow-wrap: anywhere; }
-.organize-target-review article { padding-block: 12px; border-bottom: 1px solid var(--divider); }
-.organize-group-choice { display: flex; align-items: center; gap: 10px; min-height: 44px; font-weight: 600; }
-.organize-target-review summary, .organize-advanced > summary { min-height: 44px; padding-block: 10px; cursor: pointer; }
-.organize-target-review .workflow-review-row { margin-block: 12px; }
-.organize-advanced[open] { display: grid; gap: 14px; }
+.organize-tree-preview {
+  display: grid;
+  gap: 12px;
+  margin-block: 18px;
+  min-width: 0;
+}
+.organize-classification-tree {
+  list-style: none;
+  padding: 10px;
+  margin: 0;
+  max-height: 480px;
+  overflow: auto;
+  background: var(--sunken);
+  border-radius: var(--r);
+}
+.organize-folder-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 44px;
+}
+.organize-folder-line button {
+  flex: 0 0 32px;
+  padding: 4px;
+  background: transparent;
+  box-shadow: none;
+}
+.organize-folder-line > svg {
+  flex-shrink: 0;
+  color: var(--folder);
+}
+.organize-folder-line strong {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.organize-folder-line span {
+  color: var(--muted);
+  font-size: 12px;
+}
+.organize-folder-line small {
+  border-radius: var(--r-sm);
+  padding: 3px 6px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.organize-folder-bookmarks {
+  margin-left: 32px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.organize-folder-bookmarks summary {
+  min-height: 44px;
+  padding-block: 10px;
+  cursor: pointer;
+}
+.organize-folder-bookmarks ul {
+  padding-left: 18px;
+}
+.organize-option {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  overflow-wrap: anywhere;
+}
+.organize-option input {
+  flex-shrink: 0;
+}
+.organize-flow-details {
+  display: grid;
+  gap: 14px;
+  overflow-wrap: anywhere;
+}
+.organize-flow-details article {
+  padding-block: 12px;
+  border-bottom: 1px solid var(--divider);
+}
+.organize-flow-details summary {
+  min-height: 44px;
+  padding-block: 10px;
+  cursor: pointer;
+}
+.organize-flow-details ul {
+  padding-left: 20px;
+}
+.organize-target-review {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.organize-target-review article {
+  padding-block: 12px;
+  border-bottom: 1px solid var(--divider);
+}
+.organize-group-choice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  font-weight: 600;
+}
+.organize-target-review summary,
+.organize-advanced > summary {
+  min-height: 44px;
+  padding-block: 10px;
+  cursor: pointer;
+}
+.organize-target-review .workflow-review-row {
+  margin-block: 12px;
+}
+.organize-advanced[open] {
+  display: grid;
+  gap: 14px;
+}
 .workflow-file-input {
   padding: 12px;
   background: var(--sunken);

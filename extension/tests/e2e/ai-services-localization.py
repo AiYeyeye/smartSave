@@ -103,7 +103,9 @@ with sync_playwright() as playwright:
 
         capture('connect')
         page.get_by_role('button', name='Connect', exact=True).click()
-        expect(page.get_by_label('Model to use', exact=True)).to_have_value(model)
+        expect(page.get_by_label('Model to use', exact=True)).to_have_value('')
+        expect(page.get_by_role('button', name='Save and continue', exact=True)).to_be_disabled()
+        page.get_by_role('radio', name=model, exact=True).check()
         expect(page.get_by_role('heading', name='Set up 已连接', exact=True)).to_be_visible()
         capture('quick-setup')
         preferences.get_by_label('Language', exact=True).select_option('zh-CN')
@@ -112,6 +114,7 @@ with sync_playwright() as playwright:
         if args.advanced:
             page.locator('summary', has_text='Advanced: models and feature assignments').click()
             page.get_by_role('button', name='Open advanced setup', exact=True).click()
+            page.get_by_role('checkbox', name=model, exact=False).check()
             capture('advanced-models')
             page.get_by_role('button', name='Next', exact=True).click()
             expect(page.get_by_label('Model for Smart save', exact=True)).to_have_value(model)

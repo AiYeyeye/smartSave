@@ -17,11 +17,12 @@ it('subscription alternatives and blocked sign-in explanations are localized eve
   }
 });
 
-it('localizes the pre-authorization overlay status and preserves its explicit close-only action', () => {
+it('localizes the pre-authorization overlay status and preserves its explicit close-only action', async () => {
   localStorage.setItem(LANGUAGE_KEY, 'en');
   const close = vi.spyOn(window.parent, 'postMessage').mockImplementation(() => {});
   const view = render(<OverlayStatus />);
-  expect(screen.getByText('Connecting to Zhilan…')).toBeVisible();
+  expect(screen.queryByText('Connecting to Zhilan…')).toBeNull();
+  expect(await screen.findByText('Connecting to Zhilan…')).toBeVisible();
   view.rerender(<OverlayStatus failed />);
   expect(screen.getByRole('alert')).toHaveTextContent('Could not start the sidebar');
   expect(close).not.toHaveBeenCalled();

@@ -17,3 +17,44 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+.search-results .search-hit-open {
+  flex: 1;
+  width: 0;
+}
+.search-results .search-hit-list .command-menu {
+  flex-shrink: 0;
+}
+.search-results .search-hit-list .command-trigger {
+  width: 32px;
+  padding: 0;
+  text-align: center;
+}
+/* One compact line per hit: site icon, then the title. */
+.search-results .search-hit-list button.search-hit-open {
+  display: flex;
+  /* The base .search-hit-list button stacks children; hits are one row: icon left, title right. */
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  min-height: 28px;
+  padding: 0 6px;
+  font-size: 12.5px;
+  font-weight: 400;
+  text-align: start;
+}
+.search-results .search-hit-open > span {
+  flex: 1;
+  min-width: 0;
+  color: var(--text);
+  font-size: inherit;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.search-results .search-hit-open > svg {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  color: var(--faint);
+}

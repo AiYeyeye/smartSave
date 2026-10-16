@@ -82,7 +82,6 @@ export function OrganizeTargetReview({
   return (
     <section className="organize-target-review" aria-label={t('按目标目录审核')}>
       <h3>{t('按目标目录审核')}</h3>
-      <p className="hint">{t('勾选整组采用，取消整组保持原位；展开后可逐条调整。尚未修改书签。')}</p>
       {groups.map(([id, items]) => {
         const count = items.filter(action => chosen.has(action.id)).length;
         const label = targetLabels.get(id) ?? id;

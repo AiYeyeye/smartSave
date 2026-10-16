@@ -28,6 +28,7 @@ import { preflight } from '../domain/preflight';
 import { submitMutation } from './mutation-client';
 import type { ConfirmMutation, MutationResult } from '../schemas/messages';
 import { BusyIndicator } from '../ui/BusyIndicator';
+import { DeferredNotice } from '../ui/DeferredNotice';
 
 export function BookmarkTree({ batchNonce = 0 }: { batchNonce?: number }) {
   const { t, message } = useI18n();
@@ -45,24 +46,22 @@ export function BookmarkTree({ batchNonce = 0 }: { batchNonce?: number }) {
     });
   }, [retry]);
   const snapshot = state.status === 'ready' ? state.snapshot : lastSnapshot;
+  const notice = state.status !== 'ready' && (
+    <StateMessage
+      kind={state.status === 'loading' ? 'loading' : 'error'}
+      title={message(state.status === 'loading' ? (snapshot ? '正在重新连接书签' : '正在读取书签') : state.message)}
+    >
+      {state.status === 'error' && (
+        <>
+          <button onClick={() => setRetry(value => value + 1)}>{t('重试读取')}</button>
+          <p>{t('若重试仍失败，请关闭并重新打开智栏以重新绑定身份。')}</p>
+        </>
+      )}
+    </StateMessage>
+  );
   return (
     <>
-      {state.status !== 'ready' && (
-        <StateMessage
-          kind={state.status === 'loading' ? 'loading' : 'error'}
-          title={message(state.status === 'loading' ? (snapshot ? '正在重新连接书签' : '正在读取书签') : state.message)}
-        >
-          <p>
-            {snapshot ? t('保留上次列表供查看；连接恢复前不能修改。不会自动重放操作。') : t('等待浏览器提供当前目录。')}
-          </p>
-          {state.status === 'error' && (
-            <>
-              <button onClick={() => setRetry(value => value + 1)}>{t('重试读取')}</button>
-              <p>{t('若重试仍失败，请关闭并重新打开智栏以重新绑定身份。')}</p>
-            </>
-          )}
-        </StateMessage>
-      )}
+      {state.status === 'error' ? notice : <DeferredNotice show={state.status === 'loading'}>{notice}</DeferredNotice>}
       {snapshot && <TreeRows snapshot={snapshot} batchNonce={batchNonce} connectionReady={state.status === 'ready'} />}
     </>
   );
@@ -71,12 +70,15 @@ export function TreeRows({
   snapshot,
   batchNonce = 0,
   connectionReady = true,
+  results,
 }: {
   snapshot: TreeSnapshot;
   batchNonce?: number;
   connectionReady?: boolean;
+  results?: { ids: readonly string[]; onOpen: (id: string) => void };
 }) {
   const { t, message } = useI18n();
+  const isSearch = results !== undefined;
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [selectedId, setSelectedId] = useState<string>();
   const [intentMode, setIntentMode] = useState<Mode>();
@@ -143,6 +145,7 @@ export function TreeRows({
   }
   const [memoryError, setMemoryError] = useState(false);
   useEffect(() => {
+    if (isSearch) return;
     let active = true;
     let changed = false;
     if (typeof chrome === 'undefined' || !chrome.storage) {
@@ -151,12 +154,21 @@ export function TreeRows({
     }
     const listener = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
       if (area !== 'local') return;
+      const prefix = `tree.expanded.${encodeURIComponent(snapshot.installationId)}.`;
+      const relevant = Object.entries(changes).filter(([key]) => key.startsWith(prefix));
+      if (!relevant.length) return;
       changed = true;
       setExpanded(previous => {
         const next = { ...previous };
-        for (const [key, change] of Object.entries(changes))
-          if (key.startsWith('tree.expanded.')) next[key] = change.newValue === true;
-        return next;
+        let updated = false;
+        for (const [key, change] of relevant) {
+          const value = change.newValue === true;
+          if (next[key] !== value) {
+            next[key] = value;
+            updated = true;
+          }
+        }
+        return updated ? next : previous;
       });
     };
     chrome.storage.onChanged.addListener(listener);
@@ -188,7 +200,7 @@ export function TreeRows({
       active = false;
       if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) chrome.storage.onChanged.removeListener(listener);
     };
-  }, [snapshot.installationId, snapshot.nodes]);
+  }, [snapshot.installationId, snapshot.nodes, isSearch]);
   const byId = useMemo(() => new Map(snapshot.nodes.map(node => [node.ref.nativeId, node])), [snapshot.nodes]);
   // The browser's invisible root ("0") is structural: show its children (书签栏 / 其他书签) as the top level.
   const topLevel = (() => {
@@ -203,8 +215,10 @@ export function TreeRows({
     const key = expansionKey(snapshot.installationId, id);
     return key in expanded ? !!expanded[key] : id === topLevel[0];
   };
-  const visible: { id: string; depth: number }[] = [];
-  const stack = topLevel.map(id => ({ id, depth: 0 })).reverse();
+  const visible: { id: string; depth: number }[] = results
+    ? results.ids.filter(id => byId.get(id)?.ref.kind === 'bookmark').map(id => ({ id, depth: 0 }))
+    : [];
+  const stack = results ? [] : topLevel.map(id => ({ id, depth: 0 })).reverse();
   while (stack.length) {
     const row = stack.pop()!;
     const node = byId.get(row.id);
@@ -296,7 +310,7 @@ export function TreeRows({
           id: `open-${target}`,
           label,
           icon: <Icon aria-hidden="true" />,
-          disabled: !canOpenUrl(node.url),
+          disabled: !connectionReady || !canOpenUrl(node.url),
           onSelect: () => {
             setOpenError('');
             if (node.url) void openBookmarkUrl(node.url, target).catch((error: Error) => setOpenError(error.message));
@@ -474,11 +488,13 @@ export function TreeRows({
           </button>
         </div>
       )}
-      <ul className="bookmark-tree" aria-label={t('原生书签')}>
+      <ul className={isSearch ? 'bookmark-tree search-hit-list' : 'bookmark-tree'} aria-label={t('原生书签')}>
         {visible.map(({ id, depth }) => {
           const node = byId.get(id)!;
           const open = isOpen(id);
-          const title = node.title || (node.ref.kind === 'folder' ? t('书签根目录') : t('无标题书签'));
+          const title =
+            node.title || (node.ref.kind === 'folder' ? t('书签根目录') : isSearch ? t('未命名书签') : t('无标题书签'));
+          const commands = menuItems(id);
           return (
             <li
               key={id}
@@ -531,12 +547,12 @@ export function TreeRows({
               }}
               style={{ paddingInlineStart: `${depth * 16}px`, ['--depth' as string]: depth }}
               onContextMenu={event => {
-                if (menuItems(id).length === 0) return;
+                if (commands.length === 0) return;
                 event.preventDefault();
                 setMenuId(id);
               }}
             >
-              {!node.readOnly && node.parentId !== undefined && (
+              {!isSearch && !node.readOnly && node.parentId !== undefined && (
                 <span
                   className="drop-zone"
                   aria-label={t('移到 {title} 前', { title })}
@@ -567,7 +583,18 @@ export function TreeRows({
                   />
                 </label>
               )}
-              {node.ref.kind === 'folder' ? (
+              {results ? (
+                <button
+                  type="button"
+                  className="search-hit-open"
+                  title={title}
+                  disabled={!connectionReady || !canOpenUrl(node.url)}
+                  onClick={() => results.onOpen(id)}
+                >
+                  <BookmarkFavicon url={node.url} />
+                  <span>{title}</span>
+                </button>
+              ) : node.ref.kind === 'folder' ? (
                 <button
                   className="folder-row"
                   aria-expanded={open}
@@ -621,10 +648,10 @@ export function TreeRows({
                   {node.childrenIds.length}
                 </span>
               ) : null}
-              {menuItems(id).length > 0 && (
+              {commands.length > 0 && (
                 <CommandMenu
                   label={t('{title} 操作', { title })}
-                  items={menuItems(id)}
+                  items={commands}
                   description={mutationBlockReason ? message(mutationBlockReason) : undefined}
                   open={menuId === id}
                   onOpenChange={open => setMenuId(current => (open ? id : current === id ? undefined : current))}

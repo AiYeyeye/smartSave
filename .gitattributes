@@ -2,8 +2,8 @@
 extension/import/fixtures/bookmarks.csv text eol=crlf
 
 # Applies to git archive only; does not remove tracked files or Git history.
-.trellis export-ignore
-.agents export-ignore
-.codex export-ignore
-experiments export-ignore
-ui export-ignore
+/.trellis export-ignore
+/.agents export-ignore
+/.codex export-ignore
+/experiments export-ignore
+/ui export-ignore

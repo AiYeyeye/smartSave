@@ -147,14 +147,20 @@ it('rejects nonempty removals, excluded descendants, overlapping merges and chan
   expect(() => organizeProposal(tree, 'bar', { ...empty, removeFolders: [{ folderId: 'left' }] }, privacy)).toThrow(
     'unsafe-folder-removal',
   );
-  expect(() =>
-    organizeProposal(
-      tree,
-      'bar',
-      { ...empty, moves: [{ itemId: 'a', folderId: 'right' }], merges: [{ sourceId: 'left', targetId: 'right' }] },
-      privacy,
-    ),
-  ).toThrow('overlapping-merge');
+  // A direct child move to the merge target is redundant; compile each child exactly once.
+  const redundant = organizeProposal(
+    tree,
+    'bar',
+    { ...empty, moves: [{ itemId: 'a', folderId: 'right' }], merges: [{ sourceId: 'left', targetId: 'right' }] },
+    privacy,
+  );
+  expect(redundant.actions.filter(a => a.kind === 'move' || a.kind === 'merge')).toEqual([
+    expect.objectContaining({ kind: 'merge', sourceId: 'left', targetId: 'right' }),
+  ]);
+  const compiled = organizeCompilation(redundant, ['merge:left'], {}, 'lease');
+  expect(compiled.plan.steps.map(step => step.type)).toEqual(['move', 'move', 'remove']);
+  expect(compiled.plan.simulated.nodes.find(node => node.ref.nativeId === 'right')?.childrenIds).toEqual(['a', 'b']);
+  expect(compiled.plan.simulated.nodes.find(node => node.ref.nativeId === 'left')).toBeUndefined();
   const a = tree.nodes.find(n => n.ref.nativeId === 'a')!;
   tree.nodes.push({
     ...tree.nodes.find(n => n.ref.nativeId === 'right')!,
@@ -187,6 +193,46 @@ it('keeps explicit opt-outs and rejects invalid target edits without a false aft
   );
   expect(preview.tree).toBeUndefined();
   expect(preview.error).toContain('冲突');
+});
+it('rejects a child move to a different destination instead of silently dropping it under a merge', () => {
+  expect(() =>
+    organizeProposal(
+      organizerTree(),
+      'bar',
+      { ...empty, moves: [{ itemId: 'a', folderId: 'bar' }], merges: [{ sourceId: 'left', targetId: 'right' }] },
+      privacy,
+    ),
+  ).toThrow('overlapping-merge');
+});
+it.each(['move', 'merge'] as const)('rejects a nested %s that changes structure beyond the parent merge', kind => {
+  const tree = organizerTree();
+  const left = tree.nodes.find(node => node.ref.nativeId === 'left')!;
+  const bookmark = tree.nodes.find(node => node.ref.nativeId === 'a')!;
+  left.childrenIds = ['nested', 'b'];
+  bookmark.parentId = 'nested';
+  tree.nodes.push({
+    ...left,
+    ref: { ...left.ref, nativeId: 'nested' },
+    parentId: 'left',
+    childrenIds: ['a'],
+    title: 'Nested',
+    index: 0,
+  });
+  expect(() =>
+    organizeProposal(
+      tree,
+      'bar',
+      {
+        ...empty,
+        moves: kind === 'move' ? [{ itemId: 'a', folderId: 'right' }] : [],
+        merges: [
+          { sourceId: 'left', targetId: 'right' },
+          ...(kind === 'merge' ? [{ sourceId: 'nested', targetId: 'right' }] : []),
+        ],
+      },
+      privacy,
+    ),
+  ).toThrow('overlapping-merge');
 });
 it('retains action reasons through transport normalization and remembers temporary destinations by path', () => {
   const tree = organizerTree();

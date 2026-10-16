@@ -44,7 +44,6 @@ export function OrganizeTreePreview({
   return (
     <section className="organize-tree-preview" aria-label={t('整体分类预览')}>
       <h3>{t(before ? '整理前的分类' : '预计整理后的分类')}</h3>
-      <p className="hint">{t('显示所选范围的完整分类，包括未改动的目录。勾选建议后同步更新；尚未修改书签。')}</p>
       <div className="actions">
         <button aria-pressed={!before} onClick={() => setBefore(false)}>
           {t('整理后')}

@@ -24,6 +24,8 @@ import { modelThinkingPlan, rejectsThinkingParameter } from '../domain/model-thi
 import { abortableDelay } from '../domain/cancellable';
 import { anthropicPromptContent } from '../domain/model-cache';
 import { analyzeOrganizeRepair, type OrganizeRepair } from '../domain/organize-partial-repair';
+import { tokenUsageAccumulator, type TokenUsageRecord, type TokenPurpose } from '../domain/token-usage';
+import { recordTokenUsage } from '../persistence/token-usage';
 export type ModelProgress = ModelStreamProgress & {
   phase: 'waiting' | 'receiving' | 'validating';
   retry?: { attempt: number; delaySeconds: number; httpStatus: number };
@@ -72,6 +74,7 @@ export function modelRequestBody(
   policy: ClassificationPolicy = DEFAULT_CLASSIFICATION_POLICY,
   /** Ask for JSON through the API's own switch; off for the one retry after an empty reply. */
   jsonMode = true,
+  includeUsage = true,
 ): string {
   payload = compactAiPayload(payload);
   const thinking = modelThinkingPlan(config);
@@ -115,6 +118,9 @@ export function modelRequestBody(
   return JSON.stringify({
     model: config.model,
     stream: modelStreaming(config),
+    ...(includeUsage && ['openai-compatible', 'lm-studio'].includes(config.adapter) && modelStreaming(config)
+      ? { stream_options: { include_usage: true } }
+      : {}),
     ...(config.adapter === 'openai-compatible' ? { max_completion_tokens: modelOutputTokenLimit(config) } : {}),
     ...thinking?.top,
     messages: [
@@ -216,6 +222,7 @@ export class ModelTransport {
     private readonly boundary: ModelBoundary,
     private readonly authority: ModelAuthority,
     private readonly limits = MODEL_BYTE_LIMITS,
+    private readonly usageRecorder: (record: TokenUsageRecord) => Promise<void> = recordTokenUsage,
   ) {
     // Tree changes are judged per request against its dependency scope in run(); settings/permission changes cancel outright.
     this.unsubscribe = authority.subscribe(change => {
@@ -228,7 +235,7 @@ export class ModelTransport {
   }
   /** Independent cancellation/stream owner sharing the same permission and freshness authority. */
   fork() {
-    return new ModelTransport(this.boundary, this.authority, this.limits);
+    return new ModelTransport(this.boundary, this.authority, this.limits, this.usageRecorder);
   }
   cancel(source: 'caller' | 'disposed' | 'superseded' | 'permissions-changed' | 'settings-changed' = 'caller') {
     if (this.active && !this.active.signal.aborted) this.cancelTrace?.(source);
@@ -270,6 +277,8 @@ export class ModelTransport {
     onTiming?: (timing: ModelTiming) => void;
     /** Diagnostic correlation only; never included in the provider request. */
     diagnosticRunId?: string;
+    /** Synthetic connection generation shares task=save but is accounted separately. */
+    usagePurpose?: TokenPurpose;
     /** Organizer-only opt-in. Never persisted or sent to the provider; does not initiate another request. */
     organizeRepair?: { knownIds: string[] };
   }): Promise<ModelResult> {
@@ -366,6 +375,7 @@ export class ModelTransport {
       return value;
     };
     let result: ModelResult;
+    const usageWrites: Promise<unknown>[] = [];
     log('call-start', { hasCredential: input.key.length > 0, timeoutMs });
     let lastProgressAt = 0;
     let lastProgressChars = 0;
@@ -465,6 +475,8 @@ export class ModelTransport {
       const thinkingKey = JSON.stringify([route.identity, frozen.config.model, thinkingPlan?.key]);
       let useThinking = Boolean(thinkingPlan) && (unsupportedThinking.get(thinkingKey) ?? 0) <= Date.now();
       let thinkingFallback = false;
+      let includeUsage =
+        ['openai-compatible', 'lm-studio'].includes(frozen.config.adapter) && modelStreaming(frozen.config);
       for (;;) {
         check();
         timeoutPhase = 'request';
@@ -479,6 +491,7 @@ export class ModelTransport {
           payload,
           policy,
           jsonMode,
+          includeUsage,
         );
         const requestBytes = new TextEncoder().encode(body).byteLength;
         if (requestBytes > this.limits.requestBytes) throw Error('payload-too-large');
@@ -494,191 +507,240 @@ export class ModelTransport {
         });
         attemptLog('request-body', () => modelBodyDiagnostics(body, frozen.key));
         check();
-        const pendingResponse = this.boundary.fetch(route.url, {
-          method: 'POST',
-          headers,
-          body,
-          signal: controller.signal,
-          credentials: 'omit',
-          redirect: 'error',
-          cache: 'no-store',
-          referrerPolicy: 'no-referrer',
-        });
-        // A boundary that ignores AbortSignal may still resolve; release its unread body.
-        void pendingResponse.then(
-          response => {
-            if (controller.signal.aborted || generation !== this.generation)
-              void response.body?.cancel().catch(() => {});
-          },
-          () => {},
-        );
-        const response = await checked(pendingResponse);
-        httpStatus = response.status;
-        attemptLog('response-headers', {
-          httpStatus,
-          contentType: response.headers.get('content-type'),
-          contentLength: response.headers.get('content-length'),
-          serverRequestId: response.headers.get('x-request-id') ?? response.headers.get('request-id'),
-          redirected: response.redirected,
-        });
-        if (response.redirected || (response.url && response.url !== route.url)) {
-          void response.body?.cancel().catch(() => {});
-          throw Error('redirect');
-        }
-        const onBody: ModelBodyObserver = (text, receivedBytes, complete) => {
-          attemptLog('response-body', () => ({ receivedBytes, complete, ...modelBodyDiagnostics(text, frozen.key) }));
-        };
-        if (!response.ok) {
-          const message = await checked(errorMessage(response, onBody, controller.signal, this.limits.responseBytes));
-          attemptLog('http-error', { status: response.status, message });
-          if (
-            useThinking &&
-            !thinkingFallback &&
-            thinkingPlan &&
-            rejectsThinkingParameter(response.status, message, thinkingPlan.fields)
-          ) {
-            useThinking = false;
-            thinkingFallback = true;
-            unsupportedThinking.set(thinkingKey, Date.now() + 24 * 60 * 60 * 1000);
-            if (unsupportedThinking.size > 128) unsupportedThinking.delete(unsupportedThinking.keys().next().value!);
-            attemptLog('thinking-compatibility-fallback', { scheme: thinkingPlan.key });
-            continue;
-          }
-          if ((response.status === 429 || (response.status >= 500 && response.status <= 599)) && recoveries < 3) {
-            const delaySeconds = 2 ** ++recoveries;
-            progress({
-              phase: 'waiting',
-              text: '',
-              receivedChars: 0,
-              streaming: modelStreaming(frozen.config),
-              retry: { attempt: recoveries, delaySeconds, httpStatus: response.status },
-            });
-            attemptLog('retry-wait', { retry: recoveries, delaySeconds, httpStatus: response.status });
-            await checked(abortableDelay(delaySeconds * 1000, controller.signal));
-            continue;
-          }
-          result = {
-            status: 'failed',
-            reason: [401, 403, 429].includes(response.status) ? `http-${response.status}` : 'http-error',
-          };
-          break;
-        }
-        const streaming = /^text\/event-stream(?:\s*;|\s*$)/i.test(response.headers.get('content-type') ?? '');
-        actualStreaming = streaming;
-        firstTokenAt = undefined;
-        responseAt = undefined;
-        if (streaming) renew('stream-idle');
-        attemptLog('waiting-policy', { mode: streaming ? 'stream-idle' : 'total', timeoutMs });
-        let wire: Awaited<ReturnType<typeof readWireReply>>;
-        progress({
-          phase: 'receiving',
-          text: '',
-          receivedChars: 0,
-          streaming,
-        });
+        const usage = tokenUsageAccumulator(frozen.config.adapter);
+        const attemptAt = Date.now();
+        let responseComplete = false;
         try {
-          wire = await checked(
-            readWireReply(
-              response,
-              frozen.config.adapter,
-              this.limits.responseBytes,
-              controller.signal,
-              onBody,
-              input.onProgress || input.onTiming ? update => progress({ ...update, phase: 'receiving' }) : undefined,
-              streaming ? () => renew('stream-idle') : undefined,
-            ),
+          const pendingResponse = this.boundary.fetch(route.url, {
+            method: 'POST',
+            headers,
+            body,
+            signal: controller.signal,
+            credentials: 'omit',
+            redirect: 'error',
+            cache: 'no-store',
+            referrerPolicy: 'no-referrer',
+          });
+          // A boundary that ignores AbortSignal may still resolve; release its unread body.
+          void pendingResponse.then(
+            response => {
+              if (controller.signal.aborted || generation !== this.generation)
+                void response.body?.cancel().catch(() => {});
+            },
+            () => {},
           );
-        } catch (error) {
-          const readError = error instanceof ModelResponseReadError ? error.cause : error;
-          attemptLog('response-read-failed', {
-            waitingPhase: timeoutPhase,
-            idleMs: lastActivityAt === undefined ? undefined : Date.now() - lastActivityAt,
-            aborted: controller.signal.aborted,
-            stage: error instanceof ModelResponseReadError ? 'body-read' : 'decode-or-protocol',
-            error: readError instanceof Error ? readError.name : 'unknown',
-            message: readError instanceof Error ? readError.message : undefined,
+          const response = await checked(pendingResponse);
+          httpStatus = response.status;
+          attemptLog('response-headers', {
+            httpStatus,
+            contentType: response.headers.get('content-type'),
+            contentLength: response.headers.get('content-length'),
+            serverRequestId: response.headers.get('x-request-id') ?? response.headers.get('request-id'),
+            redirected: response.redirected,
           });
-          throw error instanceof ModelParseError ||
-            error instanceof ModelResponseReadError ||
-            (error instanceof Error && ['response-too-large', 'aborted'].includes(error.message))
-            ? error
-            : new ModelParseError('envelope');
-        }
-        responseAt = Date.now();
-        if (streaming) renew('validation');
-        await permission();
-        await fresh();
-        const reply = wire.reply;
-        progress({
-          phase: 'validating',
-          text: '',
-          receivedChars: reply.text.length,
-          streaming: wire.events !== undefined,
-        });
-        attemptLog('reply-extracted', {
-          chars: reply.text.length,
-          finish: reply.finish,
-          truncated: reply.truncated,
-          refused: Boolean(reply.refused),
-          failed: reply.failed,
-          events: wire.events,
-        });
-        try {
-          const text = completedReplyText(reply);
-          // SSE body prefixes can consist entirely of thinking. Capture the completed answer
-          // independently so long reasoning streams cannot hide a rejected proposal.
-          attemptLog('answer-body', () => modelBodyDiagnostics(text, frozen.key));
-          const value = normalizeModelJson(extractJsonObject(text), frozen.request.task);
-          try {
-            const output = parseModelOutput(value, context);
-            check();
-            attemptLog('output-validated', { status: 'completed' });
-            result = { status: 'completed', output };
-          } catch (error) {
-            if (controller.signal.aborted) throw error;
-            const repair =
-              frozen.organizeRepair &&
-              analyzeOrganizeRepair(value, context, [
-                ...frozen.tree.nodes.map(node => node.ref.nativeId),
-                ...frozen.organizeRepair.knownIds,
-              ]);
-            if (repair) {
-              check();
-              result = { status: 'repairable', reason: 'partial-invalid-targets', repair };
-              break;
-            }
-            const issue =
-              error instanceof ModelOutputValidationError ? `${error.path}: ${error.code}` : 'validation-exception';
-            throw new ModelParseError('validate', issue);
+          if (response.redirected || (response.url && response.url !== route.url)) {
+            void response.body?.cancel().catch(() => {});
+            throw Error('redirect');
           }
-        } catch (error) {
-          check();
-          const parse = error instanceof ModelParseError ? error : new ModelParseError('json');
-          attemptLog('parse-failed', {
-            task: frozen.request.task,
-            jsonMode,
-            stage: parse.stage,
-            detail: parse.detail,
-            issue: parse.issue,
-            organizeStage: context.stage,
-            inputItems: context.items.length,
-            inputFolders: context.folders.length,
-            maxNewDepth: context.policy?.maxNewDepth,
-            chars: reply.text.length,
-            shape: wire.raw === undefined ? 'SSE' : replyShape(wire.raw),
+          const onBody: ModelBodyObserver = (text, receivedBytes, complete) => {
+            attemptLog('response-body', () => ({ receivedBytes, complete, ...modelBodyDiagnostics(text, frozen.key) }));
+            if (complete && !response.ok) {
+              try {
+                usage.push(JSON.parse(text));
+              } catch {
+                /* Error bodies need not be JSON. */
+              }
+            }
+          };
+          if (!response.ok) {
+            const message = await checked(errorMessage(response, onBody, controller.signal, this.limits.responseBytes));
+            responseComplete = true;
+            attemptLog('http-error', { status: response.status, message });
+            if (
+              includeUsage &&
+              rejectsThinkingParameter(response.status, message, ['stream_options', 'include_usage'])
+            ) {
+              includeUsage = false;
+              continue;
+            }
+            if (
+              useThinking &&
+              !thinkingFallback &&
+              thinkingPlan &&
+              rejectsThinkingParameter(response.status, message, thinkingPlan.fields)
+            ) {
+              useThinking = false;
+              thinkingFallback = true;
+              unsupportedThinking.set(thinkingKey, Date.now() + 24 * 60 * 60 * 1000);
+              if (unsupportedThinking.size > 128) unsupportedThinking.delete(unsupportedThinking.keys().next().value!);
+              attemptLog('thinking-compatibility-fallback', { scheme: thinkingPlan.key });
+              continue;
+            }
+            if ((response.status === 429 || (response.status >= 500 && response.status <= 599)) && recoveries < 3) {
+              const delaySeconds = 2 ** ++recoveries;
+              progress({
+                phase: 'waiting',
+                text: '',
+                receivedChars: 0,
+                streaming: modelStreaming(frozen.config),
+                retry: { attempt: recoveries, delaySeconds, httpStatus: response.status },
+              });
+              attemptLog('retry-wait', { retry: recoveries, delaySeconds, httpStatus: response.status });
+              await checked(abortableDelay(delaySeconds * 1000, controller.signal));
+              continue;
+            }
+            result = {
+              status: 'failed',
+              reason: [401, 403, 429].includes(response.status) ? `http-${response.status}` : 'http-error',
+            };
+            break;
+          }
+          const streaming = /^text\/event-stream(?:\s*;|\s*$)/i.test(response.headers.get('content-type') ?? '');
+          actualStreaming = streaming;
+          firstTokenAt = undefined;
+          responseAt = undefined;
+          if (streaming) renew('stream-idle');
+          attemptLog('waiting-policy', { mode: streaming ? 'stream-idle' : 'total', timeoutMs });
+          let wire: Awaited<ReturnType<typeof readWireReply>>;
+          progress({
+            phase: 'receiving',
+            text: '',
+            receivedChars: 0,
+            streaming,
           });
-          result = { status: 'failed', reason: parseReason(parse), ...(parse.detail ? { detail: parse.detail } : {}) };
+          try {
+            wire = await checked(
+              readWireReply(
+                response,
+                frozen.config.adapter,
+                this.limits.responseBytes,
+                controller.signal,
+                onBody,
+                input.onProgress || input.onTiming ? update => progress({ ...update, phase: 'receiving' }) : undefined,
+                streaming ? () => renew('stream-idle') : undefined,
+                raw => usage.push(raw),
+              ),
+            );
+          } catch (error) {
+            const readError = error instanceof ModelResponseReadError ? error.cause : error;
+            attemptLog('response-read-failed', {
+              waitingPhase: timeoutPhase,
+              idleMs: lastActivityAt === undefined ? undefined : Date.now() - lastActivityAt,
+              aborted: controller.signal.aborted,
+              stage: error instanceof ModelResponseReadError ? 'body-read' : 'decode-or-protocol',
+              error: readError instanceof Error ? readError.name : 'unknown',
+              message: readError instanceof Error ? readError.message : undefined,
+            });
+            throw error instanceof ModelParseError ||
+              error instanceof ModelResponseReadError ||
+              (error instanceof Error && ['response-too-large', 'aborted'].includes(error.message))
+              ? error
+              : new ModelParseError('envelope');
+          }
+          responseAt = Date.now();
+          responseComplete = true;
+          if (streaming) renew('validation');
+          await permission();
+          await fresh();
+          const reply = wire.reply;
+          progress({
+            phase: 'validating',
+            text: '',
+            receivedChars: reply.text.length,
+            streaming: wire.events !== undefined,
+          });
+          attemptLog('reply-extracted', {
+            chars: reply.text.length,
+            finish: reply.finish,
+            truncated: reply.truncated,
+            refused: Boolean(reply.refused),
+            failed: reply.failed,
+            events: wire.events,
+          });
+          try {
+            const text = completedReplyText(reply);
+            // SSE body prefixes can consist entirely of thinking. Capture the completed answer
+            // independently so long reasoning streams cannot hide a rejected proposal.
+            attemptLog('answer-body', () => modelBodyDiagnostics(text, frozen.key));
+            const value = normalizeModelJson(extractJsonObject(text), frozen.request.task);
+            try {
+              const output = parseModelOutput(value, context);
+              check();
+              attemptLog('output-validated', { status: 'completed' });
+              result = { status: 'completed', output };
+            } catch (error) {
+              if (controller.signal.aborted) throw error;
+              const repair =
+                frozen.organizeRepair &&
+                analyzeOrganizeRepair(value, context, [
+                  ...frozen.tree.nodes.map(node => node.ref.nativeId),
+                  ...frozen.organizeRepair.knownIds,
+                ]);
+              if (repair) {
+                check();
+                result = { status: 'repairable', reason: 'partial-invalid-targets', repair };
+                break;
+              }
+              const issue =
+                error instanceof ModelOutputValidationError ? `${error.path}: ${error.code}` : 'validation-exception';
+              throw new ModelParseError('validate', issue);
+            }
+          } catch (error) {
+            check();
+            const parse = error instanceof ModelParseError ? error : new ModelParseError('json');
+            attemptLog('parse-failed', {
+              task: frozen.request.task,
+              jsonMode,
+              stage: parse.stage,
+              detail: parse.detail,
+              issue: parse.issue,
+              organizeStage: context.stage,
+              inputItems: context.items.length,
+              inputFolders: context.folders.length,
+              maxNewDepth: context.policy?.maxNewDepth,
+              chars: reply.text.length,
+              shape: wire.raw === undefined ? 'SSE' : replyShape(wire.raw),
+            });
+            result = {
+              status: 'failed',
+              reason: parseReason(parse),
+              ...(parse.detail ? { detail: parse.detail } : {}),
+            };
+          }
+          if (
+            result.status !== 'failed' ||
+            result.reason !== 'empty' ||
+            !jsonMode ||
+            !['openai-compatible', 'openai-responses'].includes(frozen.config.adapter)
+          )
+            break;
+          check();
+          log('retry-without-json-mode', { attempt: attempt + 1 });
+          jsonMode = false;
+        } finally {
+          // Start durable accounting immediately, outside the transport deadline and validity path.
+          // An actual attempt is recorded even for network errors, cancellation or invalid proposals.
+          try {
+            usageWrites.push(
+              Promise.resolve(
+                this.usageRecorder({
+                  id: `${callId}:${attempt}`,
+                  at: attemptAt,
+                  adapter: frozen.config.adapter,
+                  model: (frozen.key
+                    ? frozen.config.model.split(frozen.key).join('[redacted]')
+                    : frozen.config.model
+                  ).slice(0, 512),
+                  purpose: frozen.usagePurpose ?? frozen.request.task,
+                  counts: usage.snapshot(),
+                  complete: responseComplete,
+                }),
+              ).catch(() => {}),
+            );
+          } catch {
+            /* Accounting cannot change the model result. */
+          }
         }
-        if (
-          result.status !== 'failed' ||
-          result.reason !== 'empty' ||
-          !jsonMode ||
-          !['openai-compatible', 'openai-responses'].includes(frozen.config.adapter)
-        )
-          break;
-        check();
-        log('retry-without-json-mode', { attempt: attempt + 1 });
-        jsonMode = false;
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : '';
@@ -737,6 +799,18 @@ export class ModelTransport {
       });
     } catch {
       /* Measurement observers cannot change validation or write eligibility. */
+    }
+    // Give local persistence a bounded opportunity before a caller closes the document/worker event.
+    // Never hold cancellation or a valid result indefinitely on storage/lock availability.
+    if (usageWrites.length) {
+      let flushTimer: ReturnType<typeof setTimeout> | undefined;
+      await Promise.race([
+        Promise.allSettled(usageWrites),
+        new Promise<void>(resolve => {
+          flushTimer = setTimeout(resolve, 1000);
+        }),
+      ]);
+      clearTimeout(flushTimer);
     }
     return result;
   }

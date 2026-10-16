@@ -1,6 +1,13 @@
 import type { TreeSnapshot } from '../domain/node-reference';
 import type { OrganizeState } from '../domain/organize-state';
-import { ORGANIZE_STYLES, ORGANIZE_INSTRUCTIONS_LIMIT, type OrganizeStyle } from '../domain/organize-preferences';
+import {
+  ORGANIZE_STYLES,
+  ORGANIZE_SUB_STYLES,
+  ORGANIZE_INSTRUCTIONS_LIMIT,
+  type OrganizeStyle,
+  type OrganizeSubStyle,
+} from '../domain/organize-preferences';
+import type { OrganizeLevels } from '../domain/classification-policy';
 import type { OrganizeMemory } from '../persistence/organize-memory';
 import type { OrganizeMemoryEditor } from './organize-workbench-view';
 import { Select } from '../ui/Select';
@@ -23,6 +30,10 @@ type Props = {
   setCleanupEmpty: (value: boolean) => void;
   allowRename: boolean;
   setAllowRename: (value: boolean) => void;
+  levels: OrganizeLevels;
+  setLevels: (value: OrganizeLevels) => void;
+  subStyle: OrganizeSubStyle | '';
+  setSubStyle: (value: OrganizeSubStyle | '') => void;
   batchSizeInput: string;
   setBatchSizeInput: (value: string) => void;
   batchSizeValid: boolean;
@@ -56,6 +67,10 @@ export function OrganizeScopeStep({
   setCleanupEmpty,
   allowRename,
   setAllowRename,
+  levels,
+  setLevels,
+  subStyle,
+  setSubStyle,
   batchSizeInput,
   setBatchSizeInput,
   batchSizeValid,
@@ -167,7 +182,45 @@ export function OrganizeScopeStep({
                 ))}
               </Select>
             </label>
-            <p className="hint">{message(ORGANIZE_STYLES.find(option => option.id === style)?.hint ?? '')}</p>
+            <label>
+              {t('目录层级')}
+              <Select
+                aria-label={t('目录层级')}
+                value={String(levels)}
+                disabled={state.busy || unfiledOnly}
+                onChange={e => {
+                  cancel();
+                  setLevels(Number(e.target.value) as OrganizeLevels);
+                }}
+              >
+                <option value="1">{t('一级（平铺）')}</option>
+                <option value="2">{t('两级：大类 / 小类（推荐）')}</option>
+                <option value="3">{t('三级')}</option>
+              </Select>
+            </label>
+            {levels > 1 && !['custom', 'existing', 'numbered'].includes(style) && (
+              <label>
+                {t('小类按')}
+                <Select
+                  aria-label={t('小类按')}
+                  value={subStyle}
+                  disabled={state.busy || unfiledOnly}
+                  onChange={e => {
+                    cancel();
+                    setSubStyle(e.target.value as OrganizeSubStyle | '');
+                  }}
+                >
+                  <option value="">{t('与大类相同')}</option>
+                  {ORGANIZE_STYLES.filter(option => (ORGANIZE_SUB_STYLES as readonly string[]).includes(option.id)).map(
+                    option => (
+                      <option key={option.id} value={option.id}>
+                        {t(option.label)}
+                      </option>
+                    ),
+                  )}
+                </Select>
+              </label>
+            )}
             <label>
               {style === 'custom' ? t('你的分类要求（必填）') : t('补充要求（选填）')}
               <textarea
@@ -213,7 +266,6 @@ export function OrganizeScopeStep({
               {t('请输入大于或等于 1 的有效整数。')}
             </p>
           )}
-          <p className="hint">{t('默认每批最多 100 条，可自定义数量。同时按内容长度自动拆分，每批完成就能查看。')}</p>
           <label className="organize-option">
             <input
               type="checkbox"
@@ -304,14 +356,6 @@ export function OrganizeScopeStep({
       {method === 'ai' && scopeProtected && (
         <p role="status">{t('该范围位于受保护分类中，请取消保护或选择其他范围。')}</p>
       )}
-      {method === 'ai' && (
-        <p className="hint">
-          {state.task
-            ? t('默认按主题整理。进度保存在本机，可关闭页面后重新打开查看；浏览器或后台中断后，需手动继续未完成批次。')
-            : t('默认按主题整理。请保持本页面打开；切换页内栏目不影响生成，关闭或刷新页面会丢失本次进度。')}
-        </p>
-      )}
-      <p className="hint">{t('这一步只生成建议，不会修改书签。')}</p>
       <div className="workflow-footer">
         <button
           className="primary"

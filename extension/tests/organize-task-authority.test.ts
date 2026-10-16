@@ -51,7 +51,7 @@ async function setup() {
     installationId: tree.installationId,
     root: tree.nodes.find(n => n.ref.nativeId === 'bar')!.ref,
     baseline: structuredClone(tree),
-    ...(await organizeCheckpointContext({ ...value, tree }, 'bar')),
+    ...(await organizeCheckpointContext({ ...value, tree }, 'bar', ['a', 'b'])),
     requiresCredential: true,
     preference: { style: 'topic', instructions: '' },
     options: { batchSize: 100, cleanupEmpty: false },

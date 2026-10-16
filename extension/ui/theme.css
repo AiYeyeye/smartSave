@@ -779,7 +779,7 @@ dialog::backdrop {
   margin: 0;
 }
 .bookmark-row {
-  min-height: 30px;
+  min-height: 28px;
   display: flex;
   flex-wrap: nowrap;
   align-items: center;
@@ -799,7 +799,7 @@ dialog::backdrop {
   display: flex;
   align-items: center;
   gap: 7px;
-  min-height: 30px;
+  min-height: 28px;
   flex: 1;
   min-width: 0;
   text-align: start;
@@ -809,11 +809,11 @@ dialog::backdrop {
   border-radius: var(--r-sm);
   background: transparent;
   box-shadow: none;
-  font-size: 13px;
-  font-weight: 450;
+  font-size: 12.5px;
+  font-weight: 400;
 }
 .folder-row {
-  font-weight: 560;
+  font-weight: 520;
 }
 .folder-row:hover:not(:disabled),
 .bookmark-open:hover:not(:disabled) {
@@ -850,15 +850,15 @@ dialog::backdrop {
 }
 .bookmark-open {
   display: block;
-  min-height: 30px;
-  line-height: 30px;
+  min-height: 28px;
+  line-height: 28px;
   padding: 0;
   border: 0;
   background: transparent;
   box-shadow: none;
   text-align: start;
-  font-size: 13px;
-  font-weight: 450;
+  font-size: 12.5px;
+  font-weight: 400;
 }
 .bookmark-open:active:not(:disabled) {
   scale: none;

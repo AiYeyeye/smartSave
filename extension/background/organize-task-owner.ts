@@ -58,6 +58,8 @@ export class OrganizeTaskOwner {
   private closed = false;
   private starting = false;
   private loading = new Set<string>();
+  /** Plain reads of the same task share one restore: a page reconnect sends a subscribe and a get together. */
+  private reading = new Map<string, Promise<OrganizeTaskView>>();
   private stopping = new AbortController();
   constructor(private options: Options) {
     this.lifetime = options.lifetime ?? createWorkerTaskLifetime();
@@ -401,7 +403,17 @@ export class OrganizeTaskOwner {
     task.memoryRefresh = pending;
     return pending;
   }
-  private async load(id: string, credential?: OrganizeCredentialGrant, editing?: Task) {
+  private load(id: string, credential?: OrganizeCredentialGrant, editing?: Task): Promise<OrganizeTaskView> {
+    if (credential || editing) return this.loadNow(id, credential, editing);
+    const pending = this.reading.get(id);
+    if (pending) return pending;
+    const next = this.loadNow(id).finally(() => {
+      if (this.reading.get(id) === next) this.reading.delete(id);
+    });
+    this.reading.set(id, next);
+    return next;
+  }
+  private async loadNow(id: string, credential?: OrganizeCredentialGrant, editing?: Task) {
     if (this.closed) throw Error('organize-task-unavailable');
     const submission = this.submissions.get(id);
     if (submission) return this.submittedView(submission);

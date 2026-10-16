@@ -167,6 +167,7 @@ export async function testConnection(input: {
       },
     );
     const result = await transport.run({
+      usagePurpose: 'connection-test',
       config,
       key: draft.key,
       privacy,

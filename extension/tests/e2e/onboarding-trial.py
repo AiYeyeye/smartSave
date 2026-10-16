@@ -22,6 +22,7 @@ parser.add_argument('--browser', default='C:/Users/PC/AppData/Local/ms-playwrigh
 parser.add_argument('--motion', choices=['reduce', 'no-preference'], default='reduce')
 parser.add_argument('--language', choices=['zh-CN', 'en'], default='zh-CN')
 parser.add_argument('--keywords', action='store_true', help='Also verify native-save keyword enrichment and cleanup')
+parser.add_argument('--token-usage', action='store_true', help='Verify actual page/worker usage receipts and the settings dashboard')
 args = parser.parse_args()
 if not args.run:
     print('SKIP: pass --run for the isolated fixture')
@@ -47,7 +48,7 @@ class Provider(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path.endswith('/models'):
-            self.reply({'data': [{'id': 'synthetic-existing-model'}]})
+            self.reply({'data': [{'id': 'a-unselected-first-model'}, {'id': 'synthetic-existing-model'}]})
         else:
             self.reply(b'<title>Trial synthetic webpage</title><p>Body must never be sent.</p>', 'text/html')
 
@@ -56,7 +57,8 @@ class Provider(BaseHTTPRequestHandler):
         payload = json.loads(raw['messages'][1]['content'])
         events.append({'model': raw['model'], 'payload': payload})
         output = {'assignments': [{'itemId': payload['items'][0]['id'], 'folderId': fixture['folder'], 'keywords': ['diagramming', '流程图', '工作流']}], 'newFolders': []}
-        self.reply({'choices': [{'message': {'content': json.dumps(output)}}]})
+        usage = {'prompt_tokens': 1000, 'completion_tokens': 50, 'total_tokens': 1050} if len(events) == 1 else {'prompt_tokens': 200, 'completion_tokens': 20, 'total_tokens': 220}
+        self.reply({'choices': [{'message': {'content': json.dumps(output)}}], **({'usage': usage} if args.token_usage else {})})
 
 
 server = ThreadingHTTPServer(('127.0.0.1', 0), Provider)
@@ -107,6 +109,13 @@ with sync_playwright() as playwright:
         options.get_by_label('显示名称', exact=True).fill('Existing synthetic service')
         options.get_by_label('接口地址', exact=False).fill(origin + '/v1')
         options.get_by_role('button', name='连接', exact=True).click()
+        expect(options.get_by_label('使用哪个模型')).to_have_value('')
+        expect(options.get_by_role('button', name='保存并继续', exact=True)).to_be_disabled()
+        expect(options.get_by_role('dialog').get_by_role('radio')).to_have_count(2)
+        pending = worker.evaluate("async () => (await chrome.storage.local.get('aiServices')).aiServices")
+        assert pending['services'][0]['enabled'] == []
+        assert all(not feature.get('modelId') for feature in pending['features'])
+        options.get_by_role('radio', name='synthetic-existing-model', exact=True).check()
         expect(options.get_by_label('使用哪个模型')).to_have_value('synthetic-existing-model')
         options.screenshot(path=str(root / 'setup-model.png'), full_page=True)
         options.get_by_role('button', name='保存并继续', exact=True).click()
@@ -208,6 +217,33 @@ with sync_playwright() as playwright:
             options.get_by_label('Language', exact=True).select_option('zh-CN')
             frame.get_by_text('建议目录：' + folder_title, exact=True).wait_for()
             assert len(events) == 1
+        usage_geometry = []
+        if args.token_usage:
+            options.goto(f'chrome-extension://{extension_id}/options/index.html#token-usage')
+            expect(options.locator('.token-totals dd')).to_have_text(['1,050', '1,000', '50', '1'])
+            expect(options.get_by_role('button', name='Token 统计', exact=True)).to_have_attribute('aria-current', 'page')
+            ledger = worker.evaluate("async()=> (await chrome.storage.local.get('tokenUsage.v1'))['tokenUsage.v1']")
+            assert ledger['recent'][0]['purpose'] == 'save'
+            assert ledger['recent'][0]['counts'] == {'input': 1000, 'output': 50, 'total': 1050}
+            assert all(key not in json.dumps(ledger) for key in ['must-not-send', 'private=', origin, 'Body must'])
+            for width in [320, 340, 480, 1024]:
+                options.set_viewport_size({'width': width, 'height': 960})
+                options.evaluate('()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))')
+                geometry = options.evaluate('({width:innerWidth,scroll:document.documentElement.scrollWidth,minTarget:Math.min(...[...document.querySelectorAll(".token-period button")].map(e=>e.getBoundingClientRect().height))})')
+                assert geometry['scroll'] <= width + 1 and geometry['minTarget'] >= 44, geometry
+                usage_geometry.append(geometry)
+                options.screenshot(path=str(root / f'token-usage-{width}.png'), full_page=True)
+            options.get_by_role('button', name='今日', exact=True).click()
+            locale = context.new_page()
+            locale.goto(f'chrome-extension://{extension_id}/options/index.html#appearance')
+            locale.get_by_label('语言', exact=True).select_option('en')
+            expect(options.get_by_role('button', name='Today', exact=True)).to_have_attribute('aria-pressed', 'true')
+            expect(options.locator('.token-totals dd')).to_have_text(['1,050', '1,000', '50', '1'])
+            options.screenshot(path=str(root / 'token-usage-en.png'), full_page=True)
+            locale.get_by_label('Language', exact=True).select_option('zh-CN')
+            locale.close()
+            options.reload()
+            expect(options.locator('.token-totals dd')).to_have_text(['1,050', '1,000', '50', '1'])
         page.goto(origin + '/next')
         assert len(events) == 1
         if args.keywords:
@@ -217,21 +253,24 @@ with sync_playwright() as playwright:
             }""")
             wait_for(lambda: worker.evaluate("async id=> (await chrome.storage.local.get('bookmarkSearchKeywords.v1'))['bookmarkSearchKeywords.v1']?.some(record=>record.nativeId===id)", bookmark['id']))
             assert len(events) == 2, ('keywords must reuse the single native-save model request', events)
+            if args.token_usage:
+                expect(options.locator('.token-totals dd')).to_have_text(['1,270', '1,200', '70', '2'])
+                assert worker.evaluate("async()=> (await chrome.storage.local.get('tokenUsage.v1'))['tokenUsage.v1'].recent.length") == 2
             assert worker.evaluate('async id=>(await chrome.bookmarks.get(id))[0].parentId', bookmark['id']) == fixture['folder']
             options.goto(f'chrome-extension://{extension_id}/options/index.html#browse')
             options.get_by_role('searchbox').fill('diagramming')
-            expect(options.locator('.search-hit-list button')).to_have_text(['Synthetic drawing site'])
+            expect(options.locator('.search-hit-list .search-hit-open')).to_have_text(['Synthetic drawing site'])
             worker.evaluate("async id=>{const bar=(await chrome.bookmarks.getTree())[0].children[0].id; await chrome.bookmarks.move(id,{parentId:bar})}", bookmark['id'])
-            expect(options.locator('.search-hit-list button')).to_have_text(['Synthetic drawing site'])
+            expect(options.locator('.search-hit-list .search-hit-open')).to_have_text(['Synthetic drawing site'])
             options.set_viewport_size({'width':320,'height':900})
             options.screenshot(path=str(root/'keyword-search-320.png'),full_page=True)
             worker.evaluate('id=>chrome.bookmarks.remove(id)', bookmark['id'])
-            expect(options.locator('.search-hit-list button')).to_have_count(0)
+            expect(options.locator('.search-hit-list .search-hit-open')).to_have_count(0)
             wait_for(lambda: worker.evaluate("async()=> ((await chrome.storage.local.get('bookmarkSearchKeywords.v1'))['bookmarkSearchKeywords.v1'] ?? []).length===0"))
             assert len(events) == 2
         result = {'status': 'PASS', 'browser': context.browser.version, 'evidence': str(root), 'widths': widths, 'motion': args.motion, 'language': args.language,
                   'requests': len(events), 'trialNativeTreeUnchanged': True, 'keywordNativeSaveMoveSearchDelete': args.keywords,
-                  'trialGuideGeometry': guide_geometry,
+                  'tokenUsagePageAndWorker': args.token_usage, 'tokenUsageGeometry': usage_geometry, 'trialGuideGeometry': guide_geometry,
                   'productionWorkerSHA256': hashlib.sha256(production_worker).hexdigest(),
                   'scope': 'Fresh profile; production UI/HTML/CSS unchanged. Worker toolbar listener captured by a prelude; copied manifest grants loopback only. Local synthetic provider; no actual toolbar gesture or live-provider performance claim.'}
         (root / 'results.json').write_text(json.dumps(result, indent=2), encoding='utf-8')

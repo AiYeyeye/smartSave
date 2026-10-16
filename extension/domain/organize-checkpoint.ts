@@ -1,5 +1,6 @@
+import { ORGANIZE_STYLE_IDS, ORGANIZE_SUB_STYLES } from './organize-preferences';
 import { z } from 'zod';
-import { nodeRefSchema, nodeSchema } from './node-reference';
+import { nodeRefSchema, nodeSchema, type TreeSnapshot } from './node-reference';
 import { organizeOutputSchema } from '../schemas/model-output';
 import { scopeNodes } from './organize-proposal';
 import { dependencyDigest, settingsIdentity } from './context-dependencies';
@@ -38,12 +39,14 @@ export const organizeCheckpointSchema = z
     settingsRevision: id,
     requiresCredential: z.boolean(),
     preference: z.strictObject({
-      style: z.enum(['topic', 'type', 'purpose', 'existing', 'custom']),
+      style: z.enum(ORGANIZE_STYLE_IDS),
       instructions: z.string().max(1000),
+      subStyle: z.enum(ORGANIZE_SUB_STYLES).optional(),
     }),
     options: z.strictObject({
       cleanupEmpty: z.boolean().optional(),
       allowRename: z.boolean().optional(),
+      levels: z.literal([1, 2, 3]).optional(),
       unfiledOnly: z.boolean().optional(),
       protectedFolderIds: ids.optional(),
       rejectedSignatures: z.array(z.string()).max(500).optional(),
@@ -139,18 +142,39 @@ export const organizeCheckpointSchema = z
 
 export type OrganizeCheckpoint = z.infer<typeof organizeCheckpointSchema>;
 
-export async function organizeCheckpointContext(context: Awaited<ReturnType<ModelAuthority['read']>>, rootId: string) {
-  const hash = async (value: string) =>
-    Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))), byte =>
-      byte.toString(16).padStart(2, '0'),
-    ).join('');
+const sha256 = async (value: string) =>
+  Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))), byte =>
+    byte.toString(16).padStart(2, '0'),
+  ).join('');
+/**
+ * A saved task depends on the scope's folders and on the bookmarks it is organizing. Bookmarks saved into the scope
+ * later are simply not part of this run; moving, renaming or deleting a planned bookmark or any folder voids it.
+ */
+export async function organizeCheckpointContext(
+  context: Awaited<ReturnType<ModelAuthority['read']>>,
+  rootId: string,
+  bookmarkIds: string[],
+) {
+  const hash = sha256;
   return {
-    scopeDigest: await hash(dependencyDigest(context.tree, { task: 'organize', rootId, itemIds: [], folderIds: [] })),
+    scopeDigest: await hash(
+      dependencyDigest(context.tree, {
+        task: 'organize',
+        rootId,
+        stage: 'bookmarks',
+        itemIds: bookmarkIds,
+        folderIds: [],
+      }),
+    ),
     settingsDigest: await hash(settingsIdentity(context)),
     settingsRevision: context.revision,
   };
 }
 
+/** Digest written by older versions, which covered every node in scope; still accepted for their saved tasks. */
+export function legacyOrganizeScopeDigest(tree: TreeSnapshot, rootId: string) {
+  return sha256(dependencyDigest(tree, { task: 'organize', rootId, itemIds: [], folderIds: [] }));
+}
 /** Running calls lack completion proof after a worker replacement and never restart automatically. */
 export function interruptedOrganizeCheckpoint(value: OrganizeCheckpoint): OrganizeCheckpoint {
   return value.status === 'running' ? { ...value, status: 'paused' } : value;

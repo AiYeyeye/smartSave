@@ -188,7 +188,6 @@ export function ThemePicker({ extra }: { extra?: ReactNode } = {}) {
           <b />
         </div>
       </div>
-      <p className="hint">{t('外观立即保存在本机；浏览器启用同步时，也会同步明暗模式和主题色。')}</p>
     </div>
   );
 }

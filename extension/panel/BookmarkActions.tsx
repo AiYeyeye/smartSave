@@ -30,13 +30,16 @@ export function MutationFeedback({ result }: { result: MutationResult }) {
     partial: '部分完成，后续操作已停止',
     unknown: '结果未知，请检查操作记录，勿重复提交',
   };
+  const unknownCounts = result.status === 'unknown' && result.completedSteps === 0 && result.remainingSteps === 0;
   return (
-    <p role={result.status === 'completed' ? 'status' : 'alert'}>
-      {t('{status} · 已完成 {completed} 步 / 剩余 {remaining} 步', {
-        status: message(labels[result.status]),
-        completed: result.completedSteps,
-        remaining: result.remainingSteps,
-      })}
+    <p className="mutation-feedback" role={result.status === 'completed' ? 'status' : 'alert'}>
+      {unknownCounts
+        ? message(labels[result.status])
+        : t('{status} · 已完成 {completed} 步 / 剩余 {remaining} 步', {
+            status: message(labels[result.status]),
+            completed: result.completedSteps,
+            remaining: result.remainingSteps,
+          })}
       {result.needsReconcile && t(' · 需要协调检查')}
       {result.reason === 'invalid-sender' && t(' · 侧边栏授权尚未恢复，请等待连接恢复后重新操作')}
       {result.reason === 'preview-unavailable' && t(' · 操作准备失败，请重新选择目标')}

@@ -46,13 +46,124 @@ it('production App input reaches search without model calls or writes', () => {
   render(createElement(App, { page: 'panel' }));
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'cqdx' } });
   expect(
-    within(screen.getByRole('region', { name: '搜索结果' })).getByRole('button', { name: /重庆大学/ }),
+    within(screen.getByRole('region', { name: '搜索结果' })).getByRole('button', { name: '重庆大学' }),
   ).toBeVisible();
   const row = screen.getByRole('button', { name: /^重庆大学$/ });
   expect(row).toHaveTextContent(/^重庆大学$/);
   expect(row).not.toHaveTextContent('https://');
   expect(row).not.toHaveTextContent('学习资料');
   expect(fetcher).not.toHaveBeenCalled();
+});
+it('search result right-click and keyboard menus share safe open, copy and selection commands', async () => {
+  chromeStub();
+  const user = userEvent.setup();
+  const createTab = vi.fn(async () => ({}));
+  const createWindow = vi.fn(async () => ({}));
+  Object.assign(chrome, { tabs: { create: createTab }, windows: { create: createWindow } });
+  const send = vi.fn();
+  chrome.runtime.sendMessage = send;
+  const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+  const copy = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue();
+  render(createElement(SearchResults, { query: 'Bookmark 1' }));
+  const result = screen.getByRole('button', { name: 'Bookmark 1' });
+  const showMenu = () => fireEvent.contextMenu(result);
+  showMenu();
+  expect(screen.getByRole('menu')).toBeVisible();
+  expect(screen.getByRole('menuitem', { name: '在新标签页打开' })).toHaveFocus();
+  showMenu();
+  expect(screen.getAllByRole('menu')).toHaveLength(1);
+  expect(screen.getByRole('menuitem', { name: '置顶' })).toBeEnabled();
+  expect(send).not.toHaveBeenCalled();
+  expect(open).not.toHaveBeenCalled();
+  await user.click(screen.getByRole('menuitem', { name: '在新标签页打开' }));
+  expect(createTab).toHaveBeenCalledExactlyOnceWith({ url: snapshot.nodes[2]!.url, active: true });
+  showMenu();
+  await user.click(screen.getByRole('menuitem', { name: '在新窗口中打开' }));
+  showMenu();
+  await user.click(screen.getByRole('menuitem', { name: '在无痕窗口中打开' }));
+  expect(createWindow.mock.calls).toEqual([
+    [{ url: snapshot.nodes[2]!.url, type: 'normal', focused: true, incognito: false }],
+    [{ url: snapshot.nodes[2]!.url, type: 'normal', focused: true, incognito: true }],
+  ]);
+  showMenu();
+  await user.click(screen.getByRole('menuitem', { name: '复制链接' }));
+  expect(copy).toHaveBeenCalledExactlyOnceWith(snapshot.nodes[2]!.url);
+  expect(screen.getByText('已复制链接')).toBeVisible();
+  fireEvent.keyDown(result, { key: 'F10', shiftKey: true });
+  await user.click(screen.getByRole('menuitem', { name: '选择书签' }));
+  expect(screen.getByRole('checkbox', { name: '选择 Bookmark 1' })).toBeChecked();
+  expect(screen.getByText('已选 1 项')).toBeVisible();
+  await user.click(screen.getByRole('button', { name: '退出选择' }));
+  fireEvent.keyDown(result, { key: 'ContextMenu' });
+  await user.keyboard('{Escape}');
+  expect(screen.queryByRole('menu')).toBeNull();
+  expect(screen.getByRole('button', { name: 'Bookmark 1 操作' })).toHaveFocus();
+  expect(send).not.toHaveBeenCalled();
+  expect(open).not.toHaveBeenCalled();
+});
+it('filtered results edit/delete the clicked ID and reorder within its original native siblings', async () => {
+  chromeStub();
+  const user = userEvent.setup();
+  const requests: import('../schemas/messages').ConfirmMutation[] = [];
+  const send = vi.fn((message, reply) => {
+    if (message.type === 'registerMutationPreview') reply({ proposal: message.request });
+    else {
+      requests.push(message);
+      reply({
+        requestId: message.requestId,
+        status: 'completed',
+        needsReconcile: false,
+        completedSteps: 1,
+        remainingSteps: 0,
+      });
+    }
+  });
+  Object.assign(chrome.runtime, { sendMessage: send });
+  snapshot.nodes[0]!.childrenWritable = true;
+  const view = render(createElement(SearchResults, { query: 'Bookmark 1' }));
+  const result = screen.getByRole('button', { name: 'Bookmark 1' });
+  fireEvent.contextMenu(result);
+  await user.click(screen.getByRole('menuitem', { name: '编辑' }));
+  expect(screen.getByRole('textbox', { name: '标题' })).toHaveValue('Bookmark 1');
+  expect(screen.getByRole('textbox', { name: '网址' })).toHaveValue(snapshot.nodes[2]!.url);
+  await user.click(screen.getByRole('button', { name: '取消' }));
+  fireEvent.contextMenu(result);
+  await user.click(screen.getByRole('menuitem', { name: '删除' }));
+  expect(screen.getByRole('dialog', { name: '删除影响确认' })).toHaveTextContent('Bookmark 1');
+  expect(send).not.toHaveBeenCalled();
+  await user.click(screen.getByRole('button', { name: '取消' }));
+  fireEvent.contextMenu(result);
+  await user.click(screen.getByRole('menuitem', { name: '置顶' }));
+  await vi.waitFor(() => expect(requests).toHaveLength(1));
+  expect(requests[0]!.command).toMatchObject({
+    type: 'move',
+    target: snapshot.nodes[2]!.ref,
+    parent: snapshot.nodes[0]!.ref,
+    index: 0,
+  });
+  // One displayed hit is not the first sibling in its native folder.
+  expect(view.container.querySelectorAll('.search-hit-list li')).toHaveLength(1);
+});
+it('cached results block open and mutation commands while disconnected and discard deleted result menus', () => {
+  chromeStub();
+  const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+  render(createElement(SearchResults, { query: 'Bookmark 1' }));
+  const result = screen.getByRole('button', { name: 'Bookmark 1' });
+  fireEvent.contextMenu(result);
+  act(() => listeners.forEach(listener => listener({ status: 'error', message: '合成断线' })));
+  expect(result).toBeDisabled();
+  for (const name of ['在新标签页打开', '在新窗口中打开', '在无痕窗口中打开', '置顶', '编辑', '移入…', '删除']) {
+    expect(screen.getByRole('menuitem', { name })).toBeDisabled();
+  }
+  act(() => listeners.forEach(listener => listener({ status: 'ready', snapshot })));
+  expect(screen.getByRole('menuitem', { name: '编辑' })).toBeEnabled();
+  const changed = structuredClone(snapshot);
+  changed.nodes = changed.nodes.filter(node => node.ref.nativeId !== '2');
+  changed.nodes[0]!.childrenIds = ['1', '3'];
+  act(() => listeners.forEach(listener => listener({ status: 'ready', snapshot: changed })));
+  expect(screen.queryByRole('menu')).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Bookmark 1' })).toBeNull();
+  expect(open).not.toHaveBeenCalled();
 });
 it('English search translates interface text but preserves native bookmark titles and query', () => {
   chromeStub();
@@ -108,11 +219,11 @@ it('four themes preserve results, query draft and keyboard/click safe activation
   const view = render(
     createElement(ThemeProvider, null, createElement(ThemePicker), createElement(SearchResults, { query: 'cqdx' })),
   );
-  const result = screen.getByRole('button', { name: /重庆大学/ });
+  const result = screen.getByRole('button', { name: '重庆大学' });
   expect(open).not.toHaveBeenCalled();
   for (const name of APPEARANCES) {
     await user.click(screen.getByRole('radio', { name }));
-    expect(screen.getByRole('button', { name: /重庆大学/ })).toBe(result);
+    expect(screen.getByRole('button', { name: '重庆大学' })).toBe(result);
   }
   result.focus();
   await user.keyboard('{Enter}');
@@ -120,7 +231,7 @@ it('four themes preserve results, query draft and keyboard/click safe activation
   await user.click(result);
   expect(open).toHaveBeenCalledTimes(2);
   act(() => listeners.forEach(listener => listener({ status: 'loading' })));
-  expect(screen.getByRole('region')).toHaveAttribute('aria-busy', 'true');
+  expect(screen.getByRole('region', { name: '搜索结果' })).toHaveAttribute('aria-busy', 'true');
   act(() => listeners.forEach(listener => listener({ status: 'error', message: '合成断线' })));
   expect(screen.getByRole('alert')).toHaveTextContent('合成断线');
   view.rerender(createElement(SearchResults, { query: 'nonexistent' }));
@@ -195,7 +306,7 @@ it('explicit UI rerank uses shared settings and actual browser authority; accept
   await act(async () => {});
   fireEvent.click(screen.getByRole('button', { name: 'AI 帮我找' }));
   await vi.waitFor(() => expect(fetcher).toHaveBeenCalledOnce());
-  expect(screen.getByRole('region')).toHaveAttribute('aria-busy', 'true');
+  expect(screen.getByRole('region', { name: '搜索结果' })).toHaveAttribute('aria-busy', 'true');
   // A native change outside the candidates reaches both the view and the shared authority mid-flight and is not a cancellation.
   const grown = searchTree(4);
   grown.observedRevision = 2;
@@ -203,17 +314,17 @@ it('explicit UI rerank uses shared settings and actual browser authority; accept
     listeners.forEach(listener => listener({ status: 'loading' }));
     listeners.forEach(listener => listener({ status: 'ready', snapshot: grown }));
   });
-  expect(screen.getByRole('region')).toHaveAttribute('aria-busy', 'true');
+  expect(screen.getByRole('region', { name: '搜索结果' })).toHaveAttribute('aria-busy', 'true');
   await act(async () => {
     finish(new Response(JSON.stringify({ choices: [{ message: { content: '{"rankedIds":["2"]}' } }] })));
   });
-  expect(view.container.querySelector('.search-hit-list button')).toHaveTextContent('Bookmark 1');
+  expect(view.container.querySelector('.search-hit-list .search-hit-open')).toHaveTextContent('Bookmark 1');
   expect(view.container.querySelectorAll('.search-hit-list li')).toHaveLength(4);
   expect(fetcher).toHaveBeenCalledOnce();
   await act(async () => {
     invalidations.forEach(listener => listener());
   });
-  expect(view.container.querySelector('.search-hit-list button')).toHaveTextContent('重庆大学');
+  expect(view.container.querySelector('.search-hit-list .search-hit-open')).toHaveTextContent('重庆大学');
   expect(JSON.stringify(data)).not.toContain('memory-key');
   view.unmount();
   settings.dispose();

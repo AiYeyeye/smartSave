@@ -7,7 +7,7 @@ import {
 import { MODEL_BYTE_LIMITS } from '../adapters/model-byte-limits';
 import { cancellable } from '../domain/cancellable';
 import { serializeAiPayload } from '../domain/ai-payload';
-import { DEFAULT_CLASSIFICATION_POLICY } from '../domain/classification-policy';
+import { organizePolicy } from '../domain/classification-policy';
 import { completeOrganizeRepair } from '../domain/organize-partial-repair';
 import { parseModelOutput } from '../schemas/model-output';
 import type { StagedRun } from '../domain/organize-state';
@@ -24,7 +24,7 @@ export function organizeRequestSize(run: StagedRun, request: OrganizeRequest) {
       run.context.config,
       'organize',
       serializeAiPayload(run.context.tree, run.context.privacy, request),
-      { ...DEFAULT_CLASSIFICATION_POLICY, allowRename: run.options.allowRename ?? true },
+      organizePolicy(run.options),
     ),
   ).byteLength;
 }
@@ -64,7 +64,7 @@ export async function runOrganizeBatch({
           : {}),
         signal,
         timeoutMs,
-        policy: { ...DEFAULT_CLASSIFICATION_POLICY, allowRename: run.options.allowRename ?? true },
+        policy: organizePolicy(run.options),
         onProgress: update => onProgress(update, { bookmarkCount: request.itemIds.length, timeoutMs }),
       }),
       signal,

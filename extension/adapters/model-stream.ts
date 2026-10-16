@@ -267,7 +267,16 @@ export async function readWireReply(
   onProgress?: (progress: ModelStreamProgress) => void,
   /** Complete SSE events/comments renew transport liveness, independent of UI progress. */
   onActivity?: () => void,
+  /** Usage is accounting evidence even when the following completion/schema check fails. */
+  onUsage?: (raw: unknown) => void,
 ): Promise<{ reply: ModelReply; raw?: unknown; events?: number }> {
+  const usage = (raw: unknown) => {
+    try {
+      onUsage?.(raw);
+    } catch {
+      /* Accounting observers cannot change protocol validity. */
+    }
+  };
   const report = (reply: ModelReply, streaming: boolean) => {
     if (!onProgress || reply.failed || reply.refused) return;
     if (new TextEncoder().encode(reply.text).byteLength > limit) throw Error('response-too-large');
@@ -279,6 +288,7 @@ export async function readWireReply(
   };
   if (!/^text\/event-stream(?:\s*;|\s*$)/i.test(response.headers.get('content-type') ?? '')) {
     const raw = await readModelResponse(response, limit, signal, onBody);
+    usage(raw);
     const reply = readModelReply(adapter, raw);
     report(reply, false);
     return { reply, raw };
@@ -318,6 +328,7 @@ export async function readWireReply(
       }
       if (!value || typeof value !== 'object' || Array.isArray(value))
         throw new ModelParseError('envelope', 'invalid SSE payload');
+      usage(value);
       reducer.push(obj(value), event.event);
       onActivity?.();
     },

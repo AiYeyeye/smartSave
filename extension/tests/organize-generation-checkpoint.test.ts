@@ -4,6 +4,8 @@ import { OrganizeController, type OrganizeState } from '../panel/organize-contro
 import { OrganizeCheckpointStore } from '../persistence/organize-checkpoints';
 import type { ModelResult, ModelTransport } from '../adapters/model-transport';
 import { organizerTree } from './fixtures/organizer-tree';
+import { restoreOrganizeGeneration } from '../domain/organize-generation-checkpoint';
+import { legacyOrganizeScopeDigest } from '../domain/organize-checkpoint';
 
 const folderOutput = { newFolders: [{ id: 'new', parentId: 'bar', title: '工具' }], moves: [], merges: [] };
 function context() {
@@ -40,6 +42,91 @@ function setup(current = context(), persist?: () => Promise<void>) {
   controller.setTree({ status: 'ready', snapshot: current.tree });
   return { controller, current, run, open, send, state: () => state };
 }
+
+function addBookmark(current: ReturnType<typeof context>, parentId: string) {
+  const original = current.tree.nodes.find(node => node.ref.nativeId === 'a')!;
+  current.tree.nodes.push({
+    ...structuredClone(original),
+    ref: { ...original.ref, nativeId: 'later' },
+    parentId,
+    title: 'Added after generation',
+    url: 'https://later.example/',
+  });
+  current.tree.nodes.find(node => node.ref.nativeId === parentId)!.childrenIds.push('later');
+}
+
+it('keeps the original task total and bookmark set when unrelated bookmarks are added later', async () => {
+  const h = setup();
+  h.run.mockResolvedValue({ status: 'completed', output: folderOutput });
+  await h.controller.generate(undefined, { staged: true, cleanupEmpty: false });
+  const saved = await h.controller.checkpoint('task', 0);
+  const current = context();
+  addBookmark(current, 'right');
+  const restored = await restoreOrganizeGeneration(saved, current);
+  expect(restored.state.pipeline?.total).toBe(2);
+  expect(restored.run.bookmarkIds).toEqual(['a', 'b']);
+  expect(restored.run.queue).toEqual([]);
+  h.controller.dispose();
+});
+
+it.each(['merge', 'move'] as const)(
+  'refuses to expand a saved folder %s to a bookmark added after review',
+  async kind => {
+    const h = setup();
+    h.run.mockResolvedValue({
+      status: 'completed',
+      output: {
+        newFolders: [],
+        moves: kind === 'move' ? [{ itemId: 'left', folderId: 'right' }] : [],
+        merges: kind === 'merge' ? [{ sourceId: 'left', targetId: 'right' }] : [],
+      },
+    });
+    await h.controller.generate(undefined, { staged: true, cleanupEmpty: false });
+    const saved = await h.controller.checkpoint('task', 0);
+    expect(saved?.folderPlan?.selected).toContain(`${kind}:left`);
+    const current = context();
+    addBookmark(current, 'left');
+    await expect(restoreOrganizeGeneration(saved, current)).rejects.toThrow('stale-context');
+    expect(h.send).not.toHaveBeenCalled();
+    expect(h.open).not.toHaveBeenCalled();
+    h.controller.dispose();
+  },
+);
+
+it.each(['title', 'url', 'parent'] as const)(
+  'invalidates a staged review when a planned bookmark changes %s',
+  async field => {
+    const h = setup();
+    h.run.mockResolvedValue({ status: 'completed', output: folderOutput });
+    await h.controller.generate(undefined, { staged: true, cleanupEmpty: false });
+    const changed = structuredClone(h.current.tree);
+    const bookmark = changed.nodes.find(node => node.ref.nativeId === 'a')!;
+    if (field === 'parent') {
+      bookmark.parentId = 'right';
+      changed.nodes.find(node => node.ref.nativeId === 'left')!.childrenIds = ['b'];
+      changed.nodes.find(node => node.ref.nativeId === 'right')!.childrenIds.push('a');
+    } else bookmark[field] = 'changed';
+    h.controller.setTree({ status: 'ready', snapshot: changed });
+    expect(h.state().invalid).toBe(true);
+    await h.controller.confirmFolders();
+    expect(h.run).toHaveBeenCalledTimes(1);
+    expect(h.send).not.toHaveBeenCalled();
+    h.controller.dispose();
+  },
+);
+
+it('accepts unchanged legacy scope digests while still rejecting planned bookmark changes', async () => {
+  const h = setup();
+  h.run.mockResolvedValue({ status: 'completed', output: folderOutput });
+  await h.controller.generate(undefined, { staged: true, cleanupEmpty: false });
+  const saved = (await h.controller.checkpoint('task', 0))!;
+  saved.scopeDigest = await legacyOrganizeScopeDigest(h.current.tree, 'bar');
+  await expect(restoreOrganizeGeneration(saved, context())).resolves.toBeDefined();
+  const changed = context();
+  changed.tree.nodes.find(node => node.ref.nativeId === 'a')!.url = 'https://changed.example/';
+  await expect(restoreOrganizeGeneration(saved, changed)).rejects.toThrow('stale-context');
+  h.controller.dispose();
+});
 
 it('restores stable out-of-order results with fresh observations, without a lease/key in storage or automatic model call', async () => {
   const h = setup();

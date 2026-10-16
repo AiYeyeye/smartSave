@@ -344,7 +344,7 @@ export function AddServicePanel({
       letter: v.letter === '+' ? '自' : v.letter,
       avatarClass: v.isCustom ? 'c-custom' : v.avatarClass,
       catalog,
-      enabled: catalog.slice(0, Math.min(3, catalog.length)).map(m => m.id),
+      enabled: [],
       vendorId: v.id,
       timeoutMs: 60000,
     };

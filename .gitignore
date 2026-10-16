@@ -28,3 +28,4 @@ Thumbs.db
 # Local release packages and recordings in progress
 release/
 .release-work/
+/zhilan-extension.zip

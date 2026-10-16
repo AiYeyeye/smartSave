@@ -85,7 +85,9 @@
   border-radius: 10px;
   background: var(--bg);
   border: 1px solid transparent;
-  transition: border-color var(--ease), background var(--ease);
+  transition:
+    border-color var(--ease),
+    background var(--ease);
 }
 .ai-svc-chip:hover {
   border-color: var(--border);
@@ -146,27 +148,66 @@
   color: var(--muted);
   box-shadow: inset 0 0 0 1.5px var(--border-strong);
 }
-.ai-svc-avatar.c-anthropic { background: #d97757; }
-.ai-svc-avatar.c-github { background: #2d333b; }
+.ai-svc-avatar.c-anthropic {
+  background: #d97757;
+}
+.ai-svc-avatar.c-github {
+  background: #2d333b;
+}
 .ai-svc-avatar.c-kimi,
-.ai-svc-avatar.c-moonshot { background: #1783ff; }
-.ai-svc-avatar.c-meta { background: #0668e1; }
-.ai-svc-avatar.c-openai { background: #10a37f; }
-.ai-svc-avatar.c-openrouter { background: #6566f1; }
-.ai-svc-avatar.c-xai { background: #111; box-shadow: inset 0 0 0 1px #444; }
-.ai-svc-avatar.c-google { background: #4285f4; }
-.ai-svc-avatar.c-groq { background: #f55036; }
-.ai-svc-avatar.c-mistral { background: #ff7000; }
-.ai-svc-avatar.c-together { background: #0f6fff; }
-.ai-svc-avatar.c-fireworks { background: #7c3aed; }
-.ai-svc-avatar.c-deepseek { background: #4d6bfe; }
+.ai-svc-avatar.c-moonshot {
+  background: #1783ff;
+}
+.ai-svc-avatar.c-meta {
+  background: #0668e1;
+}
+.ai-svc-avatar.c-openai {
+  background: #10a37f;
+}
+.ai-svc-avatar.c-openrouter {
+  background: #6566f1;
+}
+.ai-svc-avatar.c-xai {
+  background: #111;
+  box-shadow: inset 0 0 0 1px #444;
+}
+.ai-svc-avatar.c-google {
+  background: #4285f4;
+}
+.ai-svc-avatar.c-groq {
+  background: #f55036;
+}
+.ai-svc-avatar.c-mistral {
+  background: #ff7000;
+}
+.ai-svc-avatar.c-together {
+  background: #0f6fff;
+}
+.ai-svc-avatar.c-fireworks {
+  background: #7c3aed;
+}
+.ai-svc-avatar.c-deepseek {
+  background: #4d6bfe;
+}
 .ai-svc-avatar.c-zai,
-.ai-svc-avatar.c-zhipu { background: #3859ff; }
-.ai-svc-avatar.c-qwen { background: #615ced; }
-.ai-svc-avatar.c-volc { background: #1664ff; }
-.ai-svc-avatar.c-custom { background: #374151; }
-.ai-svc-avatar.c-siliconflow { background: #6c5ce7; }
-.ai-svc-avatar.c-minimax { background: #e11d48; }
+.ai-svc-avatar.c-zhipu {
+  background: #3859ff;
+}
+.ai-svc-avatar.c-qwen {
+  background: #615ced;
+}
+.ai-svc-avatar.c-volc {
+  background: #1664ff;
+}
+.ai-svc-avatar.c-custom {
+  background: #374151;
+}
+.ai-svc-avatar.c-siliconflow {
+  background: #6c5ce7;
+}
+.ai-svc-avatar.c-minimax {
+  background: #e11d48;
+}
 
 .ai-svc-actions {
   display: flex;
@@ -321,7 +362,9 @@
   color: var(--muted);
   text-align: left;
   background: transparent;
-  transition: background var(--ease), color var(--ease);
+  transition:
+    background var(--ease),
+    color var(--ease);
 }
 .ai-svc-nav-item svg {
   width: 17px;
@@ -395,7 +438,9 @@
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
-  transition: border-color var(--ease), background var(--ease);
+  transition:
+    border-color var(--ease),
+    background var(--ease);
 }
 .ai-svc-connected-row:hover {
   border-color: var(--border-soft);
@@ -506,7 +551,9 @@
   border: 1px solid var(--border);
   border-radius: var(--radius);
   color: var(--text);
-  transition: border-color var(--ease), box-shadow var(--ease);
+  transition:
+    border-color var(--ease),
+    box-shadow var(--ease);
 }
 .ai-svc-search-input:focus {
   outline: none;
@@ -564,7 +611,10 @@
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
-  transition: border-color var(--ease), background var(--ease), transform 80ms;
+  transition:
+    border-color var(--ease),
+    background var(--ease),
+    transform 80ms;
 }
 .ai-svc-vendor-card:hover:not(:disabled) {
   border-color: var(--border-strong);
@@ -821,7 +871,9 @@
   font-size: 13px;
   text-align: center;
   cursor: pointer;
-  transition: border-color var(--ease), background var(--ease);
+  transition:
+    border-color var(--ease),
+    background var(--ease);
 }
 .ai-svc-dropzone:hover,
 .ai-svc-dropzone.dragover {
@@ -1750,6 +1802,12 @@
 .ai-svc-wizard.is-compact .ai-svc-wizard-body {
   grid-template-rows: none;
   align-content: start;
+}
+.ai-svc-wizard.is-compact .ai-svc-wizard-models {
+  max-height: min(280px, 35dvh);
+}
+.ai-svc-wizard.is-compact .ai-svc-wizard-models label {
+  min-height: 44px;
 }
 
 /* Static click illustrations reuse the actual logo, icons and theme tokens. */

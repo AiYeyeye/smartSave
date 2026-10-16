@@ -27,6 +27,9 @@ export type NativeClassifyResult =
   | { status: 'failed'; reason: string; bookmarkId: string }
   | { status: 'completed'; bookmarkId: string; destinationId: string; createdFolderIds: string[] };
 
+/** Internal: a stale run that wrote nothing may run once more on fresh state, under the same receipt. */
+type ClassifyAttempt = NativeClassifyResult | { status: 'retry'; receiptId: string };
+
 export type BadgeState = NativeBadgeState;
 
 export type NativeBookmarkIngressOptions = {
@@ -197,7 +200,7 @@ export function startNativeBookmarkIngress(options: NativeBookmarkIngressOptions
   let importing = false;
   const pending = new Map<string, ReturnType<typeof setTimeout>>();
   let disposed = false;
-  const active = new Set<{ id: string; transport?: ModelTransport; invalidated: boolean }>();
+  const active = new Set<{ id: string; transport?: ModelTransport; invalidated: boolean; cause?: string }>();
   const lifetime = createWorkerTaskLifetime();
 
   const setBadge = (state: BadgeState) => {
@@ -289,13 +292,21 @@ export function startNativeBookmarkIngress(options: NativeBookmarkIngressOptions
     const release = lifetime.acquire();
     try {
       await ready;
-      return await classifyBookmark(bookmarkId, observedAt);
+      const first = await classifyBookmark(bookmarkId, observedAt);
+      if (first.status !== 'retry') return first;
+      const second = await classifyBookmark(bookmarkId, observedAt, { receiptId: first.receiptId, attempt: 1 });
+      return second.status === 'retry' ? { status: 'failed', reason: 'stale-context', bookmarkId } : second;
     } finally {
       release();
     }
   }
 
-  async function classifyBookmark(bookmarkId: string, observedAt: number): Promise<NativeClassifyResult> {
+  async function classifyBookmark(
+    bookmarkId: string,
+    observedAt: number,
+    retry?: { receiptId: string; attempt: number },
+  ): Promise<ClassifyAttempt> {
+    const attempt = retry?.attempt ?? 0;
     if (disposed) return { status: 'skipped', reason: 'disposed', bookmarkId };
     if (guard.isOwn(bookmarkId)) return { status: 'skipped', reason: 'plugin-created', bookmarkId };
 
@@ -313,7 +324,9 @@ export function startNativeBookmarkIngress(options: NativeBookmarkIngressOptions
     }
     const parent = tree.nodes.find(n => n.ref.nativeId === node.parentId);
     const receipt: SaveReceipt = {
-      id: typeof crypto?.randomUUID === 'function' ? crypto.randomUUID() : `${Date.now()}-${bookmarkId}`,
+      id:
+        retry?.receiptId ??
+        (typeof crypto?.randomUUID === 'function' ? crypto.randomUUID() : `${Date.now()}-${bookmarkId}`),
       bookmarkId,
       title: node.title,
       installationId: tree.installationId,
@@ -342,6 +355,44 @@ export function startNativeBookmarkIngress(options: NativeBookmarkIngressOptions
           applyMs: applyStartedAt === undefined ? undefined : now - applyStartedAt,
         },
       });
+    };
+
+    /** Which input changed while the run was in flight; logged so a stale failure is explainable. */
+    const staleCause = async (request: AiRequest, known?: string): Promise<string> => {
+      if (known) return known;
+      try {
+        const now = await projection.fresh();
+        const after = now.nodes.find(n => n.ref.nativeId === bookmarkId && n.ref.kind === 'bookmark');
+        if (!after) return 'bookmark-removed';
+        if (after.parentId !== node.parentId) return 'bookmark-moved';
+        if (after.title !== node.title) return 'bookmark-renamed';
+        if (after.url !== node.url) return 'bookmark-url-changed';
+        if (now.installationId !== tree.installationId) return 'installation-changed';
+        return dependencyDigest(now, request) !== dependencyDigest(tree, request)
+          ? 'folders-changed'
+          : 'settings-changed';
+      } catch {
+        return 'unknown';
+      }
+    };
+    /**
+     * Nothing was written yet: if the user placed the bookmark themselves, respect it;
+     * otherwise run once more on fresh state instead of showing a failure.
+     */
+    const settleStale = async (cause: string, model?: string): Promise<ClassifyAttempt | undefined> => {
+      debug('stale-context', { bookmarkId, cause, attempt });
+      if (disposed) return undefined;
+      if (cause === 'bookmark-moved') {
+        const after = await projection.fresh().catch(() => undefined);
+        const parentId = after?.nodes.find(n => n.ref.nativeId === bookmarkId)?.parentId;
+        if (after && parentId) {
+          await finish('kept', { reason: 'user-placed', model, toId: parentId, toPath: folderPath(after, parentId) });
+          setBadge('clear');
+          return { status: 'skipped', reason: 'user-placed', bookmarkId };
+        }
+      }
+      if (attempt === 0 && cause !== 'bookmark-removed') return { status: 'retry', receiptId: receipt.id };
+      return undefined;
     };
 
     const root = tree.nodes.find(n => n.parentId === undefined && n.ref.kind === 'folder');
@@ -381,13 +432,15 @@ export function startNativeBookmarkIngress(options: NativeBookmarkIngressOptions
         folderIds: [choice.folderId],
       };
       const dependencies = dependencyDigest(tree, request);
-      const operation = { id: bookmarkId, invalidated: false };
+      const operation: { id: string; invalidated: boolean; cause?: string } = { id: bookmarkId, invalidated: false };
       active.add(operation);
       const stopSettings = settings.subscribe(() => {
         operation.invalidated = true;
+        operation.cause ??= 'settings-changed';
       });
       const stopRules = options.rules?.subscribe(() => {
         operation.invalidated = true;
+        operation.cause ??= 'rules-changed';
       });
       receipt.source = choice.source;
       receipt.model = choice.source === 'rule' ? '本地网站规则' : '本地同站点归类';
@@ -423,8 +476,12 @@ export function startNativeBookmarkIngress(options: NativeBookmarkIngressOptions
         setBadge('done');
         return { status: 'completed', bookmarkId, destinationId: choice.folderId, createdFolderIds: [] };
       } catch (error) {
-        const reason =
-          error instanceof Error && error.message === 'stale-context' ? 'stale-context' : 'native-write-uncertain';
+        const stale = error instanceof Error && error.message === 'stale-context';
+        if (stale) {
+          const settled = await settleStale(await staleCause(request, operation.cause), receipt.model);
+          if (settled) return settled;
+        }
+        const reason = stale ? 'stale-context' : 'native-write-uncertain';
         await finish('failed', { reason });
         setBadge('attention');
         return { status: 'failed', reason, bookmarkId };
@@ -452,10 +509,16 @@ export function startNativeBookmarkIngress(options: NativeBookmarkIngressOptions
       },
       authority,
     );
-    const operation = { id: bookmarkId, transport, invalidated: false };
+    const operation: { id: string; transport: ModelTransport; invalidated: boolean; cause?: string } = {
+      id: bookmarkId,
+      transport,
+      invalidated: false,
+    };
     active.add(operation);
     const stopAuthority = authority.subscribe(change => {
-      if (change !== 'tree') operation.invalidated = true;
+      if (change === 'tree') return;
+      operation.invalidated = true;
+      operation.cause ??= change === 'permissions' ? 'permission-removed' : 'settings-changed';
     });
     const request: AiRequest = {
       task: 'save',
@@ -498,8 +561,10 @@ export function startNativeBookmarkIngress(options: NativeBookmarkIngressOptions
       if (!(await permissionsApi.contains({ origins: [parseModelEndpoint(route.config).permission] })))
         throw Error('permission');
       const current = await authority.read();
-      if (settingsIdentity(current) !== settingsIdentity(originalContext) || current.key !== route.key)
+      if (settingsIdentity(current) !== settingsIdentity(originalContext) || current.key !== route.key) {
+        operation.cause ??= 'settings-changed';
         throw Error('stale-context');
+      }
       checkTree(current.tree);
       checkBeforeWrite();
       return current.tree;
@@ -523,6 +588,10 @@ export function startNativeBookmarkIngress(options: NativeBookmarkIngressOptions
       applyStartedAt = Date.now();
 
       if (response.status !== 'completed') {
+        if (response.reason === 'stale-context') {
+          const settled = await settleStale(await staleCause(request, operation.cause), route.label);
+          if (settled) return settled;
+        }
         debug('model-failed', { bookmarkId, reason: response.reason });
         await finish('failed', { reason: response.reason, model: route.label });
         setBadge('attention');
@@ -625,6 +694,10 @@ export function startNativeBookmarkIngress(options: NativeBookmarkIngressOptions
       }
       return result;
     } catch (error) {
+      if (error instanceof Error && error.message === 'stale-context' && !createdFolderIds.length) {
+        const settled = await settleStale(await staleCause(request, operation.cause), route.label);
+        if (settled) return settled;
+      }
       const reason =
         error instanceof Error && ['stale-context', 'permission'].includes(error.message)
           ? error.message

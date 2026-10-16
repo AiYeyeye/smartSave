@@ -22,6 +22,7 @@ parser.add_argument('--run', action='store_true')
 parser.add_argument('--language', choices=['zh-CN', 'en'], default='zh-CN')
 parser.add_argument('--browser', default=os.environ.get('ZHILAN_BROWSER_EXECUTABLE', 'C:/Users/PC/AppData/Local/ms-playwright/chromium-1208/chrome-win64/chrome.exe'))
 parser.add_argument('--output')
+parser.add_argument('--slow-write', action='store_true', help='Delay one synthetic native move beyond35s')
 args = parser.parse_args()
 def text(zh, en):
     return en if args.language == 'en' else zh
@@ -227,7 +228,6 @@ with sync_playwright() as playwright:
         assert len([e for e in events if e['state'] == 'started']) == count
         assert worker.evaluate('(id)=>chrome.bookmarks.getSubTree(id)', fixture['root']) == before
         page.screenshot(path=str(root / 'restored-review.png'), full_page=True)
-        page.get_by_text(text('完整分类树与内容去向', 'Full folder tree and bookmark destinations'), exact=True).click()
         expect(page.get_by_role('heading', name=text('预计整理后的分类', 'Proposed folders'), exact=True)).to_be_visible()
         expect(page.locator('.organize-classification-tree').get_by_text('不再建议', exact=True)).to_be_visible()
         geometry = []
@@ -267,19 +267,36 @@ with sync_playwright() as playwright:
         assert [batch['id'] for batch in restored['batches']] == stable
         assert worker.evaluate('(id)=>chrome.bookmarks.getSubTree(id)', fixture['root']) == before
         page.get_by_role('button', name=text('下一步：确认操作', 'Next: confirm changes'), exact=True).click()
+        if args.slow_write:
+            worker.evaluate("""() => {
+              const move=chrome.bookmarks.move.bind(chrome.bookmarks); let delayed=false;
+              chrome.bookmarks.move=async (...args)=>{
+                if(!delayed){delayed=true;await new Promise(resolve=>setTimeout(resolve,36000));}
+                return move(...args);
+              };
+            }""")
+            page.evaluate('globalThis.__organizeRoot=document.querySelector(".organize-workbench")')
         page.get_by_role('button', name=text('确认并执行 2 项操作', 'Confirm and apply operations (2)'), exact=True).click()
-        page.get_by_text(text('整理已完成，可从恢复记录核对或撤销。', 'Organization complete. Review or undo it in recovery records.'), exact=True).first.wait_for()
+        if args.slow_write:
+            page.wait_for_timeout(35200)
+            assert page.evaluate('globalThis.__organizeRoot===document.querySelector(".organize-workbench")')
+            expect(page.get_by_role('region', name=text('整理工作台', 'Organization workbench'), exact=True)).to_have_attribute('aria-busy', 'true')
+            expect(page.get_by_role('heading', name=text('正在执行整理', 'Applying changes'), exact=True)).to_be_visible()
+            expect(page.get_by_role('button', name=text('确认并执行 0 项操作', 'Confirm and apply operations (0)'), exact=True)).to_have_count(0)
+            expect(page.get_by_text(text('结果未知', 'Outcome unknown'), exact=False)).to_have_count(0)
+            page.screenshot(path=str(root / 'native-apply-pending-35s.png'), full_page=True)
+        page.get_by_text(text('已完成 · 已完成', 'Completed · Completed'), exact=False).first.wait_for(timeout=60000)
         submitted = next(t for t in worker.evaluate(read_tasks) if t['id'] == task['id'])['submission']['requestId']
         after = worker.evaluate('(id)=>chrome.bookmarks.getSubTree(id)', fixture['root'])
         target = next(n for n in after[0]['children'] if n['id'] == fixture['target'])
         assert {n['id'] for n in target['children']} == {fixture['a'], fixture['b']}
         page.close()
         page = open_ui()
-        page.get_by_text(text('整理已完成，可从恢复记录核对或撤销。', 'Organization complete. Review or undo it in recovery records.'), exact=True).first.wait_for()
+        page.get_by_text(text('已完成 · 已完成', 'Completed · Completed'), exact=False).first.wait_for()
         assert submitted in page.locator('body').inner_text()
         assert worker.evaluate('(id)=>chrome.bookmarks.getSubTree(id)', fixture['root']) == after
         page.screenshot(path=str(root / 'submitted-result.png'), full_page=True)
-        result = {'status': 'PASS', 'browser': context.browser.version, 'taskId': task['id'], 'requestId': submitted,
+        result = {'status': 'PASS', 'browser': context.browser.version, 'taskId': task['id'], 'requestId': submitted, 'syntheticNativeDelayMs': 36000 if args.slow_write else 0,
                   'reviewLanguage': args.language, 'geometry': geometry, 'scopeGeometry': scope_geometry, 'crossDocumentSelectionRetained': args.language == 'en',
                   'events': events, 'evidence': str(root), 'manifestDelta': {'host_permissions': ['http://127.0.0.1/*']},
                   'productionWorkerSHA256': hashlib.sha256((extension / 'service-worker.js').read_bytes()).hexdigest(),

@@ -40,6 +40,8 @@ const subscription = z.strictObject({
 export const organizeTaskSubscriptionSchema = z.discriminatedUnion('type', [
   subscription,
   z.strictObject({ version: z.literal(1), type: z.literal('seen'), id, revision: z.number().int().nonnegative() }),
+  // Keeps the worker awake while an organize page is visible; carries no task authority.
+  z.strictObject({ version: z.literal(1), type: z.literal('ping') }),
 ]);
 export type OrganizeTaskMessage = z.infer<typeof organizeTaskMessageSchema>;
 export type OrganizeTaskReply =

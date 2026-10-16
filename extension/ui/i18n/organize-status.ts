@@ -51,10 +51,6 @@ export const organizeStatusEnglish = {
   '结果未知，请在备份与恢复中核对；不自动重放。':
     'The outcome is unknown. Check backup and recovery; operations will not replay automatically.',
   '可在备份与恢复中预览安全撤销。': 'Preview a safe undo in backup and recovery.',
-  '整理连接已断开，正在重新读取进度；后台任务不会因页面断开而取消。':
-    'Disconnected. Reloading progress; the background task continues independently of this page.',
-  '无法连接整理任务，请重新读取已保存任务或重新打开智栏。':
-    'Cannot connect to the task. Reload saved tasks or reopen Zhilan.',
   '无法连接整理任务，请重新打开智栏。': 'Cannot connect to the task. Reopen Zhilan.',
   '请先在 AI 服务中为智能整理分配可用模型，再开始生成。':
     'Assign an available model to organization in AI services before generating.',

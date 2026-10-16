@@ -98,7 +98,7 @@ it('retains custom inputs, a pending worker request and final confirmation acros
   fireEvent.change(screen.getByLabelText('语言'), { target: { value: 'en' } });
   fireEvent.click(apply);
   await waitFor(() => expect(h.move).toHaveBeenCalledExactlyOnceWith('b', expect.anything()));
-  await screen.findByText(/Request: .*Status: completed/);
+  await screen.findByText(/Completed · Completed/);
   expect(create).toHaveBeenCalledOnce();
   page.unmount();
   settings.dispose();
@@ -230,7 +230,7 @@ it('uses the worker client to reopen a persisted review and confirms only the re
   fireEvent.click(next);
   fireEvent.click(screen.getByRole('button', { name: '确认并执行 1 项操作' }));
   await waitFor(() => expect(h.move).toHaveBeenCalledTimes(1));
-  await screen.findByText(/请求编号：.*状态 completed/);
+  await screen.findByText(/已完成 · 已完成/);
   expect(h.move.mock.calls[0]![0]).toBe('b');
   reopened.unmount();
   settings.dispose();
@@ -315,8 +315,8 @@ it('requires custom instructions, previews streaming suggestions read-only and e
   await screen.findByText('正在生成的建议');
   expect(generate).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ batchSize: 200 }));
   generate.mockRestore();
-  expect(screen.getByText(/整理范围共 2 条书签；每批最多 200 条/)).toBeVisible();
-  expect(screen.getByText(/连接或连续无流数据的等待上限 180 秒/)).toBeVisible();
+  expect(screen.queryByText(/每批最多 200 条/)).toBeNull();
+  expect(screen.queryByText(/连接或连续无流数据的等待上限/)).toBeNull();
   expect(screen.getByRole('button', { name: '确认分类，开始分批整理书签' })).toBeDisabled();
   expect(screen.queryByRole('checkbox')).toBeNull();
   fail({ status: 'failed', reason: 'incomplete', detail: 'output-limit' });
@@ -356,7 +356,7 @@ it('requires custom instructions, previews streaming suggestions read-only and e
   const footer = screen.getByRole('button', { name: '下一步：确认操作' }).closest('.organize-footer')!;
   expect(footer).toHaveTextContent('全部 1 批已完成');
   expect(screen.getByRole('region', { name: '按目标目录审核' })).toBeVisible();
-  expect(screen.getByRole('list', { name: '整理后分类树', hidden: true })).not.toBeVisible();
+  expect(screen.getByRole('list', { name: '整理后分类树' })).toBeVisible();
   fireEvent.click(screen.getByRole('checkbox', { name: /^采纳 / }));
   expect(screen.getByRole('button', { name: '下一步：确认操作' })).toBeDisabled();
   fireEvent.click(screen.getByRole('checkbox', { name: /^采纳 / }));

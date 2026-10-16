@@ -220,8 +220,8 @@ export class SearchController {
         hits: this.state.hits.filter(hit => selected.has(hit.id)),
       };
       this.state.message = rankedIds.length
-        ? `AI 找到 ${rankedIds.length} 条相关书签，已排在前面；关键词结果仍保留。`
-        : 'AI 没有找到相关书签，保留关键词结果。可以补充用途或大致内容再试。';
+        ? `AI 找到 ${rankedIds.length} 条相关书签`
+        : 'AI 没有找到相关书签，换个描述试试';
     } catch (error) {
       if (generation === this.generation) {
         this.state.hits = this.local;

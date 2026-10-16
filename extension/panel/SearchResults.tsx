@@ -6,7 +6,8 @@ import { ModelTransport } from '../adapters/model-transport';
 import type { SettingsStore } from '../persistence/settings';
 import { connectTree } from './tree-client';
 import { SearchController, type SearchState } from './search-controller';
-import { canOpenUrl } from '../domain/open-url';
+import type { TreeSnapshot, TreeState } from '../domain/node-reference';
+import { TreeRows } from './BookmarkTree';
 import './search-results.css';
 import { BusyIndicator } from '../ui/BusyIndicator';
 import { useI18n } from '../ui/i18n';
@@ -25,6 +26,7 @@ export function SearchResults({
 }) {
   const { t, language } = useI18n();
   const statusText = (text: string) => searchStatusText(language, text);
+  const [snapshot, setSnapshot] = useState<TreeSnapshot>();
   const [state, setState] = useState<SearchState>({
     query,
     hits: [],
@@ -54,15 +56,19 @@ export function SearchResults({
     const stopKeywords = watchBookmarkKeywords(records => owner.setKeywords(records));
     controller.current = owner;
     owner.setQuery(latestQuery.current);
+    const receiveTree = (tree: TreeState) => {
+      if (tree.status === 'ready') setSnapshot(tree.snapshot);
+      owner.setTree(tree);
+    };
     let stop =
       typeof chrome !== 'undefined' && typeof chrome.runtime?.connect === 'function'
-        ? connectTree(chrome.runtime, tree => owner.setTree(tree))
+        ? connectTree(chrome.runtime, receiveTree)
         : undefined;
     if (!stop) owner.setTree({ status: 'error', message: '书签服务不可用。' });
     retry.current = () => {
       if (typeof chrome === 'undefined' || !chrome.runtime?.connect) return;
       stop?.();
-      stop = connectTree(chrome.runtime, tree => owner.setTree(tree));
+      stop = connectTree(chrome.runtime, receiveTree);
     };
     return () => {
       stopKeywords();
@@ -83,10 +89,7 @@ export function SearchResults({
       aria-label={t('搜索结果')}
       aria-busy={!state.connectionReady || state.reranking}
     >
-      <h2>
-        {t('搜索结果')}
-        <small>{t('本地优先')}</small>
-      </h2>
+      <h2>{t('搜索结果')}</h2>
       {writeIntent && (
         <p role="note">
           {t('写操作请前往整理工作台，预览并确认后应用。搜索不会执行写操作。')}
@@ -122,9 +125,6 @@ export function SearchResults({
           >
             {t('深度搜索')}
           </button>
-          <p className="hint">
-            {t('描述用途或大致内容，优先快速查找少量候选。深度搜索会分段检查全部允许搜索的书签，可能需要更久。')}
-          </p>
           {state.reranking && (
             <>
               <BusyIndicator label={t('AI 正在理解描述并查找相关书签…')} />
@@ -139,26 +139,13 @@ export function SearchResults({
             <p role="status">{t('没有匹配的关键词结果。可以点击“AI 帮我找”，或换个描述。')}</p>
           ) : (
             <>
-              <p className="hint">
-                {t('{count} 条结果 · {action}', {
-                  count: state.hits.length,
-                  action: t(state.connectionReady ? '点击或聚焦后按 Enter 打开' : '连接恢复后可打开'),
-                })}
-              </p>
-              <ul className="search-hit-list">
-                {state.hits.map(hit => (
-                  <li key={hit.id}>
-                    <button
-                      type="button"
-                      title={hit.title || t('未命名书签')}
-                      disabled={!state.connectionReady || !canOpenUrl(hit.url)}
-                      onClick={() => controller.current?.open(hit.id)}
-                    >
-                      {hit.title || t('未命名书签')}
-                    </button>
-                  </li>
-                ))}
-              </ul>
+              {snapshot && (
+                <TreeRows
+                  snapshot={snapshot}
+                  connectionReady={state.connectionReady}
+                  results={{ ids: state.hits.map(hit => hit.id), onOpen: id => controller.current?.open(id) }}
+                />
+              )}
             </>
           )}
         </>

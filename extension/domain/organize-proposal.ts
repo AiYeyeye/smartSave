@@ -28,6 +28,8 @@ export interface OrganizeOptions {
   cleanupEmpty?: boolean;
   protectedFolderIds?: string[];
   allowRename?: boolean;
+  /** Taxonomy depth the model should build: 1 flat, 2 broad/sub (default), 3. */
+  levels?: 1 | 2 | 3;
 }
 export function organizePrivacy(tree: TreeSnapshot, privacy: AiPrivacy, protectedFolderIds: string[] = []): AiPrivacy {
   const protectedIds = new Set(protectedFolderIds);
@@ -81,7 +83,7 @@ export function organizeProposal(
   if (output.newFolders.some(f => tree.nodes.some(n => n.ref.nativeId === f.id))) throw Error('invalid-output');
   const nodes = scopeNodes(tree, rootId);
   const byId = new Map(nodes.map(n => [n.ref.nativeId, n]));
-  const actions: OrganizeAction[] = [
+  let actions: OrganizeAction[] = [
     ...output.newFolders.map(f => ({
       id: `create:${f.id}`,
       kind: 'create' as const,
@@ -120,6 +122,16 @@ export function organizeProposal(
     })),
   ];
   const allowed = new Set([...context.items.map(i => i.id), ...context.folders.map(f => f.id)]);
+  // A merge already moves its direct children to the same target. Other descendant actions
+  // change the result (for example by flattening a nested folder), so reject those overlaps below.
+  const merges = actions.filter(a => a.kind === 'merge');
+  actions = actions.filter(
+    action =>
+      action.kind !== 'move' ||
+      !merges.some(
+        merge => byId.get(action.sourceId)?.parentId === merge.sourceId && action.targetId === merge.targetId,
+      ),
+  );
   for (const merge of actions.filter(a => a.kind === 'merge')) {
     const descendants = new Set(scopeNodes(tree, merge.sourceId).map(n => n.ref.nativeId));
     if (actions.some(a => a !== merge && (a.kind === 'move' || a.kind === 'merge') && descendants.has(a.sourceId)))

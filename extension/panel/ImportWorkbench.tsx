@@ -225,11 +225,10 @@ export function ImportWorkbench({
   return (
     <section hidden={!visible} className="surface workflow-workbench" aria-label={t('导入工作台')} aria-busy={busy}>
       <h2>{t('导入书签')}</h2>
-      <p>{t('读取文件，让 AI 重新分类，检查后再添加到浏览器。')}</p>
       <WorkflowSteps labels={[t('选择文件'), t('选择目标'), t('检查预览'), t('确认导入')]} current={step} />
       <div hidden={step !== 1} className="workflow-stage">
         <h3>{t('选择要导入的书签文件')}</h3>
-        <p className="hint">{t('支持浏览器导出的 HTML，以及 JSON、CSV、TXT、Markdown 文件。')}</p>
+
         <label>
           {t('导入格式')}
           <Select
@@ -331,7 +330,7 @@ export function ImportWorkbench({
               ))}
           </Select>
         </label>
-        <p className="hint">{t('AI 会把文件中的书签重新分类到此目录下。检查预览后，才会创建书签。')}</p>
+
         <div className="workflow-footer">
           <button disabled={busy || journalOwned} onClick={() => setStep(1)}>
             {t('上一步')}
@@ -470,7 +469,6 @@ export function ImportWorkbench({
               </details>
             )}
             <div hidden={step !== 3}>
-              <p className="hint">{t('取消不想导入的书签，也可以调整标题和存放目录。')}</p>
               {checkpoint.items.map(({ item, titleLocked }) => (
                 <article className="workflow-review-row" key={item.sourceOrdinal}>
                   <label>
@@ -599,9 +597,6 @@ export function ImportWorkbench({
               ))}
             </details>
           </>
-        )}
-        {checkpoint?.phase === 'classified' && !plan && !journalOwned && (
-          <p className="hint">{t('检查完成后点击下一步，系统会核对重复项和目标目录。')}</p>
         )}
         {emptyDestination && (
           <p role="status">{t('请选择已勾选条目的目标，或取消勾选；空目标草稿不会发送预览请求。')}</p>

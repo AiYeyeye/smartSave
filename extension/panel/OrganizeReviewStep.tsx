@@ -81,7 +81,7 @@ export function OrganizeReviewStep({
         <article>
           <h3>{t('本次整理：{path}', { path: proposalPaths.get(proposal.scope.nativeId) ?? '' })}</h3>
           {!state.invalid && review?.tree && (
-            <details className="workflow-help">
+            <details className="organize-review-section" open>
               <summary>{t('完整分类树与内容去向')}</summary>
               <OrganizeTreePreview proposal={proposal} after={review.tree} selected={state.selected} />
               <OrganizeFlowDetails proposal={proposal} after={review.tree} />
@@ -108,7 +108,7 @@ export function OrganizeReviewStep({
               target={(id, value) => commands.target(id, value)}
             />
           )}
-          <details className="workflow-help" open={folderReview}>
+          <details className="organize-review-section" open={folderReview}>
             <summary>
               {t('目录变更与其他操作 · {count} 项', {
                 count: proposal.actions.filter(
@@ -117,10 +117,6 @@ export function OrganizeReviewStep({
               })}
             </summary>
             <section className="organize-adjustments" aria-label={t('详细调整方案')}>
-              <header className="organize-adjustments-heading">
-                <h3>{t('详细调整方案')}</h3>
-                <p className="hint">{t('逐条决定是否采用，下方选择会同步更新上方分类预览。')}</p>
-              </header>
               {!!ignoredActions.length && (
                 <details className="workflow-help">
                   <summary>
@@ -148,9 +144,6 @@ export function OrganizeReviewStep({
                   ))}
                 </details>
               )}
-              <p className="hint">
-                {t('先核对整体分类，再查看每条建议。取消勾选会同步取消依赖操作；勾选时会同时选中必要的前置操作。')}
-              </p>
               {proposal.actions
                 .filter(action => !ignoredActions.includes(action) && !bookmarkMoves.includes(action))
                 .map(action => (

@@ -13,6 +13,7 @@ export function bookmarkFaviconUrl(
   if (!owner?.getURL) return;
   const url = new URL(owner.getURL('/_favicon/'));
   url.searchParams.set('pageUrl', pageUrl);
-  url.searchParams.set('size', '16');
+  // Shown at 16 CSS px; 32 keeps it sharp on high-DPI screens.
+  url.searchParams.set('size', '32');
   return url.href;
 }

@@ -101,7 +101,10 @@ it('walks connect → models → features, saving both and keeping assignments o
       onClose={onClose}
     />,
   );
-  expect(screen.getByRole('checkbox', { name: /gpt-4\.1-mini/ })).toBeChecked();
+  expect(screen.getByRole('checkbox', { name: /gpt-4\.1-mini/ })).not.toBeChecked();
+  expect(screen.getByRole('button', { name: '下一步' })).toBeDisabled();
+  await user.click(screen.getByRole('checkbox', { name: /gpt-4\.1-mini/ }));
+  await user.click(screen.getByRole('checkbox', { name: /^gpt-4\.1(?!-)/ }));
   await user.click(screen.getByRole('button', { name: '下一步' }));
   expect(onSaveModels).toHaveBeenCalledWith(expect.arrayContaining(['gpt-4.1', 'gpt-4.1-mini']), service.catalog);
   await waitFor(() => expect(screen.getByLabelText('智能收藏使用的模型')).toHaveValue('gpt-4.1-mini'));
@@ -161,6 +164,10 @@ it('onboards with one model, preserves existing assignments and provides an expl
     />,
   );
   expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+  expect(screen.getAllByRole('radio')).toHaveLength(ids.length);
+  expect(screen.getByRole('button', { name: '保存并继续' })).toBeDisabled();
+  expect(screen.getAllByRole('radio').every(radio => !(radio as HTMLInputElement).checked)).toBe(true);
+  expect(screen.getByRole('radio', { name: /text-embedding/ })).toBeDisabled();
   await user.clear(screen.getByLabelText('使用哪个模型'));
   await user.type(screen.getByLabelText('使用哪个模型'), 'my-existing-model');
   await user.click(screen.getByRole('button', { name: '保存并继续' }));
@@ -198,10 +205,12 @@ it('keeps onboarding at the editable step after persistence failure and allows r
       onClose={vi.fn()}
     />,
   );
+  await user.click(screen.getByRole('radio', { name: 'gpt-4o' }));
   await user.click(screen.getByRole('button', { name: '保存并继续' }));
   await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('配置尚未完成'));
   expect(onAssign).not.toHaveBeenCalled();
   await user.click(screen.getByRole('button', { name: '保存并继续' }));
   await waitFor(() => expect(screen.getByRole('heading', { name: '在网页侧栏试一次' })).toBeVisible());
   expect(onAssign).toHaveBeenCalledOnce();
+  expect(onSaveModels).toHaveBeenLastCalledWith(['gpt-4o'], service.catalog);
 });

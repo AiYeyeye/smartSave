@@ -20,6 +20,7 @@ import { ModelSettings } from '../options/ModelSettings';
 import { SiteRulesSettings } from '../options/SiteRulesSettings';
 import { RecoveryWorkbench } from '../options/RecoveryWorkbench';
 import { ExportSettings } from '../options/ExportSettings';
+import { TokenUsage } from '../options/TokenUsage';
 import { DebugLogPanel, SaveHistory } from '../options/DebugLogPanel';
 import {
   AiServicesPage,
@@ -232,7 +233,6 @@ function OptionsApp() {
         <header className={`page-head${meta.wide ? ' is-wide' : ''}`}>
           <div>
             <h1>{message(meta.title)}</h1>
-            <p>{message(meta.desc)}</p>
           </div>
           {route === 'browse' ? (
             <button type="button" onClick={() => setBatchNonce(value => value + 1)}>
@@ -305,6 +305,11 @@ function OptionsApp() {
               />
             )}
           </div>
+          {mounted('token-usage') && (
+            <div className="view" hidden={route !== 'token-usage'}>
+              <TokenUsage visible={route === 'token-usage'} />
+            </div>
+          )}
           <div className="view" hidden={route !== 'appearance'}>
             <section className="surface" aria-label={t('外观设置')}>
               <LanguagePicker />

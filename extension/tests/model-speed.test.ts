@@ -18,6 +18,13 @@ it.each([
   [{ ...base, adapter: 'openai-responses' as const }, { reasoning: { effort: 'low' } }],
   [{ ...base, model: 'gpt-5' }, { reasoning_effort: 'minimal' }],
   [{ ...base, model: 'gpt-5.1' }, { reasoning_effort: 'none' }],
+  // OpenAI reasoning models behind other gateways get a low effort; a rejection replays once without it.
+  [
+    { ...base, adapter: 'openai-responses' as const, baseUrl: 'https://gateway.test/v1', model: 'gpt-5.6-sol' },
+    { reasoning: { effort: 'low' } },
+  ],
+  [{ ...base, baseUrl: 'https://gateway.test/v1', model: 'openai/gpt-5.2' }, { reasoning_effort: 'low' }],
+  [{ ...base, model: 'gpt-5.1-codex' }, { reasoning_effort: 'low' }],
   [
     {
       ...base,
@@ -46,7 +53,7 @@ it.each([
     { generationConfig: { thinkingConfig: { thinkingLevel: 'minimal' } } },
   ],
   [{ ...base, baseUrl: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4.5' }, { thinking: { type: 'disabled' } }],
-] as const)('uses only verified native thinking controls for %j', (config, expected) => {
+] as const)('sets native thinking controls for %j', (config, expected) => {
   const body = JSON.parse(modelRequestBody(config, 'search', '{"items":[],"folders":[]}'));
   expect(body).toMatchObject(expected);
   const budget = body.max_completion_tokens ?? body.max_output_tokens ?? body.generationConfig?.maxOutputTokens;
@@ -56,9 +63,8 @@ it.each([
 it.each([
   { ...base, fastMode: false },
   { ...base, model: 'gpt-4.1-mini' },
-  { ...base, model: 'gpt-5.1-codex' },
-  { ...base, baseUrl: 'https://unverified-gateway.test/v1' },
-  { ...base, baseUrl: 'https://api.openai.com.untrusted.test/v1' },
+  { ...base, baseUrl: 'https://unverified-gateway.test/v1', model: 'qwen-max' },
+  { ...base, adapter: 'anthropic' as const, baseUrl: 'https://gateway.test/v1', model: 'gpt-5' },
   { ...base, baseUrl: 'https://api.deepseek.com', model: 'deepseek-reasoner' },
 ])('leaves unknown/disabled capabilities unchanged: %j', config => {
   expect(modelThinkingPlan(config)).toBeUndefined();

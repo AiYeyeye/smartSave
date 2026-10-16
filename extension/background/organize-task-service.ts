@@ -104,6 +104,7 @@ export function startOrganizeTaskService(
             port.disconnect();
             return;
           }
+          if (parsed.data.type === 'ping') return;
           if (parsed.data.type === 'seen') {
             if (watched === parsed.data.id && delivered?.id === watched && parsed.data.revision <= delivered.revision)
               badge?.seen(parsed.data.id, parsed.data.revision);

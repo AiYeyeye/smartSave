@@ -84,6 +84,7 @@ export const saveReceiptsEnglish = {
   模型拒绝回答或被安全策略拦截: 'The model refused the request or a safety policy blocked it.',
   '分类过程中书签或设置发生变化，已停止后续操作':
     'Bookmarks or settings changed during classification. Further operations stopped.',
+  '你已手动选好位置，智栏没有再移动': 'You placed it yourself, so Zhilan left it there.',
   '无法读取隐私或模型设置，未调用 AI': 'Could not read privacy or model settings. AI was not called.',
   '书签操作结果未能确认，请检查当前目录；不会自动重复执行':
     'The bookmark operation could not be confirmed. Check its current folder; it will not repeat automatically.',

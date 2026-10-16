@@ -423,36 +423,50 @@ it.each([false, true])('native save respects service streaming=%s without legacy
   h.ingress.dispose();
 });
 
-it.each(['privacy', 'metadata', 'dispose'])(
+it.each(['privacy', 'metadata', 'user-move', 'dispose'])(
   'native auto-save rechecks %s after model completion before writing',
   async change => {
     const h = await harness();
     const node = { syncing: false, id: 'race', parentId: '1', title: 'Before', url: 'https://race.test/' };
     h.find('1').children!.push(node);
     await h.projection.refresh();
-    h.fetchMock.mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          choices: [
-            {
-              message: {
-                content: JSON.stringify({
-                  assignments: [{ itemId: 'race', folderId: '2' }],
-                  newFolders: [],
-                }),
+    h.fetchMock.mockImplementation(
+      async () =>
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    assignments: [{ itemId: 'race', folderId: '2' }],
+                    newFolders: [],
+                  }),
+                },
               },
-            },
-          ],
-        }),
-      ),
+            ],
+          }),
+        ),
     );
     const original = ModelTransport.prototype.run;
+    let calls = 0;
     vi.spyOn(ModelTransport.prototype, 'run').mockImplementation(async function (this: ModelTransport, input) {
       const result = await original.call(this, input);
+      // The race happens once; a retry sees settled state.
+      if (calls++) return result;
       expect(result.status).toBe('completed');
       if (change === 'dispose') h.ingress.dispose();
       else if (change === 'metadata') {
         h.find('race').title = 'Changed by user';
+        await h.projection.refresh();
+      } else if (change === 'user-move') {
+        // The user picks a folder in the browser's own bookmark dialog while the model is running.
+        const from = h.find('1').children!;
+        const moved = from.splice(
+          from.findIndex(child => child.id === 'race'),
+          1,
+        )[0]!;
+        moved.parentId = '2';
+        h.find('2').children!.push(moved);
         await h.projection.refresh();
       } else {
         const snapshot = await h.projection.fresh();
@@ -468,10 +482,34 @@ it.each(['privacy', 'metadata', 'dispose'])(
     });
     const move = vi.spyOn(h.writer, 'move');
     const create = vi.spyOn(h.writer, 'create');
-    expect(await h.ingress.classify(node.id)).toMatchObject({ status: 'failed', reason: 'stale-context' });
-    expect(move).not.toHaveBeenCalled();
-    expect(create).not.toHaveBeenCalled();
-    expect(h.find('race').parentId).toBe('1');
+    if (change === 'metadata') {
+      // Nothing was written, so a renamed bookmark is classified once more on fresh state instead of failing.
+      expect(await h.ingress.classify(node.id)).toMatchObject({ status: 'completed', destinationId: '2' });
+      expect(ModelTransport.prototype.run).toHaveBeenCalledTimes(2);
+      expect(move).toHaveBeenCalledOnce();
+      expect(create).not.toHaveBeenCalled();
+      expect((await readSaveReceipts(h.storage)).map(receipt => receipt.status)).toEqual(['moved']);
+    } else if (change === 'user-move') {
+      expect(await h.ingress.classify(node.id)).toMatchObject({ status: 'skipped', reason: 'user-placed' });
+      expect(move).not.toHaveBeenCalled();
+      expect(h.find('race').parentId).toBe('2');
+      expect((await readSaveReceipts(h.storage))[0]).toMatchObject({
+        status: 'kept',
+        reason: 'user-placed',
+        toId: '2',
+      });
+    } else if (change === 'privacy') {
+      // The retry sees folder 2 excluded, so the stale model answer can never move the bookmark there.
+      expect(await h.ingress.classify(node.id)).toMatchObject({ status: 'failed' });
+      expect(move).not.toHaveBeenCalled();
+      expect(create).not.toHaveBeenCalled();
+      expect(h.find('race').parentId).toBe('1');
+    } else {
+      expect(await h.ingress.classify(node.id)).toMatchObject({ status: 'failed', reason: 'stale-context' });
+      expect(move).not.toHaveBeenCalled();
+      expect(create).not.toHaveBeenCalled();
+      expect(h.find('race').parentId).toBe('1');
+    }
     h.ingress.dispose();
   },
 );
@@ -833,10 +871,14 @@ it('stops a local move if its rule is revoked during the last authoritative chec
     includeSubdomains: false,
     folder: { installationId: snapshot.installationId, nativeId: '2', kind: 'folder' as const },
   };
-  rules.load.mockResolvedValueOnce([rule]).mockImplementationOnce(async () => {
-    invalidate();
-    return [rule];
-  });
+  rules.load
+    .mockResolvedValueOnce([rule])
+    .mockImplementationOnce(async () => {
+      invalidate();
+      return [rule];
+    })
+    // The rule is gone when the stale run is retried on fresh state.
+    .mockResolvedValue([]);
   h.find('1').children!.push({
     syncing: false,
     id: 'revoked',
@@ -847,7 +889,10 @@ it('stops a local move if its rule is revoked during the last authoritative chec
   h.projection.refresh();
   await h.projection.fresh();
   const move = vi.spyOn(h.writer, 'move');
-  expect(await h.ingress.classify('revoked')).toMatchObject({ status: 'failed', reason: 'stale-context' });
+  expect(await h.ingress.classify('revoked')).toMatchObject({
+    status: 'skipped',
+    reason: 'save-feature-unconfigured',
+  });
   expect(move).not.toHaveBeenCalled();
   expect(h.fetchMock).not.toHaveBeenCalled();
   h.ingress.dispose();

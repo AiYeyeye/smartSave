@@ -3,7 +3,10 @@ import type { OrganizeState } from '../domain/organize-state';
 import type { ModelResult } from '../adapters/model-transport';
 import { organizeClientRuntime } from './fixtures/organize-client-runtime';
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
 const folders = { status: 'completed' as const, output: { moves: [], newFolders: [], merges: [] } };
 function observer(h: ReturnType<typeof organizeClientRuntime>) {
   let state!: OrganizeState;
@@ -186,6 +189,62 @@ it('confirms exactly one worker-compiled proposal and reopens a submitted task b
   h.dispose();
 });
 
+it('keeps a native confirmation pending beyond the ordinary35s command deadline', async () => {
+  const h = organizeClientRuntime(),
+    page = observer(h);
+  await review(h, page);
+  const move = h.move.getMockImplementation()!;
+  let finish!: () => void;
+  h.move.mockImplementationOnce(
+    (id, input) =>
+      new Promise(resolve => {
+        finish = () => resolve(move(id, input));
+      }),
+  );
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  const applying = page.client.apply();
+  try {
+    await vi.waitFor(() => expect(h.move).toHaveBeenCalledOnce());
+    await vi.advanceTimersByTimeAsync(35_001);
+    expect(page.state().busy).toBe(true);
+    expect(page.state().result).toBeUndefined();
+  } finally {
+    vi.useRealTimers();
+    finish();
+    await applying;
+    page.client.dispose();
+    h.dispose();
+  }
+  expect(page.state().result?.status).toBe('completed');
+  expect(h.log.filter(message => message.type === 'confirmMutation')).toHaveLength(1);
+});
+
+it('reads the same journal request after a lost completion reply without issuing another confirmation', async () => {
+  const h = organizeClientRuntime(),
+    page = observer(h);
+  await review(h, page);
+  h.dropConfirmationReply();
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  const applying = page.client.apply();
+  const id = page.state().task!.id!;
+  await vi.waitFor(async () => {
+    const checkpoint = await h.journal.organizeCheckpoints.get(id);
+    expect(checkpoint?.submission?.requestId).toBeTruthy();
+    expect((await h.journal.all())[0]?.result?.status).toBe('completed');
+  });
+  try {
+    await vi.advanceTimersByTimeAsync(300_001);
+  } finally {
+    vi.useRealTimers();
+  }
+  await applying;
+  expect(page.state().result?.status).toBe('completed');
+  expect(h.log.filter(message => message.type === 'confirmMutation')).toHaveLength(1);
+  expect(h.log.filter(message => message.type === 'mutationStatus')).toHaveLength(1);
+  page.client.dispose();
+  h.dispose();
+});
+
 it('does not report a rejection as saved when the deselection CAS fails', async () => {
   const h = organizeClientRuntime(),
     page = observer(h);
@@ -233,6 +292,72 @@ it('retains an unconfirmed request ID across rereads and never turns request-not
   expect(attempts).toBe(1);
   expect(h.move).not.toHaveBeenCalled();
   replaced.mockRestore();
+  page.client.dispose();
+  h.dispose();
+});
+
+it('keeps reconnecting after repeated worker sleeps and never reports the saved plan as invalid', async () => {
+  const h = organizeClientRuntime(),
+    page = observer(h);
+  h.run.mockResolvedValueOnce(folders);
+  await page.client.generate(undefined, { staged: true, batchSize: 1, cleanupEmpty: false });
+  await vi.waitFor(() => expect(page.state().pipeline).toMatchObject({ stage: 'folders', status: 'review' }));
+  await vi.waitFor(() => expect(page.state().busy).toBe(false));
+  page.client.setVisible(true);
+  const id = page.state().task!.id!;
+  // Each idle worker shutdown drops the port; more sleeps than the old three-retry cap.
+  for (let sleep = 0; sleep < 4; sleep++) {
+    h.ports.at(-1)!.disconnect();
+    expect(page.state().task?.connected).toBe(false);
+    expect(page.state().invalid).toBe(false);
+    expect(page.state().busy).toBe(true);
+    await vi.waitFor(() => expect(page.state().task?.connected).toBe(true), { timeout: 3000 });
+  }
+  expect(page.state()).toMatchObject({ invalid: false, busy: false, task: { id } });
+  expect(page.state().message ?? '').not.toContain('无法连接');
+  expect(h.run).toHaveBeenCalledTimes(1);
+  page.client.dispose();
+  h.dispose();
+}, 12_000);
+
+it('restores a reviewed plan after the worker restarts while the page waits', async () => {
+  const h = organizeClientRuntime(),
+    page = observer(h);
+  h.run.mockResolvedValueOnce(folders);
+  await page.client.generate(undefined, { staged: true, batchSize: 1, cleanupEmpty: false });
+  await vi.waitFor(() => expect(page.state().pipeline).toMatchObject({ stage: 'folders', status: 'review' }));
+  await vi.waitFor(() => expect(page.state().busy).toBe(false));
+  page.client.setVisible(true);
+  const id = page.state().task!.id!;
+  // The idle worker is replaced; the page reconnects and the new worker reloads the task from its checkpoint.
+  h.restart();
+  h.ports.at(-1)!.disconnect();
+  await vi.waitFor(() => expect(page.state().task?.connected).toBe(true), { timeout: 3000 });
+  await vi.waitFor(() => expect(page.state().busy).toBe(false), { timeout: 8000 });
+  expect(page.state()).toMatchObject({ invalid: false, task: { id }, pipeline: { stage: 'folders' } });
+  expect(page.state().message ?? '').not.toContain('无法恢复');
+  expect(h.run).toHaveBeenCalledTimes(1);
+  page.client.dispose();
+  h.dispose();
+}, 15_000);
+
+it('lets the worker sleep while the organize view is hidden and reconnects when it is shown again', async () => {
+  const h = organizeClientRuntime(),
+    page = observer(h);
+  h.run.mockResolvedValueOnce(folders);
+  await page.client.generate(undefined, { staged: true, batchSize: 1, cleanupEmpty: false });
+  await vi.waitFor(() => expect(page.state().pipeline).toMatchObject({ stage: 'folders', status: 'review' }));
+  await vi.waitFor(() => expect(page.state().busy).toBe(false));
+  page.client.setVisible(false);
+  const ports = h.ports.length;
+  h.ports.at(-1)!.disconnect();
+  await new Promise(resolve => setTimeout(resolve, 1500));
+  expect(h.ports.length).toBe(ports);
+  expect(page.state().task?.connected).toBe(false);
+  page.client.setVisible(true);
+  await vi.waitFor(() => expect(page.state().task?.connected).toBe(true), { timeout: 3000 });
+  await vi.waitFor(() => expect(page.state().busy).toBe(false));
+  expect(page.state().invalid).toBe(false);
   page.client.dispose();
   h.dispose();
 });

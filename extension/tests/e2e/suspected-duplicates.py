@@ -75,7 +75,6 @@ with sync_playwright() as playwright:
             geometry.append(measured)
             page.screenshot(path=str(root / f'duplicate-review-{width}.png'), full_page=True)
         page.get_by_role('button', name=text('生成去重预览', 'Preview duplicate cleanup'), exact=True).click()
-        page.get_by_text(text('完整分类树与内容去向', 'Full folder tree and bookmark destinations'), exact=True).click()
         if args.language == 'en':
             page.get_by_text('Folder changes and other operations · 1', exact=True).click()
             expect(page.get_by_text('Reason: Remove possible duplicates after individual review, keeping the explicitly chosen copies.', exact=True)).to_be_visible()
@@ -91,7 +90,7 @@ with sync_playwright() as playwright:
         page.get_by_role('button', name=text('下一步：确认操作', 'Next: confirm changes'), exact=True).click()
         assert worker.evaluate('(id)=>chrome.bookmarks.getSubTree(id)', fixture['root']) == before
         page.get_by_role('button', name=text('确认并执行 1 项操作', 'Confirm and apply operations (1)'), exact=True).click()
-        page.get_by_text(text('状态 completed', 'Status: completed'), exact=False).wait_for()
+        page.get_by_text(text('已完成 · 已完成', 'Completed · Completed'), exact=False).wait_for()
         after = worker.evaluate('async id=>(await chrome.bookmarks.getSubTree(id))[0].children', fixture['root'])
         assert [item['id'] for item in after] == [item['id'] for item in fixture['items'] if item['title'] != 'Delete B']
         assert [item['url'] for item in after] == [item['url'] for item in fixture['items'] if item['title'] != 'Delete B']

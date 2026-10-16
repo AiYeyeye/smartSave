@@ -10,6 +10,8 @@ from playwright.sync_api import expect, sync_playwright
 preview = Path(sys.argv[1]).resolve()
 out = Path(sys.argv[2]).resolve()
 out.mkdir(parents=True, exist_ok=True)
+search_mode = '--search' in sys.argv[3:]
+row_scope = '.search-hit-list ' if search_mode else '.directory '
 
 
 class QuietHandler(SimpleHTTPRequestHandler):
@@ -34,7 +36,9 @@ with sync_playwright() as p:
         for width, height in [(320, 580), (380, 580), (480, 580), (320, 360)]:
             page.set_viewport_size({'width': width, 'height': height})
             page.goto(f'http://127.0.0.1:{server.server_port}/index.html')
-            row = page.locator('[data-node-id="figma"]')
+            if search_mode:
+                page.get_by_role('searchbox').fill('example')
+            row = page.locator(row_scope + '[data-node-id="figma"]')
             row.click(button='right')
             menu = page.get_by_role('menu')
             expect(menu).to_be_visible()
@@ -69,7 +73,9 @@ with sync_playwright() as p:
         page.set_viewport_size({'width': 380, 'height': 580})
         page.evaluate("localStorage.setItem('zhilan.appearance', JSON.stringify({mode:'dark', accent:'indigo'}))")
         page.reload()
-        page.locator('[data-node-id="docs"]').click(button='right')
+        if search_mode:
+            page.get_by_role('searchbox').fill('example')
+        page.locator(row_scope + '[data-node-id="docs"]').click(button='right')
         expect(page.get_by_role('menu')).to_be_visible()
         assert page.get_by_role('menu').evaluate("e => getComputedStyle(e).pointerEvents") == 'auto'
         page.screenshot(path=str(out / 'menu-dark-last-row.png'), animations='disabled')
@@ -79,7 +85,7 @@ with sync_playwright() as p:
         title.fill('保留中的标题草稿')
         for width, height in [(320, 360), (380, 580), (480, 580)]:
             page.set_viewport_size({'width': width, 'height': height})
-            page.locator('[data-node-id="figma-copy"]').click(button='right')
+            page.locator(row_scope + '[data-node-id="figma-copy"]').click(button='right')
             menu = page.get_by_role('menu')
             expect(menu).to_have_accessible_description('有尚未完成的书签操作，请先完成或取消。')
             for label in ['置顶', '上移', '下移', '删除']:
@@ -92,13 +98,30 @@ with sync_playwright() as p:
             expect(title).to_be_focused()
             expect(title).to_have_value('保留中的标题草稿')
         page.get_by_role('button', name='取消', exact=True).click()
-        page.locator('[data-node-id="figma-copy"]').click(button='right')
+        page.locator(row_scope + '[data-node-id="figma-copy"]').click(button='right')
         for label in ['置顶', '上移', '删除']:
             expect(page.get_by_role('menuitem', name=label, exact=True)).to_be_enabled()
         expect(page.get_by_role('menuitem', name='下移', exact=True)).to_have_attribute('title', '已在当前目录末位。')
         checks.append('Active draft: visible reason, bounded short/narrow menu, return preserves draft/focus, cancel unlocks commands; boundary tooltip remains')
+        if search_mode:
+            page.goto(f'http://127.0.0.1:{server.server_port}/index.html?semantic')
+            page.get_by_role('searchbox').fill('之前收藏的那个做流程图的网站')
+            expect(page.locator('.search-hit-open')).to_have_count(0)
+            page.get_by_role('button', name='AI 帮我找', exact=True).click()
+            result = page.get_by_role('button', name='diagrams.net', exact=True)
+            expect(result).to_be_visible()
+            result.focus()
+            page.keyboard.press('Shift+F10')
+            expect(page.get_by_role('menu', name='diagrams.net 操作')).to_be_visible()
+            page.evaluate('globalThis.__visualTreeState({status:"error",message:"合成断线"})')
+            for label in ['在新标签页打开', '在新窗口中打开', '在无痕窗口中打开', '编辑', '删除']:
+                expect(page.get_by_role('menuitem', name=label, exact=True)).to_be_disabled()
+            page.evaluate('globalThis.__visualRestoreTree()')
+            expect(page.get_by_role('menuitem', name='编辑', exact=True)).to_be_enabled()
+            page.screenshot(path=str(out / 'semantic-menu.png'), animations='disabled')
+            checks.append('Zero-hit AI result shares the keyboard menu; cached result blocks open/mutations on disconnect and recovers')
         assert not errors, errors
-        result = {'checks': checks, 'browser': browser.version, 'errors': errors,
+        result = {'checks': checks, 'browser': browser.version, 'errors': errors, 'search_mode': search_mode,
                   'scope': 'Production App/CSS with synthetic Chrome tree, tab and window APIs. No live browser-profile writes.'}
         (out / 'checks.json').write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding='utf-8')
         print(json.dumps(result, ensure_ascii=True, indent=2))
