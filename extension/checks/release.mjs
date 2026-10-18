@@ -31,7 +31,7 @@ export const manualRequirements = [
   {
     id: 'historical-p1',
     status: 'historical',
-    evidence: '.trellis/tasks/09-08-zhilan-technical-validation-design/research/p1-user-evidence-2026-09-08.md',
+    evidence: 'README.md#release-boundary',
     blocking: false,
   },
   ...[
@@ -118,7 +118,7 @@ export async function checkRelease(directory) {
     sourceInventoryHash,
     artifactInventoryHash,
     environment: { node: process.version, platform: process.platform, arch: process.arch },
-    sourceIdentity: 'source-file SHA256 inventory; no commit identity asserted (unborn repository)',
+    sourceIdentity: 'source-file SHA256 inventory; no commit identity asserted',
     lockHash,
     artifacts,
     sourceFiles,

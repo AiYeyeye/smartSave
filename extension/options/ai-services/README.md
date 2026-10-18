@@ -1,6 +1,5 @@
 # AI 服务 UI（对齐 redesign SoT）
 
-侧栏摘要 + 独立管理页。视觉 / 交互以 `/workspace/smartsave-ai-services-redesign.html` 与 `smartsave-ai-services-design-spec.md` 为定稿；业务层继续走真实 `useAiServices` store（`chrome.storage.local.aiServices`），复用 `listModels`、`ModelTransport`、`SettingsStore`。
 
 ## 定稿要点
 
@@ -11,7 +10,6 @@
 | 功能用模 | 侧栏与管理页均列出全部 **5** 项（导入/收藏/搜索/整理/页面分类） |
 | 模型选择器 | **行内展开**（搜索 + 按连接分组）；宽度跟随侧栏/卡片；**禁止 `position:fixed` 浮出 ≈380px 边界** |
 | 主名 | 产品主名写 **Anthropic**，不写 Claude（订阅副文案可保留 Claude Pro） |
-| 书签树 | 自写交互；对照手感见 `docs/research/bookmark-projects-learning.md` §3.5；**MS-RSL：禁止复制 Bookmark Sidebar 的代码/CSS/资源/品牌** |
 
 ## 文件列表
 
@@ -48,7 +46,6 @@
 
 1. `cd extension && pnpm install && npx tsc --noEmit`（或 `pnpm build`）
 2. `chrome://extensions` → 加载已解压的扩展 → 选构建产物目录
-3. **侧栏**：打开 toolbar popup（≈380px）对照 `/workspace/smartsave-ai-services-redesign.html`「侧栏·书签主页 / 设置摘要」
 4. **管理页**：`chrome-extension://<id>/options/index.html#ai-services` 对照 redesign 已连接 / 添加 / 功能用模 / 导入导出 / 编辑层
 5. 添加服务 → API Key → 连接；编辑 →「获取列表」/「测试连接」/「保存服务」
 6. 侧栏设置摘要内点功能用模行 → 行内展开选模型（不得溢出侧栏）

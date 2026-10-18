@@ -131,7 +131,7 @@ it('validates emitted JSON and original technical fixture with independent MIT A
     validate(
       JSON.parse(
         readFileSync(
-          '../.trellis/tasks/09-08-zhilan-technical-validation-design/research/fixtures/export-v1.json',
+          'tests/fixtures/export-v1-compatibility.json',
           'utf8',
         ),
       ),
