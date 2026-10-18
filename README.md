@@ -1,17 +1,11 @@
+# 智栏 / Zhilan — 历史开发分支 / Historical development branch
 
-# 智栏 · Markora
+本分支 `review/2026-09-22-design-fixes` 保留原有代码版本，内部设计、实验、研究和会话资料已移出公开历史。当前功能、安装和发布说明请看 [主分支 README](https://github.com/AiYeyeye/smartSave/blob/master/README.md)。本分支的运行要求以自己的 `extension/package.json` 和 manifest 为准，不代表当前发布候选。
 
-Chrome / Edge MV3 书签助手：浏览器原生书签是唯一事实源，AI 只产生经校验的数据，写入经唯一内核并留回执。
+This branch preserves its historical code version. Internal material has been removed from public history. See the [current English README](https://github.com/AiYeyeye/smartSave/blob/master/README.en.md) for maintained documentation. This branch's package and manifest define its own requirements; it is not the current release candidate.
 
-- [产品需求 PRD 1.0 + 1.1 增补](docs/PRD-1.0.md)：2026-09-22 起主流程为「浏览器原生收藏 → 后台自动分类 → 先写后告知」，第 15 节记录标废条款。
-- [设计简报（供原型/样式生成）](docs/design-brief-2026-09-23.md)：自包含的界面清单、状态、视觉令牌与硬约束，可整份交给原型 AI。
-- [原生收藏自动分类任务树](.trellis/tasks/09-11-zhilan-native-ai-overhaul/prd.md)：R01–R18 与 P00–P08 子任务，尚在 planning。
-- [首版 v1 任务树](.trellis/tasks/09-08-zhilan-v1-development/README.md)：12 个子任务源码基本完成，浏览器/真实模型/P1–P4 运行验收未做。
-- [扩展工程说明](extension/README.md)：构建、检查、证据边界与各切片状态。
-- [四风格交互原型](ui/prototype/README.md)、[隔离文件访问实验](experiments/file-access-probe/README.md)、[用户 P1 实测证据](.trellis/tasks/09-08-zhilan-technical-validation-design/research/p1-user-evidence-2026-09-08.md)。
+[开发命令 / Development](extension/README.md) · [Agent instructions](AGENTS.md) · [中文协作说明](AGENTS.zh-CN.md)
 
-## 当前状态（2026-09-22）
+## Release boundary
 
-工作分支 `review/2026-09-22-design-fixes`。设计审查后的修复已提交：发布门最低 Chrome 114、循环导入与 schema 统一、操作日志 v2、导入映射按结构聚合、模型提示词层与分类策略、Prettier 格式化；宿主切换为工具栏 Popup + 选项页、恢复界面收窄、新鲜度改为版本号加任务依赖范围随后提交。规范见 `.trellis/spec/frontend/index.md` 的状态列。
-
-运行时验收仍未执行：所有单元/集成测试是 jsdom 与真实 Vite 构建，不构成 Chrome/Edge 宿主、真实模型或用户书签数据的证据；`release:ready` 在人工门关闭前始终阻塞。
+历史文件访问实验仅有有限的 Chrome 结果，不代表生产浏览器、模型或恢复矩阵已通过。原始记录保留在维护者本机。Existing manual release gates remain in force. Historical probe results are not production release acceptance; original raw evidence stays private.

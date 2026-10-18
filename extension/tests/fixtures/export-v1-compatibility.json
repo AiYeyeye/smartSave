@@ -1,0 +1,26 @@
+{
+  "format": "markora.bookmarks",
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-08T00:00:00Z",
+  "roots": [
+    {
+      "type": "folder",
+      "id": "n1",
+      "title": "资料/参考",
+      "children": [
+        {
+          "type": "folder",
+          "id": "n2",
+          "title": "空目录",
+          "children": []
+        },
+        {
+          "type": "bookmark",
+          "id": "n3",
+          "title": "示例",
+          "url": "https://example.test/article?id=1#part"
+        }
+      ]
+    }
+  ]
+}

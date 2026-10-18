@@ -1,21 +1,3 @@
-<!-- TRELLIS:START -->
-# Trellis Instructions
+# Agent instructions
 
-These instructions are for AI assistants working in this project.
-
-This project is managed by Trellis. The working knowledge you need lives under `.trellis/`:
-
-- `.trellis/workflow.md` — development phases, when to create tasks, skill routing
-- `.trellis/spec/` — package- and layer-scoped coding guidelines (read before writing code in a given layer)
-- `.trellis/workspace/` — per-developer journals and session traces
-- `.trellis/tasks/` — active and archived tasks (PRDs, research, jsonl context)
-
-If a Trellis command is available on your platform (e.g. `/trellis:finish-work`, `/trellis:continue`), prefer it over manual steps. Not every platform exposes every command.
-
-If you're using Codex or another agent-capable tool, additional project-scoped helpers may live in:
-- `.agents/skills/` — reusable Trellis skills
-- `.codex/agents/` — optional custom subagents
-
-Managed by Trellis. Edits outside this block are preserved; edits inside may be overwritten by a future `trellis update`.
-
-<!-- TRELLIS:END -->
+[简体中文](AGENTS.zh-CN.md). Read [README](README.md) and [development commands](extension/README.md). Preserve this historical branch's code behavior and pre-existing edits. Public builds must not depend on private task directories. Keep internal product/design/research/session files and real data in ignored `.local/private/`. Optional local `.trellis/`, `.agents/`, `.codex/` remain ignored. Preserve native mutation authorization, confirmation, journals and recovery; never replay uncertain writes. Run the branch's checks and describe actual validation limits. Current public guidance is maintained on master.
