@@ -1,6 +1,6 @@
 # 参与贡献 / Contributing
 
-欢迎通过 [Issues](https://github.com/AiYeyeye/smartSave/issues) 反馈问题、讨论功能，通过 Pull Request 贡献修复。安全问题请先看 [SECURITY.md](SECURITY.md)。自有代码采用 [PolyForm Noncommercial 1.0.0](LICENSE)，未经单独授权不得商用；第三方依赖保留各自许可证。详见 [许可说明](docs/licensing.md)。
+欢迎通过 [Issues](https://github.com/AiYeyeye/smartSave/issues) 反馈问题、讨论功能，通过 Pull Request 贡献修复。安全问题请先看 [SECURITY.md](SECURITY.md)。自有代码采用 [PolyForm Noncommercial 1.0.0](LICENSE)，未经单独授权不得商用；第三方依赖保留各自许可证。详见 [许可说明](docs/legal/licensing.md)。
 
 ## 开始开发
 
@@ -13,7 +13,7 @@ pnpm --dir extension install --frozen-lockfile
 pnpm --dir extension build
 ```
 
-在独立测试浏览器配置中加载 `extension/dist`，使用演示书签。详细结构和测试入口见 [开发说明](extension/README.md)；AI 助手还应遵守 [AGENTS.md](AGENTS.md) 和 `.trellis/spec/` 对应层规范。
+在独立测试浏览器配置中加载 `extension/dist`，使用演示书签。详细结构和测试入口见 [开发说明](extension/README.md)；AI 助手还应遵守 [AGENTS.md](AGENTS.md) （[中文版](AGENTS.zh-CN.md)）、[公共架构](docs/development/architecture.md) 和 [目录规则](docs/development/repository-layout.md)。本地 Trellis 配置可选，公共开发不依赖它。
 
 ## 提交修改
 
@@ -31,10 +31,12 @@ pnpm --dir extension test:integration
 pnpm --dir extension build
 pnpm --dir extension release:source
 python tools/check-docs.py
+python tools/check-repository.py
+python -m unittest discover -s tools/tests
 ```
 
 PR 写明问题、最终行为和验证结果。截图用虚构书签；请勿提交 API Key、个人收藏、模型请求正文、浏览器配置、私有评测集或本机绝对路径。格式化只处理本次修改的文件，避免改写他人的工作。
 
 ## English
 
-Use Node.js >=22.12 and pnpm 11.7.0; build and check with the commands above. Test in a disposable browser profile with synthetic bookmarks. Discuss major changes in an issue, keep PRs focused, describe validation, and update user docs and translations when behavior changes. Preserve the shared native mutation/confirmation/recovery boundary. Update privacy disclosures and dependency notices when adding network access or dependencies. Never commit credentials, personal bookmarks, private diagnostics or browser profiles. Contributions use PolyForm Noncommercial 1.0.0, without copyright assignment or an automatic commercial relicensing grant.
+Use Node.js >=22.12 and pnpm 11.7.0; build and check with the commands above. Test in a disposable browser profile with synthetic bookmarks. Discuss major changes in an issue, keep PRs focused, describe validation, and update user docs and translations when behavior changes. Preserve the shared native mutation/confirmation/recovery boundary. Update privacy disclosures and dependency notices when adding network access or dependencies. Never commit credentials, personal bookmarks, private diagnostics or browser profiles. Keep private drafts in ignored `.local/private/` and generated archives in `.local/releases/`; follow the public architecture/layout and agent instructions. Local automation is optional. Contributions use PolyForm Noncommercial 1.0.0, without copyright assignment or an automatic commercial relicensing grant.

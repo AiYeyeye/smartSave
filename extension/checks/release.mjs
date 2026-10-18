@@ -4,11 +4,12 @@ import { pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
 import { validateBuild, assertClassicScript } from '../scripts/validate-build.mjs';
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
-async function inventory(root, excluded = []) {
+async function inventory(root, excluded = [], excludeLocalFiles = false) {
   const result = [];
   async function walk(dir) {
     for (const entry of (await readdir(dir, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name))) {
       if (excluded.includes(entry.name)) continue;
+      if (excludeLocalFiles && /(?:\.log|\.pyc|\.pyo)$/.test(entry.name)) continue;
       const file = resolve(dir, entry.name);
       if (entry.isSymbolicLink()) throw Error(`Symlink not inventoried: ${relative(root, file)}`);
       if (entry.isDirectory()) await walk(file);
@@ -31,7 +32,7 @@ export const manualRequirements = [
   {
     id: 'historical-p1',
     status: 'historical',
-    evidence: '.trellis/tasks/09-08-zhilan-technical-validation-design/research/p1-user-evidence-2026-09-08.md',
+    evidence: 'docs/release/status.md#historical-evidence',
     blocking: false,
   },
   ...[
@@ -69,8 +70,23 @@ export async function checkRelease(directory) {
   const artifacts = (await attempt(() => inventory(dist))) ?? [];
   // Private evaluation inputs/reports are local evidence, never distributable source inventory.
   const sourceFiles =
-    (await attempt(() => inventory(root, ['node_modules', 'dist', '.local-evaluation', 'release-candidate.json']))) ??
-    [];
+    (await attempt(() =>
+      inventory(
+        root,
+        [
+          'node_modules',
+          'dist',
+          'coverage',
+          '__pycache__',
+          '.pytest_cache',
+          '.local',
+          '.local-evaluation',
+          'release-candidate.json',
+          'audit.json',
+        ],
+        true,
+      ),
+    )) ?? [];
   const sourceInventoryHash = sha(JSON.stringify(sourceFiles));
   const artifactInventoryHash = sha(JSON.stringify(artifacts));
   const pkg = await attempt(async () => JSON.parse(await readFile(resolve(root, 'package.json'), 'utf8')));
@@ -121,7 +137,7 @@ export async function checkRelease(directory) {
     sourceInventoryHash,
     artifactInventoryHash,
     environment: { node: process.version, platform: process.platform, arch: process.arch },
-    sourceIdentity: 'source-file SHA256 inventory; no commit identity asserted (unborn repository)',
+    sourceIdentity: 'source-file SHA256 inventory; no Git commit identity asserted',
     lockHash,
     artifacts,
     sourceFiles,

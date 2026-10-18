@@ -4,9 +4,9 @@
 
 Chrome / Edge 的浏览器原生书签助手。点星标后自动归类，用本地规则减少等待；批量整理先预览、再确认，写入保留备份和回执。
 
-**源码公开，仅限非商业用途。** 自有代码采用 [PolyForm Noncommercial 1.0.0](LICENSE)，商用需另行书面授权；这不是 OSI 定义的开源许可。[许可说明](docs/licensing.md) · 维护者 Astraxine · [联系邮箱](mailto:mmgnosit@gmail.com)。
+**源码公开，仅限非商业用途。** 自有代码采用 [PolyForm Noncommercial 1.0.0](LICENSE)，商用需另行书面授权；这不是 OSI 定义的开源许可。[许可说明](docs/legal/licensing.md) · 维护者 Astraxine · [联系邮箱](mailto:mmgnosit@gmail.com)。
 
-[使用手册](docs/user-guide.md) · [安装说明](docs/install.md) · [演示视频](docs/media/zhilan-quick-tour.mp4) · [隐私政策](docs/privacy.md) · [商店上架资料](docs/store/README.md)
+[使用手册](docs/guides/user-guide.md) · [安装说明](docs/guides/install.md) · [演示视频](docs/media/zhilan-quick-tour.mp4) · [隐私政策](docs/privacy.md) · [商店上架资料](docs/store/README.md)
 
 ![智栏书签目录（虚构演示数据）](docs/media/screenshots/01-bookmarks.png)
 
@@ -53,7 +53,18 @@ pnpm --dir extension build
 
 - [开发与测试命令](extension/README.md)
 - [参与贡献](CONTRIBUTING.md) · [问题反馈](SUPPORT.md) · [安全报告](SECURITY.md) · [社区规范](CODE_OF_CONDUCT.md)
-- [更新日志](CHANGELOG.md) · [第三方许可](docs/third-party-licenses.md) · [发布待办清单](docs/open-source-release.md)
-- [优化建议原文](docs/research/zhilan-optimization-plan-2026-10-14.md)
-- [执行进度与验收证据](.trellis/tasks/10-12-model-protocol-repair/optimization-progress.md)
-- [产品需求](docs/PRD-1.0.md) · [界面设计简报](docs/design-brief-2026-09-23.md)
+- [更新日志](CHANGELOG.md) · [第三方许可](docs/legal/third-party-licenses.md) · [发布待办清单](docs/release/checklist.md)
+
+
+## 仓库结构
+
+| 目录 | 内容 |
+| --- | --- |
+| `extension/` | 扩展源码、合成测试样例及构建配置 |
+| `docs/` | 使用、协议、开发、许可、发布与商店文档 |
+| `tools/` | 文档/仓库检查、素材和打包工具 |
+| `.github/` | CI 与贡献模板 |
+
+[完整文档导航](docs/README.md) · [目录与私有资料规则](docs/development/repository-layout.md) · [架构](docs/development/architecture.md) · [AI 助手规范](AGENTS.zh-CN.md)。
+
+内部产品设计、调研、原型及会话记录不随仓库发布；维护者本机统一存于已忽略的 `.local/private/`，本地代理工具配置也不提交。候选 ZIP 写入 `.local/releases/`。公开源码可独立构建、测试，不需要这些私有文件。

@@ -1,8 +1,11 @@
 # 更新日志 / Changelog
 
-本文件记录面向用户的变化。未发布内容不代表 Chrome Web Store 已可安装；开发和测试记录见 Trellis 任务文档。
+本文件记录面向用户的变化。未发布内容不代表 Chrome Web Store 已可安装；可复现检查和剩余验收见 [发布状态](docs/release/status.md)。
 
 ## [Unreleased] — 0.1.0 开发候选
+
+- 整理公开文档目录，隔离内部设计/研究/会话材料，补充中英文协作说明与仓库检查。
+- Organize public documentation, isolate internal material, and add bilingual contributor guidance and repository checks.
 
 - 浏览器原生书签侧栏与完整工作台，支持本地搜索、拼音及首字母匹配。
 - 用户配置 AI 服务后，可归类新收藏，显式使用 AI 搜索与分批整理；批量写入先审核、再确认。

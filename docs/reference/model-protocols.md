@@ -1,6 +1,6 @@
 # 四种接口协议对照（智栏 AI 连接）
 
-2026-10-14补充：连接支持“优先快速响应”，仅对已核实的官方模型关闭或降低思考量；不支持的明确参数可去掉后重发一次。429/5xx最多按2/4/8秒重试三次，网络断流仍手动继续。输出默认128000及自定义值保留。整理书签批次采用两个独立请求并发、按顺序合并，遇429降低后续并发；明确启用的新协议只需返回移动项。真实评测入口见[模型评测](model-evaluation.md)。
+连接可按服务配置调整已识别官方模型的思考参数；旧 `fastMode` 配置保留兼容。不支持的明确参数可去掉后重发一次。429/5xx最多按2/4/8秒重试三次，网络断流仍手动继续。输出默认128000及自定义值保留。整理书签批次采用两个独立请求并发、按顺序合并，遇429降低后续并发；明确启用的新协议只需返回移动项。真实评测入口见[模型评测](../development/model-evaluation.md)。
 
 更新：2026-10-13。请求由 `model-transport.ts` 构建，地址由 `model-route.ts` 生成，JSON 解析在 `model-replies.ts`，流式读取在 `model-stream.ts`，模型发现在 `model-discovery.ts`。协议回归见 `model-protocols.test.ts`、`model-stream.test.ts`。
 
@@ -16,6 +16,8 @@
 | 要求 JSON | `response_format: {type: json_object}` | `text.format: {type: json_object}` | 本应用通过系统提示要求 JSON | `generationConfig.responseMimeType: application/json` |
 | 输出额度（均可自定义，默认 128000） | `max_completion_tokens` | `max_output_tokens` | `max_tokens` | `generationConfig.maxOutputTokens` |
 | 模型列表 | `GET /v1/models` → `data[].id` | 同左 | `GET /v1/models?limit=1000` → `data[].id`（默认只回 20 条） | `GET /v1beta/models?pageSize=1000` → `models[].name`，只保留 `supportedGenerationMethods` 含 `generateContent` 的 |
+
+表格中的 `{base}` 表示规范化后的服务地址；地址生成器会识别已有版本路径，不会把 `/v1` 再拼接一次。具体以 `extension/domain/model-route.ts` 为准。
 
 ## 回复侧
 
@@ -51,9 +53,9 @@ Responses 最终快照缺少文字或文字为空时，保留此前已收到的�
 
 「测试连接」使用当前编辑的协议、地址、密钥、所选测试模型和传输方式，发送一条合成书签及两个合成目录，校验真正的分类答案。测试不保存草稿，不读取真实书签，也不调用书签写入接口。编辑、关闭或取消会使旧请求结果失效。获取模型列表仅验证发现接口，不能代替生成测试。
 
-## 验证结果（2026-10-12）
+## 验证范围
 
-本地 817 个单元测试、6 个构建/Worker 集成测试以及类型、lint、构建和源码清单检查通过。用户重载 dist 后，按验收要求保持原先失败的 Responses 连接、开启流式响应，确认「合成分类测试和实际收藏都成功」。这是该连接的用户实测反馈；其余三种模式的本次证据为本地协议回归，未新增真实服务验收。服务内部为何曾返回缺少 text 的 JSON 尚无直接证据。
+协议回归测试覆盖合成 JSON/SSE 与错误路径；真实服务结果不能由合成测试代替。当前人工门和测试入口见 [发布状态](../release/status.md)。
 
 ## 官方与开源依据
 
@@ -83,4 +85,6 @@ Responses 最终快照缺少文字或文字为空时，保留此前已收到的�
 ## Organization context and batching
 The app does not configure/discover a model-specific context window. The four native protocols use saved maxOutputTokens or the shared default 128000; edit it under AI 服务 → 编辑 → 最大输出 tokens. Draft testing, saving and configuration export/import preserve it. This is the application request budget, not a model capability guarantee. Global request byte guards remain independent of tokens.
 
-Organization now first requests a folder taxonomy from structure/counts/bounded samples, then waits for user confirmation. It classifies bookmarks in sequential batches (default 100, user-editable positive integer), additionally limited to a 48KiB serialized request body. Each request includes only its items and the fixed approved taxonomy, not previous replies or the whole bookmark inventory. Every ID must be moved or explicitly unchanged. Completed batches are viewable immediately; output-limit batches split, failures retain earlier results, and continuation resumes pending items only. All native changes still wait for final confirmation. Keep the workbench open; page reload/close discards the in-memory run.
+Organization first requests a folder taxonomy from structure/counts/bounded samples and waits for confirmation. Bookmark analysis uses two concurrent requests by default, merges results in order and may reduce concurrency after rate limiting. The default batch count is 100; 48KiB is a preferred partition target, while the independent hard request guard is 1MiB. An oversized indivisible item must pass the hard guard rather than being truncated. The sparse-output protocol can return moves only; the validator still checks offered IDs, conflicts and coverage according to the selected protocol.
+
+Worker-owned generation persists accepted checkpoints. Reopening the workspace reconnects to progress or saved review. Interrupted requests require explicit continuation; uncertain native writes are never replayed. Closing the page does not itself discard accepted generation results, but worker/browser restart does not guarantee an in-flight network request survives. Applying the final proposal always requires current authority, a fresh preview and explicit confirmation.

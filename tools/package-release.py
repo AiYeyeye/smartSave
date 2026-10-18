@@ -42,8 +42,8 @@ def main():
             raise SystemExit(f'Unexpected production asset type: {name}')
         if hashlib.sha256(path.read_bytes()).hexdigest() != expected[name]:
             raise SystemExit(f'Artifact changed after validation: {name}')
-    output = ROOT / 'release'
-    output.mkdir(exist_ok=True)
+    output = ROOT / '.local/releases'
+    output.mkdir(parents=True, exist_ok=True)
     suffix = '-candidate' if args.candidate else ''
     archive = output / f'zhilan-{manifest["version"]}{suffix}.zip'
     # Fixed ZIP metadata makes identical input bytes produce identical archives.

@@ -3,13 +3,15 @@ import json
 from pathlib import Path
 import re
 import struct
+import subprocess
 from urllib.parse import unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 errors = []
-files = [ROOT / name for name in ['README.md', 'README.en.md', 'CONTRIBUTING.md', 'SECURITY.md',
-                                  'SUPPORT.md', 'CODE_OF_CONDUCT.md', 'CHANGELOG.md']]
-files += [path for path in (ROOT / 'docs').rglob('*.md') if 'research' not in path.parts]
+tracked = set(subprocess.check_output(['git', 'ls-files', '-z'], cwd=ROOT).decode('utf-8').split('\0'))
+files = list(ROOT.glob('*.md')) + list((ROOT / 'docs').rglob('*.md'))
+files += list((ROOT / 'extension').glob('README*.md'))
+files += [ROOT / 'extension/options/ai-services/README.md', ROOT / 'extension/import/dependencies.md']
 for path in files:
     content = path.read_text(encoding='utf-8')
     content = re.sub(r'```.*?```', '', content, flags=re.S)
@@ -21,6 +23,13 @@ for path in files:
         target = (path.parent / unquote(parsed.path)).resolve()
         if not target.exists():
             errors.append(f'{path.relative_to(ROOT)}: missing local target {link}')
+        elif not target.is_relative_to(ROOT):
+            errors.append(f'{path.relative_to(ROOT)}: link leaves the repository: {link}')
+        else:
+            relative = target.relative_to(ROOT).as_posix()
+            public = relative in tracked or (target.is_dir() and any(name.startswith(relative + '/') for name in tracked))
+            if not public or any(part in {'.local', '.trellis', '.agents', '.codex'} for part in target.relative_to(ROOT).parts):
+                errors.append(f'{path.relative_to(ROOT)}: target is not public: {link}')
 
 manifest = json.loads((ROOT / 'extension/public/manifest.json').read_text(encoding='utf-8'))
 package = json.loads((ROOT / 'extension/package.json').read_text(encoding='utf-8'))

@@ -3,6 +3,28 @@ node_modules/
 dist/
 coverage/
 
+# Private archives, backups and generated publication artifacts
+/.local/
+
+# Optional local development automation (never required by a public checkout)
+/.trellis/
+/.agents/
+/.codex/
+
+# Internal source material and generated reports
+/ui/
+/experiments/
+/docs/research/
+/docs/PRD-*.md
+/docs/design-brief-*.md
+/docs/智栏文件测试/
+/AI收藏自动分类浏览器插件.md
+*.docx
+*.pptx
+*.xlsx
+/extension/audit.json
+/extension/release-candidate.json
+
 # Local agent runtime
 .omx/
 .gitnexus/
@@ -26,6 +48,6 @@ __pycache__/
 Thumbs.db
 
 # Local release packages and recordings in progress
-release/
-.release-work/
+/release/
+/.release-work/
 /zhilan-extension.zip

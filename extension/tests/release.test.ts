@@ -92,6 +92,27 @@ it('does not read or inventory private evaluation data and reports', async () =>
   expect(result.sourceInventoryHash).toBe(before.sourceInventoryHash);
   expect(result.sourceFiles.some(file => file.path.includes('.local-evaluation'))).toBe(false);
 });
+it('excludes local logs, caches and reports from source but inventories every distribution asset', async () => {
+  const root = await fixture();
+  const before = await checkRelease(root);
+  for (const path of [
+    'debug.log',
+    'audit.json',
+    '__pycache__/probe.pyc',
+    '.local/private/data.json',
+    'coverage/report.json',
+  ]) {
+    await mkdir(join(root, path, '..'), { recursive: true });
+    await writeFile(join(root, path), 'private diagnostic fixture');
+  }
+  const clean = await checkRelease(root);
+  expect(clean.sourceInventoryHash).toBe(before.sourceInventoryHash);
+  expect(clean.sourceFiles).toEqual(before.sourceFiles);
+  await writeFile(join(root, 'dist/debug.log'), 'unexpected distributed output');
+  const contaminated = await checkRelease(root);
+  expect(contaminated.artifactInventoryHash).not.toBe(before.artifactInventoryHash);
+  expect(contaminated.artifacts.some(file => file.path === 'debug.log')).toBe(true);
+});
 it('reports malformed package metadata as source failure rather than losing the inventory', async () => {
   const root = await fixture();
   await writeFile(join(root, 'package.json'), '{');

@@ -1,6 +1,6 @@
 # 安装智栏 / Install Zhilan
 
-当前为未上架的 `0.1.0` 开发候选。源代码公开，仅限 [许可证](../LICENSE) 允许的非商业用途；商用请联系维护者。Chrome Web Store 链接将在正式发布后补充。
+当前为未上架的 `0.1.0` 开发候选。源代码公开，仅限 [许可证](../../LICENSE) 允许的非商业用途；商用请联系维护者。Chrome Web Store 链接将在正式发布后补充。
 
 ## 从源码安装
 
@@ -28,6 +28,6 @@ pnpm --dir extension build
 
 扩展图标打不开时，检查是否加载了正确的 dist、查看扩展错误，并尝试浏览器侧边栏。快捷键冲突请到 `chrome://extensions/shortcuts` / `edge://extensions/shortcuts` 调整。
 
-开发验证命令见 [开发文档](../extension/README.md)，日常用法见 [简明手册](user-guide.md)。
+开发验证命令见 [开发文档](../../extension/README.md)，日常用法见 [简明手册](user-guide.md)。
 
 English: build with the commands above, open your browser's extension manager, enable Developer mode and load `extension/dist`. Pin the toolbar icon. Chrome/Edge 116+ is the declared minimum, not a complete compatibility claim. Local bookmark functions need no model. Rebuild and reload to update; keep the path/ID stable for upgrade tests. Preserve recovery records before clearing data or uninstalling.

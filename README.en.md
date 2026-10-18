@@ -4,9 +4,9 @@ English · [简体中文](README.md)
 
 A Chrome / Edge extension for browser bookmarks. Classify new bookmarks when you use the browser's star, search locally, and review bulk changes before applying them.
 
-**Source available for noncommercial purposes.** Project-owned code uses [PolyForm Noncommercial 1.0.0](LICENSE); commercial use requires separate written authorization. This is not an OSI-approved open-source license. [License details](docs/licensing.md). Maintainer: Astraxine · [Contact](mailto:mmgnosit@gmail.com).
+**Source available for noncommercial purposes.** Project-owned code uses [PolyForm Noncommercial 1.0.0](LICENSE); commercial use requires separate written authorization. This is not an OSI-approved open-source license. [License details](docs/legal/licensing.md). Maintainer: Astraxine · [Contact](mailto:mmgnosit@gmail.com).
 
-[Quick guide](docs/user-guide.en.md) · [Install](docs/install.md) · [Demo video](docs/media/zhilan-quick-tour.mp4) · [Privacy](docs/privacy.en.md) · [Store publication kit](docs/store/README.md)
+[Quick guide](docs/guides/user-guide.en.md) · [Install](docs/guides/install.md) · [Demo video](docs/media/zhilan-quick-tour.mp4) · [Privacy](docs/privacy.en.md) · [Store publication kit](docs/store/README.md)
 
 ![Zhilan bookmark workspace with synthetic demonstration data](docs/media/screenshots/01-bookmarks.png)
 
@@ -53,7 +53,18 @@ A manually labeled 200-bookmark evaluation set is still pending. There is no ver
 
 - [Development and test commands](extension/README.md)
 - [Contributing](CONTRIBUTING.md) · [Support](SUPPORT.md) · [Security](SECURITY.md) · [Code of conduct](CODE_OF_CONDUCT.md)
-- [Changelog](CHANGELOG.md) · [Third-party licenses](docs/third-party-licenses.md) · [Release checklist](docs/open-source-release.md)
-- [Optimization plan (Chinese)](docs/research/zhilan-optimization-plan-2026-10-14.md)
-- [Implementation progress and evidence](.trellis/tasks/10-12-model-protocol-repair/optimization-progress.md)
-- [Product requirements (Chinese)](docs/PRD-1.0.md)
+- [Changelog](CHANGELOG.md) · [Third-party licenses](docs/legal/third-party-licenses.md) · [Release checklist](docs/release/checklist.md)
+
+
+## Repository layout
+
+| Directory | Contents |
+| --- | --- |
+| `extension/` | Extension source, synthetic fixtures and build configuration |
+| `docs/` | User, reference, development, legal, release and store documentation |
+| `tools/` | Repository/document checks, assets and packaging tools |
+| `.github/` | CI and contribution templates |
+
+[Documentation index](docs/README.md) · [Layout and private-material rules](docs/development/repository-layout.md) · [Architecture](docs/development/architecture.md) · [Agent instructions](AGENTS.md).
+
+Internal product designs, research, prototypes and session records are excluded from distribution. Maintainer archives live in ignored `.local/private/`; local agent configuration is also excluded. Candidate ZIPs go to `.local/releases/`. Public builds and tests work without private material.

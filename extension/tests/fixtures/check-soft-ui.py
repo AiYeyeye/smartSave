@@ -6,7 +6,7 @@ from pathlib import Path
 from playwright.sync_api import expect, sync_playwright
 
 preview = Path(sys.argv[1]).resolve()
-out = Path(__file__).resolve().parents[3] / '.trellis/tasks/09-10-zhilan-ui-onboarding-redesign/research/soft-ui'
+out = Path(__file__).resolve().parents[3] / '.local/work/soft-ui'
 out.mkdir(parents=True, exist_ok=True)
 chrome = Path(os.environ.get('LOCALAPPDATA', 'C:/Users/Administrator/AppData/Local')) / 'ms-playwright/chromium-1234/chrome-win64/chrome.exe'
 with sync_playwright() as p:

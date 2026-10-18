@@ -57,10 +57,10 @@ python extension/tests/e2e/suspected-duplicates.py --run --browser /path/to/chro
 python extension/tests/e2e/organize-partial-repair.py --run --browser /path/to/chromium
 ```
 
-Read each script's scope before running it. Some fixtures instrument event delivery or use a synthetic loopback provider; they are not real-provider accuracy or physical omnibox/OS shortcut tests. Each writes evidence to a temporary directory. The current [progress tracker](../.trellis/tasks/10-12-model-protocol-repair/optimization-progress.md) links the per-feature results and remaining gates.
+Read each script's scope before running it. Some fixtures instrument event delivery or use a synthetic loopback provider; they are not real-provider accuracy or physical omnibox/OS shortcut tests. Each writes evidence to a temporary directory. The public [release status](../docs/release/status.md) describes evidence boundaries and remaining gates.
 
 Actual labeled-provider accuracy/latency evaluation is deferred until the user supplies manually labeled data. User-specific evaluation inputs and reports stay outside release source inventories. Do not publish or push private datasets, credentials or diagnostic request bodies.
 
 ## Dependencies and notices
 
-Runtime notices are shipped from `public/THIRD_PARTY_NOTICES.txt`. `licenses.json` records installed metadata; `audit.json` is a historical audit snapshot, not a current security guarantee. Keep dependency versions and bundled notices in sync when making dependency changes. No dependency change is required for UI localization.
+Runtime notices are shipped from `public/THIRD_PARTY_NOTICES.txt`. `licenses.json` records installed metadata; dependency audit snapshots are local reports, not current security guarantees; do not commit them. Keep dependency versions and bundled notices in sync when making dependency changes. Public builds need no private task/agent directories. Review the [repository layout](../docs/development/repository-layout.md) before adding files.

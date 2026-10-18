@@ -127,16 +127,7 @@ it('validates emitted JSON and original technical fixture with independent MIT A
   const validate = new Ajv().compile(schema);
   const data = JSON.parse(serializeExportJSON(project()));
   expect(validate(data)).toBe(true);
-  expect(
-    validate(
-      JSON.parse(
-        readFileSync(
-          '../.trellis/tasks/09-08-zhilan-technical-validation-design/research/fixtures/export-v1.json',
-          'utf8',
-        ),
-      ),
-    ),
-  ).toBe(true);
+  expect(validate(JSON.parse(readFileSync('tests/fixtures/export-v1-compatibility.json', 'utf8')))).toBe(true);
   for (const invalid of [
     { ...data, schemaVersion: 2 },
     { ...data, model: {} },

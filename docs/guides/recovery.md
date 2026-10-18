@@ -1,4 +1,4 @@
-# Recovery and safe rollback (browser/P3 validation NOT RUN)
+# Recovery and safe rollback / 恢复与安全回滚
 
 Native bookmarks are authoritative. Backups, receipts and unknown outcomes are extension-local evidence, not a second bookmark library. Never delete logs, clear IndexedDB, uninstall or replay an old request to make an error disappear. Native multi-step calls are not atomic; a timeout is not proof of failure or success.
 

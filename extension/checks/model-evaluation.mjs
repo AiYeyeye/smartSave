@@ -12,7 +12,7 @@ const option = name => {
 };
 if ((!option('--dataset') || !option('--config')) && !option('--from-export')) {
   console.log(
-    'Usage: node checks/model-evaluation.mjs --dataset <local-labeled.json> --config <model-routes.json> [--run] [--output <report.json>]\nTemplate: --from-export <zhilan-export.json> --output <local-template.json>\nDefault: validate only, zero model requests. See docs/model-evaluation.md.',
+    'Usage: node checks/model-evaluation.mjs --dataset <local-labeled.json> --config <model-routes.json> [--run] [--output <report.json>]\nTemplate: --from-export <zhilan-export.json> --output <local-template.json>\nDefault: validate only, zero model requests. See docs/development/model-evaluation.md.',
   );
   process.exitCode = 1;
 } else {

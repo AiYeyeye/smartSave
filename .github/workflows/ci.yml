@@ -26,8 +26,10 @@ jobs:
         with:
           python-version: '3.12'
       - run: python tools/check-docs.py
+      - run: python tools/check-repository.py
       - run: python tools/package-release.py --candidate
       - uses: actions/upload-artifact@v4
         with:
           name: zhilan-candidate
-          path: release/*.zip
+          path: .local/releases/*.zip
+          include-hidden-files: true

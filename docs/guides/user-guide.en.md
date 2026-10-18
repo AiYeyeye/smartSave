@@ -11,6 +11,6 @@ Zhilan works with native Chrome / Edge bookmarks. No Zhilan account is required.
 7. **Import/export:** import HTML, JSON, CSV, TXT or Markdown and review before applying. Export selected bookmarks as HTML, JSON or Markdown. Exports contain original URLs, exclude keys/settings/rules/logs and are not complete recovery backups. Optional automatic JSON output overwrites a dedicated authorized file while the browser is running.
 8. **Recover:** open Export & backup, expand backup/recovery records, preview undo and confirm. For unknown outcomes, reconcile current state without replaying. Do not clear storage or uninstall to hide an unresolved operation; see [recovery](recovery.md).
 
-Review **Privacy & rules** before enabling AI. Exclude private folders, optionally strip query/fragment from AI URLs, and keep page-body assistance off unless needed. AI exclusions do not change export scope. See the [privacy policy](privacy.en.md).
+Review **Privacy & rules** before enabling AI. Exclude private folders, optionally strip query/fragment from AI URLs, and keep page-body assistance off unless needed. AI exclusions do not change export scope. See the [privacy policy](../privacy.en.md).
 
-[Screenshots and Chinese walkthrough](user-guide.md) · [Silent video with synthetic bookmarks](media/zhilan-quick-tour.mp4) · [Support](../SUPPORT.md)
+[Screenshots and Chinese walkthrough](user-guide.md) · [Silent video with synthetic bookmarks](../media/zhilan-quick-tour.mp4) · [Support](../../SUPPORT.md)
