@@ -38,7 +38,7 @@ Optional, user-initiated OpenRouter sign-in requests identity and its host permi
 
 Favicons use the browser-owned favicon API, with no extension-integrated third-party icon service; the browser controls its own retrieval/cache. Opening a bookmark visits the destination under its policy. If you contact support by GitHub or email, the platform and maintainer process what you choose to send for support.
 
-Required permissions support bookmarks, local settings/preferences, user-triggered current-tab extraction/overlay injection, context menus, favicons and the native side panel. Optional identity supports sign-in; optional HTTP(S) host access is requested for specific model hosts. Installation does not grant all-site access. The overlay document is web-accessible; there are no persistent manifest content scripts. See [permission justifications](store/permissions.md).
+Required permissions support bookmarks, local settings/preferences, user-triggered current-tab extraction/overlay injection, context menus, favicons and the native side panel. Optional identity supports sign-in; optional HTTP(S) host access is requested for specific model hosts. Installation does not grant all-site access. The overlay document is web-accessible; there are no persistent manifest content scripts.
 
 ## Control, retention and deletion
 

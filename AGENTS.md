@@ -9,18 +9,20 @@ Read [README](README.en.md), [repository layout](docs/development/repository-lay
 ## Repository boundaries
 
 - `extension/`: production extension, tests, synthetic fixtures and build configuration.
-- `docs/`: maintained guides, reference, development, legal, release and store documentation; `docs/media/` holds reviewed public demonstration assets.
+- `docs/`: maintained guides, reference, development, legal and build documentation; `docs/media/` holds reviewed public demonstration assets.
 - `tools/`: repository/document validation, packaging and asset tools. `.github/`: CI and contribution templates.
 - `.local/`: ignored private archives, diagnostics, temporary work and release ZIPs. Never stage or publish it.
 - `.trellis/`, `.agents/`, `.codex/`: optional, ignored local automation. If present, read the relevant local workflow/spec before changing its area. Do not require these directories in public code, tests or docs, and do not force-add them.
 
-Original product requirements, design attachments, prototypes, research, personal bookmarks, real model responses, credentials and session journals are private. Use `.local/private/<category>/` for local material. Put reusable synthetic fixtures in `extension/tests/fixtures/` or `extension/import/fixtures/`.
+Store submission material, original product requirements, design attachments, prototypes, research, personal bookmarks, real model responses, credentials and session journals are private. Use `.local/private/<category>/` for local material. Put reusable synthetic fixtures in `extension/tests/fixtures/` or `extension/import/fixtures/`.
 
 ## Implementation contracts
 
 Native browser bookmarks are authoritative. Use the existing mutation coordinator, preview/confirmation and recovery journal; do not replay uncertain writes. Treat model output as untrusted data, validate IDs and current authority, and never execute model output as code. Keep credentials and private data out of shared artifacts. User-facing changes need Chinese and English UI/docs; language/theme changes must preserve drafts and task ownership. Preserve project and third-party license notices. The project uses PolyForm Noncommercial 1.0.0; describe it as source available for noncommercial purposes.
 
 ## Validation
+
+Keep README focused on what the product does and how to use it, in everyday language. Put a brief license-name link and maintainer contact at the end. Keep internal validation status, store submission material and private archive details out of README; implementation and test instructions belong in developer documentation.
 
 From the repository root:
 

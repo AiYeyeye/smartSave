@@ -20,9 +20,9 @@ Use the commands in [extension development](../../extension/README.md) and the [
 - Windows browser/version, theme, accessibility and performance acceptance.
 - Approved minimum-browser matrix, independent review and user acceptance.
 
-对应项目由 `extension/checks/release.mjs` 维护，目前仍阻止正式发布。没有可确认的 200 条人工模型评测集，也不宣称真实分类准确率或耗时达标。隐私页部署与商店链接见 [publisher.json](../store/publisher.json)，空值表示尚未确认。
+对应项目由 `extension/checks/release.mjs` 维护，目前仍阻止正式发布。没有可确认的 200 条人工模型评测集，也不宣称真实分类准确率或耗时达标。
 
-These gates remain enforced in `extension/checks/release.mjs`. No completed 200-item manually labeled provider evaluation or verified real-provider latency/accuracy target is claimed. Deployment/store URLs are recorded in the publisher metadata; null means unconfirmed.
+These gates remain enforced in `extension/checks/release.mjs`. No completed 200-item manually labeled provider evaluation or verified real-provider latency/accuracy target is claimed.
 
 ## Historical evidence
 

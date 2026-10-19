@@ -7,7 +7,8 @@
 | `docs/reference/` | 数据格式和模型协议 / data formats and model protocols | Yes |
 | `docs/development/` | 架构、目录约定、评测 / architecture, layout and evaluation | Yes |
 | `docs/legal/` | 许可说明 / licensing | Yes |
-| `docs/release/`, `docs/store/` | 发布门、状态、可公开商店材料 / release gates, status and public store material | Yes |
+| `docs/release/` | 构建、打包与开发者检查 / builds, packaging and developer checks | Yes |
+| `.local/private/store/` | 商店文案、审核说明、提交配置和宣传图 / store copy, review instructions, submission metadata and promotional images | No |
 | `docs/media/` | 合成数据的公开演示素材 / public demonstrations with synthetic data | Yes |
 | `docs/privacy.*` | 保持稳定路径的隐私页面 / stable privacy-policy endpoints | Yes |
 | `tools/`, `.github/` | 维护脚本、CI 和模板 / tooling, CI and templates | Yes |

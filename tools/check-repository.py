@@ -17,7 +17,7 @@ PUBLIC_ROOT_FILES = {
 PRIVATE_PARTS = {'.local', '.local-evaluation', '.trellis', '.agents', '.codex',
                  'node_modules', 'dist', 'coverage', '__pycache__', '.pytest_cache'}
 PRIVATE_SUFFIXES = {'.docx', '.pptx', '.xlsx', '.zip', '.bundle', '.log', '.pyc', '.pem', '.key', '.p12', '.pfx'}
-PRIVATE_DOC_PREFIXES = ('docs/research/', 'docs/PRD-', 'docs/design-brief-', 'docs/智栏文件测试/')
+PRIVATE_DOC_PREFIXES = ('docs/research/', 'docs/store/', 'docs/media/store-', 'docs/PRD-', 'docs/design-brief-', 'docs/智栏文件测试/')
 PRIVATE_FILES = {'extension/release-candidate.json', 'extension/audit.json'}
 SECRET_PATTERNS = {
     'private key': re.compile(rb'-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----\s*[A-Za-z0-9+/=]{40,}'),

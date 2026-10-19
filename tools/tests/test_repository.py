@@ -11,7 +11,8 @@ spec.loader.exec_module(checker)
 class PublicationBoundaryTest(unittest.TestCase):
     def test_rejects_private_material_even_if_force_added_or_renamed(self):
         for path in ['.local/private/design.md', '.trellis/tasks/prd.md', '.agents/skills/x.md',
-                     'docs/research/notes.md', 'docs/reference/design.docx', 'extension/debug.log',
+                     'docs/research/notes.md', 'docs/store/publisher.json', 'docs/media/store-tile-440x280.png',
+                     'docs/reference/design.docx', 'extension/debug.log',
                      'extension/release-candidate.json', 'extension/.env.production',
                      'extension/node_modules/package/index.js', 'misc-notes.md']:
             with self.subTest(path=path):

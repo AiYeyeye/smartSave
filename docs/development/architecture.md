@@ -1,6 +1,6 @@
 # 架构 / Architecture
 
-智栏是 React + TypeScript 的 Manifest V3 扩展，没有项目自建后端。浏览器原生书签是唯一事实源，模型只提供需要校验的建议。以下路径相对 `extension/`。
+智栏是 React + TypeScript 的 Manifest V3 扩展，没有项目自建后端。智栏直接读写浏览器里的书签，模型提供的建议必须先经过校验。以下路径相对 `extension/`。
 
 Zhilan is a React/TypeScript Manifest V3 extension without a project-operated backend. Native browser bookmarks are authoritative; models return proposals that must be validated. Paths below are relative to `extension/`.
 

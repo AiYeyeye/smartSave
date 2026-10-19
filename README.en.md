@@ -1,70 +1,96 @@
-# Zhilan · 智栏
+<div align="center">
+  <img src="extension/public/icons/icon-128.png" alt="Zhilan" width="80" height="80">
+  <h1>Zhilan · 智栏</h1>
+  <p><strong>Keep your bookmarks organized. Find them when you need them.</strong></p>
+  <p>For Chrome / Edge · Automatic filing · AI search · Bulk organization</p>
+</div>
 
-English · [简体中文](README.md)
+<p align="center">
+  <a href="README.md">简体中文</a> · English<br>
+  <a href="#get-started">Get started</a> ·
+  <a href="docs/guides/user-guide.en.md">User guide</a> ·
+  <a href="docs/media/zhilan-quick-tour.mp4">Demo video</a> ·
+  <a href="https://github.com/AiYeyeye/smartSave/issues">Report an issue</a>
+</p>
 
-A Chrome / Edge extension for browser bookmarks. Classify new bookmarks when you use the browser's star, search locally, and review bulk changes before applying them.
+![Zhilan bookmark sidebar](docs/media/screenshots/01-bookmarks.png)
 
-**Source available for noncommercial purposes.** Project-owned code uses [PolyForm Noncommercial 1.0.0](LICENSE); commercial use requires separate written authorization. This is not an OSI-approved open-source license. [License details](docs/legal/licensing.md). Maintainer: Astraxine · [Contact](mailto:mmgnosit@gmail.com).
+## What you can do
 
-[Quick guide](docs/guides/user-guide.en.md) · [Install](docs/guides/install.md) · [Demo video](docs/media/zhilan-quick-tour.mp4) · [Privacy](docs/privacy.en.md) · [Store publication kit](docs/store/README.md)
+Saving a page is easy. Finding it months later can take a little more work. Zhilan brings saving, searching and organizing together so you spend less time browsing folders.
 
-![Zhilan bookmark workspace with synthetic demonstration data](docs/media/screenshots/01-bookmarks.png)
+| Feature | How it helps |
+| --- | --- |
+| File bookmarks as you save | Click the browser's star and let website rules or your configured AI suggest where it belongs. Correct or undo a misplaced bookmark. |
+| Find pages in your own words | Describe what you remember, or search by title, URL, Chinese pinyin or initials. |
+| Organize a collection | Select folders, review the AI's suggestions and choose whether to apply them. Close the page while suggestions are generated and return later. |
+| Review duplicates | Compare duplicate or similar links and choose which ones to keep. |
+| Import, export and recover | Work with common bookmark formats, inspect recent operations and preview undo or recovery. |
 
-## Features
+Your bookmarks stay in your browser. Zhilan helps you manage them directly, without another account or a move to a separate bookmark service.
 
-- **Classify as you save.** Confirmed website rules and confident same-domain matches run locally before AI. A timeout leaves the bookmark where it is. Receipts offer correction and undo; saving a website rule requires separate confirmation.
-- **Organize in batches.** Review the folder plan first, then analyze bookmarks with two concurrent batches by default. Generation continues in the background. Reopen the workspace to review progress, or manually resume interrupted work. Applying changes always requires confirmation.
-- **Local and AI search.** Search titles, URLs, folder paths, Chinese pinyin and initials locally. Save classification can also generate a few local search keywords in the same model request. Fast AI search and segmented deep search run only when requested.
-- **Review duplicates.** Exact duplicates and suspected URL variants are labeled separately. Original URLs remain visible, with explicit keep/delete choices.
-- **Import, export and recover.** Import HTML, JSON, CSV, TXT or Markdown. Export JSON, HTML or Markdown, save to local files and inspect operation recovery records.
+<details>
+<summary>See search and organization</summary>
 
-Native browser bookmarks are the source of truth. No Zhilan account is needed. AI features use services you already have; public configuration exports exclude credentials, and model host access is requested as needed.
+### Bookmark search
 
-Language, light/dark mode and accent color can sync through your browser. Provider keys, URLs, folder rules and bookmark keywords stay local. Keywords enrich only matching native bookmarks and are removed after deletion, title or URL changes. Existing bookmarks do not trigger automatic model requests for enrichment.
+![Zhilan search](docs/media/screenshots/02-search.png)
 
-## Install from source
+### Bulk organization
 
-Requirements: Node.js >=22.12, pnpm 11.7.0 and Chrome / Edge 116+. This browser minimum is the current manifest requirement, not a claim that every supported version has been tested.
+![Zhilan organization workspace](docs/media/screenshots/03-organize.png)
+
+Screenshots use demonstration bookmarks.
+
+</details>
+
+## Get started
+
+You need **Chrome / Edge 116+**, **Node.js 22.12+** and **pnpm 11.7.0**.
 
 ```sh
+git clone https://github.com/AiYeyeye/smartSave.git
+cd smartSave
 pnpm --dir extension install --frozen-lockfile
 pnpm --dir extension build
 ```
 
-1. Open your browser's extension management page and enable Developer mode.
-2. Choose **Load unpacked** and select `extension/dist` from this repository.
-3. Click the extension icon to open the sidebar. In **AI services**, connect your existing service and assign models. The current-page classification trial previews a recommendation without moving or saving a bookmark.
+1. Open `chrome://extensions` or `edge://extensions` and enable **Developer mode**.
+2. Choose **Load unpacked** and select the project's `extension/dist` folder.
+3. Pin Zhilan to the toolbar and click its icon to open your bookmarks.
 
-The sidebar overlays the left edge of a webpage by default. Appearance settings can switch to the browser side panel. Browser-owned pages use the side panel automatically.
+You can browse, search and manage bookmarks without connecting AI. For automatic classification and AI search, add an existing model service under **Settings → AI services**, then choose a model for each feature. Try the current-page classification preview first; it does not save or move bookmarks.
 
-## Search shortcuts
+Supported connections include OpenAI-compatible services, OpenAI Responses, Anthropic, Gemini and local services such as Ollama and LM Studio. See [model setup](docs/guides/model-setup.md) for configuration details.
 
-- **Alt+Shift+K** opens search. Conflicts with other extensions can be resolved in your browser's extension shortcut settings.
-- Type **`zl`** in the address bar, press Tab or Space, then enter keywords. Select a suggestion to open a bookmark, or press Enter on the default item to open full search.
-- Within the extension, **Ctrl+K** (Mac: ⌘K) returns to search and focuses its input.
+## Everyday shortcuts
 
-The language selector is in quick settings and Appearance. Chinese and English cover navigation, search, AI service settings and workspaces. Switching languages preserves bookmark titles, folder names, model IDs and unsaved input.
-
-## Validation and release status
-
-The project has unit/integration tests and isolated Chromium acceptance scripts using synthetic bookmarks and temporary profiles. These exercise native saving, organization, background lifecycle, recovery, correction rules, duplicate cleanup and search entrypoints. They do not establish complete release acceptance for everyday Chrome / Edge profiles, physical system shortcuts or real providers.
-
-A manually labeled 200-bookmark evaluation set is still pending. There is no verified claim of model accuracy, a three-second median save time or organizing 500 bookmarks in three minutes. Manual release gates remain open; passing source checks does not make a release ready.
-
-- [Development and test commands](extension/README.md)
-- [Contributing](CONTRIBUTING.md) · [Support](SUPPORT.md) · [Security](SECURITY.md) · [Code of conduct](CODE_OF_CONDUCT.md)
-- [Changelog](CHANGELOG.md) · [Third-party licenses](docs/legal/third-party-licenses.md) · [Release checklist](docs/release/checklist.md)
-
-
-## Repository layout
-
-| Directory | Contents |
+| Action | How |
 | --- | --- |
-| `extension/` | Extension source, synthetic fixtures and build configuration |
-| `docs/` | User, reference, development, legal, release and store documentation |
-| `tools/` | Repository/document checks, assets and packaging tools |
-| `.github/` | CI and contribution templates |
+| Open search | `Alt+Shift+K` |
+| Search from the address bar | Type `zl`, press Tab or Space, then enter your query |
+| Focus search inside Zhilan | `Ctrl+K`, or `⌘K` on Mac |
+| Choose a sidebar | Select the webpage overlay or browser side panel in Appearance |
+| Change language or theme | Quick settings and Appearance offer Chinese/English, light/dark mode and accent colors |
 
-[Documentation index](docs/README.md) · [Layout and private-material rules](docs/development/repository-layout.md) · [Architecture](docs/development/architecture.md) · [Agent instructions](AGENTS.md).
+You can change conflicting shortcuts in your browser's extension shortcut settings.
 
-Internal product designs, research, prototypes and session records are excluded from distribution. Maintainer archives live in ignored `.local/private/`; local agent configuration is also excluded. Candidate ZIPs go to `.local/releases/`. Public builds and tests work without private material.
+## Your bookmarks and privacy
+
+Ordinary search runs locally. When you enable AI, relevant bookmark information goes directly to the model service you choose. You can exclude folders from AI processing. Language and appearance preferences can sync through your browser; service keys and rules stay on your device.
+
+Read the [privacy policy](docs/privacy.en.md) for details.
+
+## Documentation and contributing
+
+- [User guide](docs/guides/user-guide.en.md) · [Installation](docs/guides/install.md) · [Recovery](docs/guides/recovery.md)
+- [Documentation index](docs/README.md) · [Development](extension/README.md) · [Changelog](CHANGELOG.md)
+- [Contributing](CONTRIBUTING.md) · [Support](SUPPORT.md) · [Security](SECURITY.md)
+
+Issues, suggestions and pull requests are welcome.
+
+## License
+
+Licensed under [PolyForm Noncommercial 1.0.0](LICENSE).
+
+Maintainer: Astraxine · [Contact](mailto:mmgnosit@gmail.com)

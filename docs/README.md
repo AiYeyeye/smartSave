@@ -7,7 +7,7 @@
 | 开发 / Develop | [目录规则 / Layout](development/repository-layout.md) · [架构 / Architecture](development/architecture.md) · [命令 / Commands](../extension/README.md) · [模型评测 / Evaluation](development/model-evaluation.md) |
 | 参考 / Reference | [JSON v1](reference/export-json-v1.md) · [模型协议 / Protocols](reference/model-protocols.md) |
 | 许可 / Legal | [项目许可 / License](legal/licensing.md) · [第三方 / Third party](legal/third-party-licenses.md) |
-| 发布 / Release | [清单 / Checklist](release/checklist.md) · [状态 / Status](release/status.md) · [商店 / Store](store/README.md) · [素材 / Media](media/README.md) |
+| 发布 / Release | [构建与打包 / Build and package](release/checklist.md) · [状态 / Status](release/status.md) · [素材 / Media](media/README.md) |
 
 本目录仅保留当前可公开的说明；内部需求、设计和会话记录不作为公开开发的前置条件。旧内部材料在维护者本机归档，公开兼容性由源码、测试和格式说明保证。
 

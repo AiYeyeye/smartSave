@@ -15,7 +15,7 @@ def generate(playwright, browser_path):
         .logo{position:relative;width:var(--size);height:var(--size);border-radius:30.77%;background:radial-gradient(120% 120% at 0% 0%,color-mix(in oklab,#5b5bd6 70%,white) 0%,transparent 60%),#5b5bd6}
         .logo i{position:absolute;left:30.77%;top:23.08%;width:38.46%;height:53.85%;background:#fff;opacity:.95;clip-path:polygon(0 0,100% 0,100% 100%,50% 72%,0 100%)}'''
         icons = ROOT / 'extension/public/icons'
-        media = ROOT / 'docs/media'
+        media = ROOT / '.local/private/store/media'
         icons.mkdir(parents=True, exist_ok=True)
         media.mkdir(parents=True, exist_ok=True)
         for size in [16, 32, 48, 128]:

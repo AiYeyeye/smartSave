@@ -15,7 +15,9 @@ files += [ROOT / 'extension/options/ai-services/README.md', ROOT / 'extension/im
 for path in files:
     content = path.read_text(encoding='utf-8')
     content = re.sub(r'```.*?```', '', content, flags=re.S)
-    for link in re.findall(r'\]\(([^)]+)\)', content):
+    links = re.findall(r'\]\(([^)]+)\)', content)
+    links += re.findall(r'(?:href|src)=["\']([^"\']+)["\']', content)
+    for link in links:
         link = link.strip().split(' "')[0].strip('<>')
         parsed = urlsplit(link)
         if parsed.scheme or parsed.netloc or not parsed.path:
@@ -33,14 +35,17 @@ for path in files:
 
 manifest = json.loads((ROOT / 'extension/public/manifest.json').read_text(encoding='utf-8'))
 package = json.loads((ROOT / 'extension/package.json').read_text(encoding='utf-8'))
-publisher = json.loads((ROOT / 'docs/store/publisher.json').read_text(encoding='utf-8'))
+author = re.fullmatch(r'([^<>]+) <([^<>]+)>', package.get('author', ''))
+if not author:
+    raise SystemExit('package author must identify the public maintainer and contact email')
+maintainer_name, contact_email = author.groups()
 if package.get('license') != 'PolyForm-Noncommercial-1.0.0':
     errors.append('package license is not PolyForm-Noncommercial-1.0.0')
 if (ROOT / 'LICENSE').read_bytes() != (ROOT / 'extension/public/LICENSE.txt').read_bytes():
     errors.append('Project and shipped licenses differ')
 for name in ['docs/privacy.md', 'docs/privacy.en.md', 'docs/privacy.html', 'SECURITY.md']:
     text = (ROOT / name).read_text(encoding='utf-8')
-    if publisher['maintainerName'] not in text or publisher['publicContactEmail'] not in text:
+    if maintainer_name not in text or contact_email not in text:
         errors.append(f'{name}: publisher/contact missing')
 
 
@@ -61,11 +66,8 @@ for size in [16, 32, 48, 128]:
         check_png(ROOT / 'extension/public' / value, size, size)
 for name in ['01-bookmarks', '02-search', '03-organize', '04-export', '05-privacy']:
     check_png(ROOT / f'docs/media/screenshots/{name}.png', 1280, 800)
-check_png(ROOT / 'docs/media/store-tile-440x280.png', 440, 280)
-check_png(ROOT / 'docs/media/store-marquee-1400x560.png', 1400, 560)
 if not (ROOT / 'docs/media/zhilan-quick-tour.mp4').exists():
     errors.append('Demo MP4 missing')
 if errors:
     raise SystemExit('\n'.join(errors))
 print(f'PASS: {len(files)} document links, licenses, contact fields and media dimensions')
-print('Privacy-policy URL: ' + (publisher['privacyPolicyUrl'] or 'PENDING DEPLOYMENT (not a live URL)'))
