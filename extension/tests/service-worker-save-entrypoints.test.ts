@@ -23,7 +23,7 @@ afterEach(() => {
 });
 const flush = () => new Promise<void>(resolve => setTimeout(resolve, 0));
 
-async function worker(withOpenPopup = false, initialization?: Promise<void>) {
+async function worker(initialization?: Promise<void>) {
   vi.resetModules();
   if (initialization)
     vi.stubGlobal('navigator', {
@@ -48,23 +48,55 @@ async function worker(withOpenPopup = false, initialization?: Promise<void>) {
     (tabId: number, message: unknown, options?: { documentId?: string }) => Promise<unknown>
   >(async () => undefined);
   const createTab = vi.fn(async () => ({ id: 99 }));
-  const openPopup = vi.fn(async () => {});
+  const openPopup = vi.fn<(options?: { windowId?: number }) => Promise<void>>(async () => {});
+  const setPopup = vi.fn<(details: { tabId?: number; popup: string }) => Promise<void>>(async () => {});
+  const popupWindowsByDoc = new Map<string, number>();
   const openSidePanel = vi.fn(async () => {});
   const setBadgeText = vi.fn(async () => {});
   const setBadgeBackgroundColor = vi.fn(async () => {});
   const nativeWrite = vi.fn();
   let active = gestureTab(1);
+  const popupWindows = new Map<number, chrome.windows.Window>();
+  const createWindow = vi.fn(async () => {
+    const windowId = 100 + active.windowId;
+    const win = {
+      id: windowId,
+      type: 'popup',
+      tabs: [{ id: 200 + active.windowId, windowId, url: 'chrome-extension://i/save/index.html' }],
+    } as chrome.windows.Window;
+    popupWindows.set(windowId, win);
+    return win;
+  });
   vi.stubGlobal('indexedDB', new IDBFactory());
   vi.stubGlobal('chrome', {
-    action: withOpenPopup
-      ? { onClicked: clicked, openPopup, setBadgeText, setBadgeBackgroundColor }
-      : { onClicked: clicked, setBadgeText, setBadgeBackgroundColor },
+    action: {
+      onClicked: clicked,
+      openPopup,
+      setPopup,
+      getPopup: async () => '',
+      setBadgeText,
+      setBadgeBackgroundColor,
+    },
     commands: { onCommand: commanded },
     sidePanel: { open: openSidePanel, setPanelBehavior: vi.fn(async () => {}) },
+    windows: {
+      create: createWindow,
+      get: async (id: number) => popupWindows.get(id) ?? { id, type: 'normal', width: 1200, height: 900 },
+      update: async (id: number) => popupWindows.get(id),
+      getLastFocused: async () => ({ id: active.windowId, type: 'normal' }),
+      onFocusChanged: event(),
+      onRemoved: event(),
+    },
     contextMenus: { onClicked: event(), create: vi.fn((_options, done: () => void) => done()) },
     runtime: {
       id: 'i',
       getURL: (path: string) => `chrome-extension://i/${path}`,
+      // A toolbar popup reports the window it was opened in.
+      getContexts: async ({ documentIds = [] }: { documentIds?: string[] }) =>
+        documentIds.map(documentId => {
+          if (!popupWindowsByDoc.has(documentId)) popupWindowsByDoc.set(documentId, active.windowId);
+          return { documentId, windowId: popupWindowsByDoc.get(documentId) };
+        }),
       onInstalled: installed,
       onStartup: startup,
       onConnect: connected,
@@ -72,7 +104,7 @@ async function worker(withOpenPopup = false, initialization?: Promise<void>) {
     },
     tabs: {
       query: vi.fn(async () => [active]),
-      get: vi.fn(async () => ({ url: 'https://page1.test/' })),
+      get: vi.fn(async (id: number) => gestureTab(id - 3)),
       sendMessage: sendTabMessage,
       onUpdated: event(),
       onRemoved: event(),
@@ -119,7 +151,12 @@ async function worker(withOpenPopup = false, initialization?: Promise<void>) {
   }
   /** The toolbar popup: an extension document without a hosting tab, identified by its document id. */
   function popup(documentId = 'popup-doc') {
-    const sender = { id: 'i', url: 'chrome-extension://i/panel/index.html', documentId };
+    const sender = {
+      id: 'i',
+      url: 'chrome-extension://i/save/index.html',
+      documentId,
+      frameId: 0,
+    };
     const received: unknown[] = [];
     const incoming = event<(message: unknown) => void>();
     const disconnected = event<() => void>();
@@ -145,7 +182,9 @@ async function worker(withOpenPopup = false, initialization?: Promise<void>) {
     sendTabMessage,
     createTab,
     openPopup,
+    setPopup,
     openSidePanel,
+    createWindow,
     setBadgeText,
     nativeWrite,
     setActive: (tab: chrome.tabs.Tab) => {
@@ -159,7 +198,7 @@ it('registers listeners immediately but waits for first-install settings initial
   const initial = new Promise<void>(resolve => {
     release = resolve;
   });
-  const h = await worker(false, initial);
+  const h = await worker(initial);
   const received: unknown[] = [];
   const incoming = event<(message: unknown) => void>(),
     disconnected = event<() => void>();
@@ -201,16 +240,20 @@ it('toolbar click slides the overlay sidebar into web pages and opens the side p
   h.clicked.emit({ id: 5, windowId: 1, url: 'chrome://newtab/' } as chrome.tabs.Tab);
   expect(h.openSidePanel).toHaveBeenCalledWith({ tabId: 5 });
 });
-it('save shortcut shows the overlay, and falls back to the side panel, then the badge, when it cannot', async () => {
+it('save shortcut opens the toolbar popup and leaves a badge if the browser cannot show it', async () => {
   const overlay = await worker();
   overlay.save();
-  await vi.waitFor(() => expect(overlay.executeScript).toHaveBeenCalledTimes(2));
+  await vi.waitFor(() => expect(overlay.openPopup).toHaveBeenCalledExactlyOnceWith({ windowId: 1 }));
+  expect(overlay.setPopup).toHaveBeenCalledWith({ tabId: 4, popup: 'save/index.html' });
+  expect(overlay.createWindow).not.toHaveBeenCalled();
+  expect(overlay.executeScript).not.toHaveBeenCalled();
+  expect(overlay.openSidePanel).not.toHaveBeenCalled();
   expect(overlay.setBadgeText).not.toHaveBeenCalledWith({ tabId: 4, text: SAVE_BADGE });
   const blocked = await worker();
-  blocked.executeScript.mockRejectedValue(Error('Cannot access contents of the page'));
-  blocked.openSidePanel.mockRejectedValue(Error('user gesture'));
+  blocked.openPopup.mockRejectedValue(Error('Browser window has no toolbar.'));
   blocked.save();
   await vi.waitFor(() => expect(blocked.setBadgeText).toHaveBeenCalledWith({ tabId: 4, text: SAVE_BADGE }));
+  expect(blocked.createWindow).not.toHaveBeenCalled();
   expect(blocked.createTab).not.toHaveBeenCalled();
 });
 it('named save command captures before UI registration and the popup retrieves it', async () => {

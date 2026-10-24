@@ -1,6 +1,6 @@
 # Import parser dependency inventory
 
-Exact installed closure; direct versions pinned in package.json and full closure in pnpm-lock.yaml. Registry metadata verified against registry.npmjs.org (MIT + integrity) for direct packages; installed LICENSE files read for every entry. No upstream bookmark application code reused.
+Import parser dependencies are pinned in `package.json` and `pnpm-lock.yaml`. License texts are included in `public/THIRD_PARTY_NOTICES.txt`.
 
 | Package | Version | License |
 |---|---|---|
@@ -42,8 +42,8 @@ Exact installed closure; direct versions pinned in package.json and full closure
 | unist-util-stringify-position | 4.0.0 | MIT |
 | jsonc-parser | 3.3.1 | MIT |
 
-## Retrieval and runtime notes
-- Direct metadata checked using `pnpm view <name>@<version> license dist.integrity --registry=https://registry.npmjs.org`; configured installation mirror is registry.npmmirror.com. Lockfile records integrity. parse5 8.0.1 and mdast-util-from-markdown 2.0.3 release metadata shows 2026 updates; jsonc-parser 3.3.1 registry modified 2026-07-16. This is maintenance evidence, not a security guarantee.
-- Transitive entities is BSD-2-Clause (redistribution notice retained), other closure entries MIT. Full license text is shipped in public/THIRD_PARTY_NOTICES.txt.
-- Some micromark monorepo tarballs omit LICENSE; readme links to repository license. Retrieved MIT license from https://raw.githubusercontent.com/micromark/micromark/4.0.0/license; applied to the MIT-licensed micromark family entries lacking a packaged license. Other entries use their packaged license files.
-- Actual Worker build test caught `decode-named-character-reference` browser export using `document.createElement`. `scripts/import-worker-config.ts` resolves its shipped pure `index.js` instead, with a real emitted-worker execution regression. No DOMParser, resource loading or execution of input HTML.
+## Runtime and license notes
+
+- `entities` uses BSD-2-Clause; the other entries above use MIT. Keep their notices in `public/THIRD_PARTY_NOTICES.txt` when updating dependencies.
+- Some micromark packages link to the [shared MIT license](https://raw.githubusercontent.com/micromark/micromark/4.0.0/license); its text is included in the shipped notices.
+- `scripts/import-worker-config.ts` resolves the pure `decode-named-character-reference/index.js` entry for the import Worker. The browser entry uses `document.createElement`, which is unavailable there. The emitted-worker regression checks this configuration. Imported HTML is parsed without loading resources or executing it.

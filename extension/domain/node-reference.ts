@@ -13,6 +13,7 @@ export const nodeSchema = z.object({
   index: z.number(),
   title: z.string(),
   url: z.string().optional(),
+  dateAdded: z.number().finite().nonnegative().optional(),
   childrenIds: z.array(z.string()),
   readOnly: z.boolean(),
   childrenWritable: z.boolean().optional(),

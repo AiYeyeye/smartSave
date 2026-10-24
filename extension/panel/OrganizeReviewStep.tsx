@@ -54,7 +54,7 @@ export function OrganizeReviewStep({
 }: Props) {
   const { t, message, language } = useI18n();
   const proposal = state.proposal;
-  const folderReview = state.pipeline?.stage === 'folders';
+  const folderReview = state.pipeline?.stage === 'folders' && !state.pipeline.contentPhase;
   const locked = (id: string) => state.pipeline?.lockedActionIds.includes(id) ?? false;
   return (
     <div hidden={hidden || !!state.result}>
@@ -79,9 +79,14 @@ export function OrganizeReviewStep({
       )}
       {proposal && (
         <article>
-          <h3>{t('本次整理：{path}', { path: proposalPaths.get(proposal.scope.nativeId) ?? '' })}</h3>
+          <h3 className="organize-review-title">
+            {t('本次整理：{path}', { path: proposalPaths.get(proposal.scope.nativeId) ?? '' })}
+          </h3>
           {!state.invalid && review?.tree && (
-            <details className="organize-review-section" open>
+            <details
+              className="organize-review-section"
+              open={!state.pipeline?.contentPhase || state.pipeline.stage === 'complete'}
+            >
               <summary>{t('完整分类树与内容去向')}</summary>
               <OrganizeTreePreview proposal={proposal} after={review.tree} selected={state.selected} />
               <OrganizeFlowDetails proposal={proposal} after={review.tree} />
@@ -89,7 +94,7 @@ export function OrganizeReviewStep({
           )}
           {review?.error && <p role="alert">{message(review.error)}</p>}
           {state.invalid && <p role="alert">{t('此方案已失效，请重新生成；下方仅保留旧建议供核对。')}</p>}
-          <p className="workflow-summary">
+          <p className="organize-selection-count">
             {t('已选 {count} / {total} 项建议', { count: state.selected.length, total: proposal.actions.length })}
           </p>
           {method === 'ai' && (

@@ -9,9 +9,13 @@ export const tokenCountsSchema = z.strictObject({
 });
 export type TokenCounts = z.infer<typeof tokenCountsSchema>;
 export const tokenPurposeSchema = z.enum([
+  'rename',
+  'preference-summary',
   'save',
   'search',
   'search-expand',
+  'history-query',
+  'history-rank',
   'organize',
   'import-map',
   'import-classify',

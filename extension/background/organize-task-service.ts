@@ -1,6 +1,7 @@
 import { withTrustedSender } from '../domain/trusted-sender';
 import {
   organizeTaskError,
+  organizeTaskErrorDetail,
   organizeTaskMessageSchema,
   organizeTaskSubscriptionSchema,
   ORGANIZE_TASK_PORT,
@@ -11,7 +12,10 @@ import type { OrganizeTaskBadge } from './organize-task-badge';
 
 /** Register synchronously. Page disconnect only removes its subscription, never the worker's task. */
 export function startOrganizeTaskService(
-  owner: Pick<OrganizeTaskOwner, 'start' | 'get' | 'list' | 'command' | 'select' | 'subscribe' | 'dispose'>,
+  owner: Pick<
+    OrganizeTaskOwner,
+    'start' | 'get' | 'list' | 'command' | 'select' | 'reviewContent' | 'subscribe' | 'dispose'
+  >,
   badge?: Pick<OrganizeTaskBadge, 'focus' | 'seen'>,
 ) {
   const message = (
@@ -38,6 +42,8 @@ export function startOrganizeTaskService(
             return { ok: true, task };
           }
           if (request.action === 'get') return { ok: true, task: await owner.get(request.id, request.credential) };
+          if (request.action === 'reviewContent')
+            return { ok: true, task: await owner.reviewContent(request.id, request.expectedRevision, request.edit) };
           if (request.action === 'select')
             return {
               ok: true,
@@ -58,7 +64,9 @@ export function startOrganizeTaskService(
           if (['confirmFolders', 'resume', 'repair', 'returnToFolders'].includes(request.action)) badge?.focus(task);
           return { ok: true, task };
         };
-        void execute().then(respond, error => respond({ ok: false, reason: organizeTaskError(error) }));
+        void execute().then(respond, error =>
+          respond({ ok: false, reason: organizeTaskError(error), ...organizeTaskErrorDetail(error) }),
+        );
         return true;
       },
       () => respond({ ok: false, reason: 'invalid-sender' }),
@@ -121,7 +129,13 @@ export function startOrganizeTaskService(
                 }
               },
               error => {
-                if (watched === requested) send({ version: 1, error: organizeTaskError(error) });
+                if (watched === requested)
+                  send({
+                    version: 1,
+                    id: requested,
+                    error: organizeTaskError(error),
+                    ...organizeTaskErrorDetail(error),
+                  });
               },
             );
           }

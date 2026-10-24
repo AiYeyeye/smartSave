@@ -13,6 +13,11 @@ type SyncArea = {
   set(values: Record<string, unknown>): Promise<void>;
 };
 type Events = Pick<typeof chrome.storage.onChanged, 'addListener' | 'removeListener'>;
+let languageWrites: Promise<unknown> = Promise.resolve();
+function mirrorLanguage(value: unknown) {
+  if (!validPreference('language', value) || typeof chrome === 'undefined' || !chrome.storage?.local?.set) return;
+  languageWrites = languageWrites.catch(() => {}).then(() => chrome.storage.local.set({ [LANGUAGE_KEY]: value })).catch(() => {});
+}
 
 function decode<K extends Preference>(field: K, raw: unknown): PreferenceValue<K> | undefined {
   if (!raw || typeof raw !== 'object' || Object.keys(raw).length !== 2) return;
@@ -82,6 +87,7 @@ export function createPreferenceSync(area: SyncArea, events: Events) {
       }
       const next = field === 'language' ? value : JSON.stringify({ ...appearance, [field]: value });
       localStorage.setItem(key, next);
+      if (field === 'language') mirrorLanguage(value);
       // The browser's storage event reaches other documents, not the document making this write.
       window.dispatchEvent(new StorageEvent('storage', { key, newValue: next }));
     } catch {
@@ -134,6 +140,7 @@ export function createPreferenceSync(area: SyncArea, events: Events) {
 
 let active: ReturnType<typeof createPreferenceSync> | undefined;
 export function startPreferenceSync() {
+  mirrorLanguage(localValue('language') === 'en' ? 'en' : 'zh-CN');
   if (typeof chrome === 'undefined' || !chrome.storage?.sync || !chrome.storage?.onChanged) return;
   const owner = createPreferenceSync(chrome.storage.sync, chrome.storage.onChanged);
   active = owner;
@@ -143,5 +150,6 @@ export function startPreferenceSync() {
   };
 }
 export function synchronizePreference<K extends Preference>(field: K, value: PreferenceValue<K>) {
+  if (field === 'language') mirrorLanguage(value);
   active?.publish(field, value);
 }

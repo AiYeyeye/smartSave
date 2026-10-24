@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type Ref } from 'react';
 import { useI18n } from '../ui/i18n';
+import { withCorrectionLearning } from '../domain/correction-learning';
 import type { TreeSnapshot } from '../domain/node-reference';
 import { preflight } from '../domain/preflight';
 import type { Command, ConfirmMutation, MutationResult } from '../schemas/messages';
@@ -153,7 +154,7 @@ export function BookmarkActions({
     lock.current = true;
     if (nextDraft) setDraft(nextDraft);
     setBusy(true);
-    const response = await submitMutation(submitted, send);
+    const response = await submitMutation(withCorrectionLearning(submitted), send);
     setResult(response);
     setDraft(undefined);
     setBusy(false);
@@ -162,18 +163,6 @@ export function BookmarkActions({
   function patch(value: Partial<Draft>) {
     setDraft(current => (current ? { ...current, ...value } : current));
   }
-  const descendants = new Set<string>();
-  if (draft?.mode === 'delete') {
-    const byId = new Map(draft.snapshot.nodes.map(n => [n.ref.nativeId, n]));
-    const pending = [...(byId.get(draft.selectedId)?.childrenIds ?? [])];
-    while (pending.length) {
-      const id = pending.pop()!;
-      if (descendants.has(id)) continue;
-      descendants.add(id);
-      pending.push(...(byId.get(id)?.childrenIds ?? []));
-    }
-  }
-  const deleteCount = descendants.size;
   const disabled = busy || !!draft || interactionBlocked;
   const destination = draft ? draft.snapshot.nodes.find(n => n.ref.nativeId === draft.selectedId) : selected;
   return (
@@ -288,7 +277,6 @@ export function BookmarkActions({
                     ))}
                 </Select>
               </label>
-              <p className="hint">{t('选择目标目录后立即移动到末尾。')}</p>
             </>
           )}
           {invalid && <p role="alert">{message(invalid)}</p>}
@@ -311,17 +299,11 @@ export function BookmarkActions({
           onCancel={() => setDraft(undefined)}
           onConfirm={() => void confirm()}
         >
-          <p>
-            {t('删除“{title}”及 {count} 个子项。中途变化会停止，已完成部分不会自动回滚。', {
-              title: draft.snapshot.nodes.find(n => n.ref.nativeId === draft.selectedId)?.title ?? '',
-              count: deleteCount,
-            })}
-          </p>
           {invalid && <p role="alert">{message(invalid)}</p>}
         </ImpactConfirmDialog>
       )}
       {busy && <BusyIndicator label={draft?.mode === 'move' ? t('正在移动书签…') : t('正在提交，请勿重复操作。')} />}
-      {result && <MutationFeedback result={result} />}
+      {result && result.status !== 'completed' && <MutationFeedback result={result} />}
     </section>
   );
 }

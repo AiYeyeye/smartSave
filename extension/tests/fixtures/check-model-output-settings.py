@@ -39,11 +39,11 @@ with sync_playwright() as p:
             page.goto(f'http://127.0.0.1:{server.server_port}/index.html?options&model-output-settings#ai-services')
             page.get_by_role('button', name='编辑', exact=True).click()
             page.get_by_label('接口模式', exact=True).select_option(mode)
-            fast = page.get_by_label('优先快速响应', exact=False)
-            expect(fast).to_be_checked()
-            fast.uncheck()
+            effort = page.get_by_label('思考强度', exact=True)
+            expect(effort).to_have_value('low')
+            effort.select_option('default')
             field = page.get_by_label('最大输出 tokens', exact=True)
-            expect(field).to_have_value('128000')
+            expect(field).to_have_value('')
             field.fill('0')
             expect(page.get_by_role('button', name='保存服务', exact=True)).to_be_disabled()
             expect(page.get_by_role('button', name='测试连接', exact=True)).to_be_disabled()
@@ -61,17 +61,17 @@ with sync_playwright() as p:
             expect(page.get_by_role('dialog')).to_have_count(0)
             page.get_by_role('button', name='编辑', exact=True).click()
             expect(page.get_by_label('最大输出 tokens', exact=True)).to_have_value('64000')
-            expect(page.get_by_label('优先快速响应', exact=False)).not_to_be_checked()
+            expect(page.get_by_label('思考强度', exact=True)).to_have_value('default')
             page.get_by_role('button', name='关闭', exact=True).click()
             page.evaluate("location.hash = 'ai-services/io'")
             with page.expect_download() as download:
                 page.get_by_role('button', name='导出 JSON', exact=True).click()
             data = json.loads(Path(download.value.path()).read_text(encoding='utf-8'))
             assert data['services'][0]['maxOutputTokens'] == 64000
-            assert data['services'][0]['fastMode'] is False
+            assert data['services'][0]['reasoningEffort'] == 'default'
             assert 'synthetic-test-key' not in json.dumps(data)
             assert not errors, errors
-            checks.append(f'{mode} {width}px: default 128000, invalid input blocks test/save, custom 64000 sent, saved, reopened and exported; no overflow')
+            checks.append(f'{mode} {width}px: automatic output limit, invalid input blocks test/save, custom 64000 sent, saved, reopened and exported; no overflow')
             page.close()
     finally:
         browser.close()

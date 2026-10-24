@@ -1,4 +1,18 @@
 export const organizeStatusEnglish = {
+  '书签或设置已变化，当前方案已失效。请重新生成；未修改书签。':
+    'Bookmarks or settings have changed, so these suggestions are no longer valid. Generate a new plan. No bookmarks were changed.',
+  '正在逐条分析书签内容，收集完整分类依据…': 'Analyzing every bookmark to collect complete topic evidence…',
+  '正在根据完整书签分析补充分类，随后重新核对全部书签…':
+    'Refining categories from the full analysis, then rechecking every bookmark…',
+  '已分析全部书签，正在汇总主题并生成分类草案…': 'All bookmarks analyzed. Combining topics into a category draft…',
+  '正在按分类草案逐条核对书签，检查是否需要补充类别…':
+    'Checking every bookmark against the draft and identifying missing categories…',
+  '全部书签已核对。请查看完整方案和待确认书签，再确认执行。':
+    'All bookmarks checked. Review the complete plan and uncertain bookmarks before confirming changes.',
+  '书签或配置已变化，请重新生成整理方案。未修改书签。':
+    'Bookmarks or settings changed. Generate a new plan. No bookmarks were changed.',
+  '{reason} 已完成的分析已保留，可继续未完成批次。未修改书签。':
+    '{reason} Completed analysis is saved. Continue the unfinished batches. No bookmarks were changed.',
   '此整理任务已提交，请查看执行记录确认结果。':
     'This task has been submitted. Check the execution records for its outcome.',
   '正在读取整理任务…': 'Loading organization task…',
@@ -92,6 +106,8 @@ export const organizeStatusEnglish = {
     'The confirmed folder structure is invalid. Return to the folder plan and adjust it.',
   '模型达到输出额度上限，未能生成完整方案；思考内容也会占用额度。请在 AI 服务中调整所选模型的最大输出 tokens 后重试；也可缩小整理范围。延长等待时间无法解决此问题。':
     'The model reached its output limit before completing the plan. Reasoning also uses that limit. Adjust maximum output tokens in AI services or reduce the scope, then retry. A longer timeout will not resolve this.',
+  '模型服务未识别输入消息中的 JSON 输出要求，已拒绝请求。请更新并重新加载扩展后测试连接；若仍失败，请向服务商反馈 JSON 模式兼容问题。':
+    'The provider did not recognize the JSON output instruction in the input messages and rejected the request. Update and reload the extension, then test the connection. If it still fails, report a JSON mode compatibility issue to the provider.',
   '模型服务返回了失败或相互矛盾的完成状态，方案无法使用。请稍后重试；反复出现时，在 AI 服务中测试连接或更换模型。':
     'The provider returned a failed or conflicting completion status. The plan cannot be used. Retry later; if it recurs, test the connection or choose another model.',
   '模型服务返回异常，未能完成本次生成。请稍后重试；反复出现时检查 AI 服务连接。':
@@ -107,8 +123,10 @@ export const organizeStatusEnglish = {
   '本次生成已停止。请重新生成方案。': 'Generation stopped. Generate a new plan.',
   '模型已结束回复，但没有返回整理建议。请重新生成；反复出现时更换模型。':
     'The model finished without suggestions. Generate again; if it recurs, choose another model.',
-  '模型服务拒绝了本次整理请求。请调整分类要求或整理范围后重试。':
-    'The provider refused the request. Adjust your instructions or scope and retry.',
+  '模型服务拒绝回答或触发内容审核。请先用合成数据测试连接，再检查本次发送的标题、网址和分类要求；切换接口模式不能解决内容拦截。':
+    'The provider refused the request or blocked its content. Test with synthetic data, then review the submitted titles, URLs and instructions. Switching API modes does not resolve content filtering.',
+  '模型服务未接受请求。请核对接口模式、基础地址、模型 ID 和支持的输出额度；具体原因见 Debug 日志。':
+    'The provider did not accept the request. Check the API mode, base URL, model ID and supported output limit; see Debug logs for the specific error.',
   '本次整理内容超过请求大小上限。请缩小整理范围，按子目录分批整理。':
     'The content exceeds the request limit. Reduce the scope and organize subfolders separately.',
   '模型同时建议合并分类和单独移动其中的内容，操作存在冲突，方案已拒绝。请重新生成或缩小整理范围。':

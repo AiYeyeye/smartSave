@@ -6,7 +6,21 @@ import { mutationResultSchema } from '../schemas/messages';
 const id = z.string().min(1).max(256);
 export const correctionMessageSchema = z.discriminatedUnion('action', [
   z.strictObject({ type: z.literal('nativeSaveCorrection'), action: z.literal('begin'), receiptId: id }),
+  z.strictObject({
+    type: z.literal('nativeSaveCorrection'),
+    action: z.literal('review'),
+    token: id,
+    title: z.string().min(1).max(2000),
+    targetId: id,
+  }),
   z.strictObject({ type: z.literal('nativeSaveCorrection'), action: z.literal('move'), token: id, targetId: id }),
+  z.strictObject({
+    type: z.literal('nativeSaveCorrection'),
+    action: z.literal('rename'),
+    token: id,
+    title: z.string().trim().min(1).max(200),
+  }),
+  z.strictObject({ type: z.literal('nativeSaveCorrection'), action: z.literal('keep-name'), token: id }),
   z.strictObject({
     type: z.literal('nativeSaveCorrection'),
     action: z.literal('rule'),
@@ -23,6 +37,7 @@ export const correctionResponseSchema = z.discriminatedUnion('status', [
     token: id,
     bookmarkId: id,
     tree: treeStateSchema.options[2].shape.snapshot,
+    suggestedTitle: z.string().optional(),
   }),
   z.strictObject({
     status: z.literal('moved'),

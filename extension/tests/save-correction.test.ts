@@ -8,8 +8,110 @@ import { SaveReceiptLog, type SaveReceipt } from '../persistence/save-receipts';
 import { SiteRulesStore } from '../persistence/site-rules';
 import type { BookmarkWriter } from '../adapters/bookmarks-write';
 import { localClassification } from '../domain/local-classification';
+import { correctionExamples } from '../domain/correction-learning';
 
 const sender = { id: 'test', url: 'chrome-extension://test/panel/index.html', documentId: 'page' };
+
+it('reviews the name and folder in one journaled request and does not repeat confirmation', async () => {
+  const h = await harness();
+  await h.receipts.patch('receipt', { suggestedTitle: 'Readable article' });
+  const token = await h.begin();
+  const input = {
+    type: 'nativeSaveCorrection' as const,
+    action: 'review' as const,
+    token,
+    title: 'Readable article',
+    targetId: 'target',
+  };
+  const result = await h.owner.handle(input, sender);
+  expect(result).toMatchObject({ status: 'result', result: { status: 'completed', completedSteps: 2 } });
+  expect(h.node).toMatchObject({ title: 'Readable article', parentId: 'target' });
+  expect(await h.receipts.get('receipt')).toMatchObject({
+    reviewedAt: expect.any(Number),
+    nameReview: 'applied',
+    correction: { status: 'completed' },
+  });
+  const records = await h.journal.all();
+  expect(records).toHaveLength(1);
+  expect(records[0]!.request.command.type).toBe('batch');
+  expect(correctionExamples(records[0]!)[0]!.scopes).not.toContain('rename');
+  await h.owner.handle(input, sender);
+  expect(h.update).toHaveBeenCalledTimes(1);
+  expect(h.move).toHaveBeenCalledTimes(1);
+  await expect(h.owner.handle({ ...input, title: 'Different' }, sender)).rejects.toThrow('stale-correction');
+});
+
+it('the toolbar popup, sent without tab or document id, can review; other id-less senders cannot', async () => {
+  const h = await harness();
+  const popup = { id: 'test', url: 'chrome-extension://test/save/index.html', origin: 'chrome-extension://test' };
+  const begin = { type: 'nativeSaveCorrection' as const, action: 'begin' as const, receiptId: 'receipt' };
+  for (const other of [
+    { id: 'test', url: 'chrome-extension://test/panel/index.html' },
+    { ...popup, tab: { id: 3 } as chrome.tabs.Tab },
+  ])
+    await expect(h.owner.handle(begin, other)).rejects.toThrow('session-expired');
+  const ready = await h.owner.handle(begin, popup);
+  expect(ready).toMatchObject({ status: 'ready' });
+  const review = {
+    type: 'nativeSaveCorrection' as const,
+    action: 'review' as const,
+    token: (ready as { token: string }).token,
+    title: h.node.title,
+    targetId: 'target',
+  };
+  await expect(h.owner.handle(review, sender)).rejects.toThrow('session-expired');
+  expect(await h.owner.handle(review, popup)).toMatchObject({ status: 'result', result: { status: 'completed' } });
+  expect(h.node.parentId).toBe('target');
+});
+
+it('unchanged review resolves the receipt without a native write or learning', async () => {
+  const h = await harness();
+  const token = await h.begin();
+  expect(
+    await h.owner.handle(
+      { type: 'nativeSaveCorrection', action: 'review', token, title: h.node.title, targetId: h.node.parentId },
+      sender,
+    ),
+  ).toEqual({ status: 'closed' });
+  expect(h.update).not.toHaveBeenCalled();
+  expect(h.move).not.toHaveBeenCalled();
+  expect(await h.journal.all()).toEqual([]);
+  expect((await h.receipts.get('receipt'))?.reviewedAt).toEqual(expect.any(Number));
+});
+
+it('partial combined review retains unsettled evidence and refuses reopening without replay', async () => {
+  const h = await harness();
+  h.move.mockRejectedValue(Error('native move failed'));
+  const token = await h.begin();
+  const input = {
+    type: 'nativeSaveCorrection' as const,
+    action: 'review' as const,
+    token,
+    title: 'Edited',
+    targetId: 'target',
+  };
+  const result = await h.owner.handle(input, sender);
+  expect(result).toMatchObject({ status: 'result', result: { status: 'unknown', completedSteps: 1 } });
+  expect(h.node).toMatchObject({ title: 'Edited', parentId: 'source' });
+  expect((await h.receipts.get('receipt'))?.reviewedAt).toBeUndefined();
+  await expect(h.begin()).rejects.toThrow('correction-unsettled');
+  await h.owner.handle(input, sender);
+  expect(h.update).toHaveBeenCalledTimes(1);
+  expect(h.move).toHaveBeenCalledTimes(1);
+});
+
+it('review detects a renamed source even for a confirmation with no intended changes', async () => {
+  const h = await harness();
+  const token = await h.begin();
+  await h.update('bookmark', { title: 'Changed elsewhere' });
+  await expect(
+    h.owner.handle(
+      { type: 'nativeSaveCorrection', action: 'review', token, title: 'Example', targetId: 'source' },
+      sender,
+    ),
+  ).rejects.toThrow('stale-correction');
+  expect((await h.receipts.get('receipt'))?.reviewedAt).toBeUndefined();
+});
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -70,7 +172,13 @@ async function harness() {
   const unused = async () => {
     throw Error('unexpected native operation');
   };
-  const writer: BookmarkWriter = { move, create: unused, update: unused, remove: unused };
+  const update = vi.fn(async (id: string, changes: { title?: string; url?: string }) => {
+    expect(id).toBe(node.id);
+    Object.assign(node, changes);
+    changed();
+    return { ...node };
+  });
+  const writer: BookmarkWriter = { move, create: unused, update, remove: unused };
   const journal = new OperationsStore(new IDBFactory(), 'correction');
   const coordinator = new MutationCoordinator(projection, writer, journal, 'test');
   const receipts = new SaveReceiptLog(storage);
@@ -118,11 +226,91 @@ async function harness() {
     data,
     storage,
     move,
+    update,
     coordinator,
     journal,
     receipt,
   };
 }
+
+it('accepting an AI name uses the journal without learning, while a user edit records its suggested baseline', async () => {
+  const h = await harness();
+  await h.receipts.patch('receipt', { suggestedTitle: 'Readable article' });
+  const token = await h.begin();
+  const accepted = await h.owner.handle(
+    { type: 'nativeSaveCorrection', action: 'rename', token, title: 'Readable article' },
+    sender,
+  );
+  expect(accepted.status).toBe('result');
+  expect(h.node.title).toBe('Readable article');
+  expect(h.update).toHaveBeenCalledTimes(1);
+  expect((await h.journal.all())[0]?.request.learning).toBeUndefined();
+  const next = await h.begin();
+  await h.owner.handle(
+    { type: 'nativeSaveCorrection', action: 'rename', token: next, title: 'My article wording' },
+    sender,
+  );
+  expect((await h.journal.all()).find(record => record.request.learning)?.request.learning).toEqual([
+    { id: 'bookmark', title: 'Readable article', parentId: 'source' },
+  ]);
+  const record = (await h.journal.all()).find(record => record.request.learning)!;
+  const example = correctionExamples(record)[0]!;
+  expect(example.text).toContain('建议名称「Readable article」');
+  expect(example.text).toContain('用户采用「My article wording」');
+  expect(example.evidence).toEqual([
+    { id: 'bookmark', title: 'My article wording', url: h.node.url, parentId: 'source' },
+  ]);
+  h.projection.stop();
+});
+
+it('a stale name confirmation cannot overwrite a later edit, and keeping the original issues no write', async () => {
+  const h = await harness();
+  await h.receipts.patch('receipt', { suggestedTitle: 'Readable article' });
+  const token = await h.begin();
+  h.node.title = 'New manual name';
+  await expect(
+    h.owner.handle({ type: 'nativeSaveCorrection', action: 'rename', token, title: 'Readable article' }, sender),
+  ).rejects.toThrow();
+  expect(h.update).not.toHaveBeenCalled();
+  const keep = await h.begin();
+  expect(await h.owner.handle({ type: 'nativeSaveCorrection', action: 'keep-name', token: keep }, sender)).toEqual({
+    status: 'closed',
+  });
+  expect(h.update).not.toHaveBeenCalled();
+  h.projection.stop();
+});
+
+it('compares learning with the name actually presented, not a later background suggestion', async () => {
+  const h = await harness();
+  const token = await h.begin();
+  await h.receipts.patch('receipt', { suggestedTitle: 'New advice' });
+  await h.owner.handle({ type: 'nativeSaveCorrection', action: 'rename', token, title: 'New advice' }, sender);
+  expect((await h.journal.all())[0]?.request.learning).toEqual([
+    { id: 'bookmark', title: 'Example', parentId: 'source' },
+  ]);
+  h.projection.stop();
+});
+
+it('an uncertain rename is never replayed and blocks later edits until reconciled', async () => {
+  const h = await harness();
+  await h.receipts.patch('receipt', { nameReview: 'applied' });
+  const token = await h.begin();
+  vi.spyOn(h.coordinator, 'submit').mockImplementationOnce(async raw => ({
+    requestId: (raw as { requestId: string }).requestId,
+    status: 'unknown',
+    needsReconcile: true,
+    completedSteps: 0,
+    remainingSteps: 1,
+  }));
+  const rename = () =>
+    h.owner.handle({ type: 'nativeSaveCorrection', action: 'rename', token, title: 'Another name' }, sender);
+  expect(await rename()).toMatchObject({ status: 'result', result: { status: 'unknown' } });
+  expect(await rename()).toMatchObject({ status: 'result', result: { status: 'unknown' } });
+  expect(h.coordinator.submit).toHaveBeenCalledTimes(1);
+  expect((await h.receipts.get('receipt'))?.nameReview).toBeUndefined();
+  expect(h.update).not.toHaveBeenCalled();
+  h.projection.stop();
+});
 
 it('one explicit correction uses the real journal/coordinator and only a separate consent creates an effective exact-host rule', async () => {
   const h = await harness();

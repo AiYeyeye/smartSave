@@ -9,9 +9,13 @@ export const modelAdapterSchema = z.enum([
   'lm-studio',
 ]);
 export type ModelAdapter = z.infer<typeof modelAdapterSchema>;
-export const DEFAULT_MAX_OUTPUT_TOKENS = 128000;
 export const maxOutputTokensSchema = z.number().int().positive();
 
+/** How hard a reasoning model may think. 'default' sends nothing and leaves the model's own default. */
+export const REASONING_EFFORTS = ['low', 'none', 'medium', 'high', 'default'] as const;
+export const reasoningEffortSchema = z.enum(REASONING_EFFORTS);
+export type ReasoningEffort = z.infer<typeof reasoningEffortSchema>;
+export const DEFAULT_REASONING_EFFORT: ReasoningEffort = 'low';
 export const modelConfigSchema = z.strictObject({
   adapter: modelAdapterSchema,
   baseUrl: z.string().min(1),
@@ -19,15 +23,25 @@ export const modelConfigSchema = z.strictObject({
   timeoutMs: z.number().int().positive().max(2147483647),
   streaming: z.boolean().optional(),
   fastMode: z.boolean().optional(),
+  reasoningEffort: reasoningEffortSchema.optional(),
   maxOutputTokens: maxOutputTokensSchema.optional(),
 });
 export type ModelConfig = z.infer<typeof modelConfigSchema>;
 
 /** Application output budget, shared by request generation and user-facing diagnostics. */
-export function modelOutputTokenLimit(config: Pick<ModelConfig, 'adapter' | 'maxOutputTokens'>): number | undefined {
-  return ['openai-compatible', 'openai-responses', 'anthropic', 'google-generative-ai'].includes(config.adapter)
-    ? (config.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS)
-    : undefined;
+export function modelOutputTokenLimit(
+  config: Pick<ModelConfig, 'adapter' | 'model' | 'maxOutputTokens'>,
+): number | undefined {
+  if (!['openai-compatible', 'openai-responses', 'anthropic', 'google-generative-ai'].includes(config.adapter))
+    return undefined;
+  if (config.maxOutputTokens !== undefined) return config.maxOutputTokens;
+  // Optional on Chat, Responses and Gemini: let the selected model choose its supported default.
+  if (config.adapter !== 'anthropic') return undefined;
+  // Messages requires max_tokens. Known Claude limits, otherwise a conservative compatible fallback.
+  if (/^claude-(?:(?:opus|sonnet|haiku)-5-5|fable-5-1)(?:-|$)/.test(config.model)) return 128000;
+  if (/^claude-(?:sonnet-4(?:-5)?|haiku-4-5)(?:-|$)/.test(config.model)) return 64000;
+  if (/^claude-opus-4(?:-1)?(?:-|$)/.test(config.model)) return 32000;
+  return 4096;
 }
 
 export type ModelEndpointKind = 'chat' | 'models';

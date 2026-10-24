@@ -6,9 +6,10 @@ import { useI18n } from '../ui/i18n';
 
 export function OrganizeFlowDetails({ proposal, after }: { proposal: OrganizeProposal; after: TreeSnapshot }) {
   const { t } = useI18n();
+  const rootLabel = t('根目录');
   const groups = useMemo(() => {
-    const beforePaths = organizePaths(proposal.tree);
-    const afterPaths = organizePaths(after);
+    const beforePaths = organizePaths(proposal.tree, rootLabel);
+    const afterPaths = organizePaths(after, rootLabel);
     const next = new Map(after.nodes.map(n => [n.ref.nativeId, n]));
     const result = new Map<string, Map<string | null, string[]>>();
     for (const node of scopeNodes(proposal.tree, proposal.scope.nativeId)) {
@@ -22,7 +23,7 @@ export function OrganizeFlowDetails({ proposal, after }: { proposal: OrganizePro
       result.set(from, destinations);
     }
     return result;
-  }, [proposal, after]);
+  }, [proposal, after, rootLabel]);
   if (!groups.size) return null;
   return (
     <section className="organize-flow-details" aria-label={t('分类内容去向')}>

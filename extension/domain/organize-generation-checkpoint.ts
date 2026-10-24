@@ -1,5 +1,6 @@
 import { serializeAiPayload } from './ai-payload';
 import { approvedOrganizeFolders, type OrganizeRequest } from './organize-batches';
+import { organizeChangeSummary, organizeChanges } from './organize-change-report';
 import {
   legacyOrganizeScopeDigest,
   organizeCheckpointContext,
@@ -20,6 +21,8 @@ import {
 import { parseModelOutput, organizeOutputSchema, type OrganizeOutput } from '../schemas/model-output';
 import type { OrganizeState, RunContext, StagedRun } from './organize-state';
 import type { ModelAuthority } from '../adapters/model-authority';
+import { organizeContentCoverage } from './organize-content';
+import { organizePolicy } from './classification-policy';
 
 export function organizeBookmarkActions(
   output: OrganizeOutput,
@@ -70,6 +73,7 @@ export async function exportOrganizeGeneration(
     preference: run.preference,
     options: {
       batchSize: options.batchSize ?? 100,
+      ...(options.contentFirst === undefined ? {} : { contentFirst: options.contentFirst }),
       ...(options.cleanupEmpty === undefined ? {} : { cleanupEmpty: options.cleanupEmpty }),
       ...(options.allowRename === undefined ? {} : { allowRename: options.allowRename }),
       ...(options.levels === undefined ? {} : { levels: options.levels }),
@@ -79,6 +83,7 @@ export async function exportOrganizeGeneration(
     },
     stage: state.pipeline.stage,
     status: state.invalid ? 'invalid' : state.pipeline.status,
+    ...(run.content ? { content: run.content } : {}),
     ...(run.folderOutput && folderSelection
       ? {
           folderPlan: {
@@ -91,6 +96,7 @@ export async function exportOrganizeGeneration(
     bookmarkIds: run.bookmarkIds,
     batches: [
       ...(run.finishedBatches ?? []).map(batch => ({
+        ...(run.content ? { taxonomyRevision: run.content.taxonomyRevision } : {}),
         id: run.batchIds!.get(batch.ids)!,
         itemIds: batch.ids,
         status: 'merged' as const,
@@ -99,6 +105,7 @@ export async function exportOrganizeGeneration(
       ...run.queue.map(ids => {
         const result = run.acceptedBatches?.get(ids);
         return {
+          ...(run.content ? { taxonomyRevision: run.content.taxonomyRevision } : {}),
           id: run.batchIds!.get(ids)!,
           itemIds: ids,
           status: result?.status === 'completed' ? ('accepted' as const) : ('pending' as const),
@@ -126,6 +133,13 @@ function validateSelection(
     organizeCompilation(proposal, selection.selected, selection.targets, 'restored-review');
 }
 
+/** stale-context that says what changed since the checkpoint, in the user's terms. */
+function staleSince(value: OrganizeCheckpoint, current: Awaited<ReturnType<ModelAuthority['read']>>, settings = false) {
+  const changes = organizeChanges(value.baseline, current.tree, value.root.nativeId, value.bookmarkIds);
+  return Object.assign(Error('stale-context'), {
+    detail: changes.length ? organizeChangeSummary(changes) : settings ? 'AI 模型、密钥或隐私设置被修改' : undefined,
+  });
+}
 /** Rebuild suggestions with fresh epochs/observations, after independently matching semantic context. */
 export async function restoreOrganizeGeneration(
   input: unknown,
@@ -145,7 +159,11 @@ export async function restoreOrganizeGeneration(
     value.settingsDigest !== digests.settingsDigest ||
     value.settingsRevision !== digests.settingsRevision
   )
-    throw Error('stale-context');
+    throw staleSince(
+      value,
+      current,
+      value.settingsDigest !== digests.settingsDigest || value.settingsRevision !== digests.settingsRevision,
+    );
   const context: RunContext = { ...current, config: current.config };
   const options = { ...value.options, staged: true };
   const candidates = organizeCandidates(
@@ -161,7 +179,7 @@ export async function restoreOrganizeGeneration(
     );
   // Bookmarks saved into the scope after the run started are left out of it; planned ones must all still be here.
   const present = new Set(currentBookmarkIds);
-  if (value.bookmarkIds.some(id => !present.has(id))) throw Error('stale-context');
+  if (value.bookmarkIds.some(id => !present.has(id))) throw staleSince(value, current);
   const bookmarkIds = value.bookmarkIds;
   const request: OrganizeRequest = {
     task: 'organize',
@@ -175,6 +193,7 @@ export async function restoreOrganizeGeneration(
     sampleLimit: 2,
   };
   const run: StagedRun = {
+    content: value.content,
     requiresCredential: value.requiresCredential,
     context,
     checkpointBaseline: value.baseline,
@@ -187,6 +206,24 @@ export async function restoreOrganizeGeneration(
     finishedBatches: [],
     acceptedBatches: new Map(),
   };
+  if (run.content) {
+    request.contentFirst = true;
+    request.preserveExistingFolders = !!options.unfiledOnly;
+    request.sampleLimit = 0;
+    for (const batch of run.content.analysis) {
+      if (batch.output)
+        parseModelOutput(batch.output, {
+          ...JSON.parse(
+            serializeAiPayload(current.tree, current.privacy, {
+              ...request,
+              stage: 'analysis',
+              itemIds: batch.itemIds,
+            }),
+          ),
+          rootId,
+        });
+    }
+  }
   let proposal: OrganizeProposal | undefined;
   const finished: { count: number; actionIds: string[] }[] = [];
   let completed = 0,
@@ -195,13 +232,14 @@ export async function restoreOrganizeGeneration(
   if (value.folderPlan) {
     const output = parseModelOutput(value.folderPlan.output, {
       ...JSON.parse(serializeAiPayload(current.tree, current.privacy, request)),
+      ...(run.content ? { policy: organizePolicy(options) } : {}),
       rootId,
     });
     if (!('moves' in output)) throw Error('invalid-organize-checkpoint');
     if (
       options.unfiledOnly &&
       (output.moves.length ||
-        output.newFolders.length ||
+        (!run.content && output.newFolders.length) ||
         output.merges.length ||
         output.renames?.length ||
         output.removeFolders?.length)
@@ -214,11 +252,22 @@ export async function restoreOrganizeGeneration(
     ]);
     for (const sourceId of movedFolders) {
       const original = new Set(scopeNodes(value.baseline, sourceId).map(node => node.ref.nativeId));
-      if (scopeNodes(current.tree, sourceId).some(node => !original.has(node.ref.nativeId)))
-        throw Error('stale-context');
+      const added = scopeNodes(current.tree, sourceId).find(node => !original.has(node.ref.nativeId));
+      if (added) {
+        const folder = current.tree.nodes.find(node => node.ref.nativeId === sourceId)?.title ?? '';
+        throw Object.assign(Error('stale-context'), {
+          detail: `要移动或合并的目录「${folder.slice(0, 18)}」里新增了「${added.title.slice(0, 18)}」`,
+        });
+      }
     }
     run.folderOutput = output;
-    proposal = organizeProposal(current.tree, rootId, output, current.privacy, options);
+    proposal = organizeProposal(
+      current.tree,
+      rootId,
+      output,
+      current.privacy,
+      run.content ? { ...options, cleanupEmpty: false } : options,
+    );
     validateSelection(proposal, value.folderPlan);
     run.folderReview = { proposal, selected: value.folderPlan.selected, targets: value.folderPlan.targets };
   }
@@ -230,7 +279,7 @@ export async function restoreOrganizeGeneration(
       ...request,
       stage: 'bookmarks',
       sampleLimit: undefined,
-      omittedItemsUnchanged: true,
+      omittedItemsUnchanged: !run.content,
       destinations: run.approved.destinations,
       placements: Object.fromEntries(bookmarkIds.map(id => [id, run.approved!.placements.get(id)!])),
     };
@@ -243,6 +292,7 @@ export async function restoreOrganizeGeneration(
       }
       const output = parseModelOutput(batch.output, {
         ...JSON.parse(serializeAiPayload(current.tree, current.privacy, { ...run.request, itemIds: ids })),
+        ...(run.content ? { policy: organizePolicy(options) } : {}),
         rootId,
       });
       if (!('moves' in output)) throw Error('invalid-organize-checkpoint');
@@ -259,7 +309,8 @@ export async function restoreOrganizeGeneration(
       }
     }
     if (value.stage === 'complete') proposal = organizeCleanup(proposal!, current.privacy, options);
-    if (lockedActionIds.some(id => !value.selection.selected.includes(id))) throw Error('invalid-organize-checkpoint');
+    if (!run.content && lockedActionIds.some(id => !value.selection.selected.includes(id)))
+      throw Error('invalid-organize-checkpoint');
   }
   if (proposal) {
     // Check every reconstructed action, including suggestions currently deselected in the UI.
@@ -286,10 +337,20 @@ export async function restoreOrganizeGeneration(
     message:
       value.stage === 'complete'
         ? '已恢复完成的整理建议，请核对后确认执行。'
-        : value.stage === 'folders'
+        : value.stage === 'folders' && !run.content
           ? '已恢复目录方案；未完成的生成需要手动重新开始。'
           : '已恢复整理进度，继续时只分析未完成批次。',
     pipeline: {
+      ...(run.content
+        ? {
+            contentPhase: run.content.phase,
+            topicCompleted: run.content.analysis.reduce(
+              (total, batch) => total + (batch.output ? batch.itemIds.length : 0),
+              0,
+            ),
+            ...organizeContentCoverage(run),
+          }
+        : {}),
       stage: value.stage,
       status: value.status === 'running' ? 'paused' : value.status,
       total: bookmarkIds.length,
@@ -298,7 +359,7 @@ export async function restoreOrganizeGeneration(
       completed,
       analyzed,
       finished,
-      lockedActionIds,
+      lockedActionIds: run.content && value.stage === 'complete' ? [] : lockedActionIds,
       batchCount: value.batches.length,
       elapsedMs: value.elapsedMs,
     },

@@ -14,4 +14,6 @@
 
 构建工具另有 MIT、Apache、BSD、ISC、MPL 等许可。当前 lightningcss 的 MPL 条目属于构建工具元数据；若未来直接分发工具代码或修改其受保护文件，需另查对应义务。变更依赖时应重新生成清单并检查实际打包结果，不能将一次静态检查视为全量传递依赖合规证明。
 
-商店图标复用项目现有 CSS 书签标识；演示截图使用本项目生产界面与虚构书签，没有使用 `ui/` 中的外部参考图。截图中的第三方名称仅说明演示内容，不表示第三方推荐或合作。
+项目图标由 CSS 书签标识生成。演示截图使用智栏界面与虚构书签；第三方名称不表示推荐或合作。
+
+Project icons are generated from the CSS bookmark mark. Screenshots show Zhilan with synthetic bookmarks; third-party names do not imply endorsement or partnership.

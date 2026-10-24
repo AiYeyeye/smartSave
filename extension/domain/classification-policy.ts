@@ -14,6 +14,8 @@ export type OrganizeLevels = 1 | 2 | 3;
 export const DEFAULT_ORGANIZE_LEVELS: OrganizeLevels = 2;
 /** Fixed explanations for local plan rejections that the model can usually fix in one more try. */
 export const PLAN_FEEDBACK: Record<string, string> = {
+  schema:
+    'the answer was not a valid task JSON object. Return action arrays directly at the top level, not inside a $schema/type/properties wrapper. Use only supplied IDs and declared new folder IDs. Never move, merge as source, rename or remove rootId or protectedSourceIds. unchangedIds must not include any item with a direct action. Follow the current stage and all output schema rules.',
   'overlapping-merge':
     'a folder was merged while items inside it were also moved or merged separately. For each folder, either merge it or move its contents, never both.',
   'unsafe-folder-removal':
@@ -31,5 +33,6 @@ export const PLAN_FEEDBACK: Record<string, string> = {
 /** Organize runs: new folder chains may not grow deeper than the chosen taxonomy levels. */
 export function organizePolicy(options: { allowRename?: boolean; levels?: OrganizeLevels }): ClassificationPolicy {
   const levels = options.levels ?? DEFAULT_ORGANIZE_LEVELS;
-  return { maxNewDepth: levels, allowRename: options.allowRename ?? true, levels };
+  // levels is a minimum; new folders may nest up to the deepest supported chain.
+  return { maxNewDepth: 4, allowRename: options.allowRename ?? true, levels };
 }

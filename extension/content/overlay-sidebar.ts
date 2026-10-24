@@ -1,4 +1,4 @@
-import { browserMessage } from '../domain/browser-message';
+import { browserMessage, setBrowserLanguage } from '../domain/browser-message';
 /**
  * Left-edge overlay sidebar, injected only on an explicit toolbar click (activeTab). Runs in the isolated
  * world; the frame lives in a closed shadow root so the page can neither style nor read it. Clicking the
@@ -99,8 +99,13 @@ const scope = globalThis as unknown as { __zhilanOverlayInit?: Init; __zhilanOve
   }
   function onMessage(event: MessageEvent) {
     if (event.source !== frame.contentWindow) return;
-    const data = event.data as { type?: unknown } | null;
+    const data = event.data as { type?: unknown; language?: unknown } | null;
     if (data && data.type === 'zhilan-overlay-close') dispose();
+    if (data?.type === 'zhilan-overlay-language' && (data.language === 'en' || data.language === 'zh-CN')) {
+      // The verified frame owns the choice; content scripts cannot read trusted-only extension storage.
+      setBrowserLanguage(data.language);
+      frame.title = browserMessage('sidebarTitle');
+    }
   }
 
   scrim.addEventListener('click', dispose);

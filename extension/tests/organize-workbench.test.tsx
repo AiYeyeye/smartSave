@@ -30,7 +30,9 @@ it('retains custom inputs, a pending worker request and final confirmation acros
         newFolders: [],
         merges: [],
         moves:
-          input.request.task === 'organize' ? input.request.itemIds.map(itemId => ({ itemId, folderId: 'right' })) : [],
+          input.request.task === 'organize' && input.request.stage === 'bookmarks'
+            ? input.request.itemIds.map(itemId => ({ itemId, folderId: 'right' }))
+            : [],
       },
     }));
   const settings = new SettingsStore({
@@ -60,7 +62,8 @@ it('retains custom inputs, a pending worker request and final confirmation acros
   fireEvent.click(screen.getByRole('button', { name: 'Next: generate plan' }));
   await waitFor(() => expect(h.run).toHaveBeenCalledTimes(1));
   fireEvent.change(screen.getByLabelText('Language'), { target: { value: 'zh-CN' } });
-  expect(screen.getByRole('button', { name: '确认分类，开始分批整理书签' })).toBeDisabled();
+  expect(screen.queryByRole('button', { name: '确认分类，开始分批整理书签' })).toBeNull();
+  expect(screen.getByRole('button', { name: '下一步：确认操作' })).toBeDisabled();
   fireEvent.change(screen.getByLabelText('语言'), { target: { value: 'en' } });
   expect(create).toHaveBeenCalledOnce();
   expect(h.run).toHaveBeenCalledTimes(1);
@@ -68,10 +71,12 @@ it('retains custom inputs, a pending worker request and final confirmation acros
     preference: { style: 'custom', instructions: '移动 <&> {count}' },
   });
   expect(h.move).not.toHaveBeenCalled();
-  await act(async () => finish({ status: 'completed', output: { newFolders: [], moves: [], merges: [] } }));
-  const confirmFolders = screen.getByRole('button', { name: 'Confirm folders and start bookmark batches' });
-  await waitFor(() => expect(confirmFolders).toBeEnabled());
-  fireEvent.click(confirmFolders);
+  await act(async () =>
+    finish({
+      status: 'completed',
+      output: { newFolders: [], moves: [], merges: [], topics: [{ title: 'Tools', itemIds: ['a', 'b'] }] },
+    }),
+  );
   await screen.findByText('Review and adjust bookmarks (2)');
   fireEvent.click(screen.getByText('Review and adjust bookmarks (2)'));
   await waitFor(() => expect(screen.getByLabelText('Select move:a')).toBeEnabled());
@@ -86,14 +91,14 @@ it('retains custom inputs, a pending worker request and final confirmation acros
   expect(expanded).toHaveAttribute('open');
   expect(screen.getByLabelText('Organization instructions')).toBe(instructions);
   expect(instructions).toHaveValue('移动 <&> {count}');
-  expect(h.run).toHaveBeenCalledTimes(2);
+  expect(h.run).toHaveBeenCalledTimes(3);
   expect(h.move).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: 'Next: confirm changes' }));
   const apply = screen.getByRole('button', { name: 'Confirm and apply operations (1)' });
   fireEvent.change(screen.getByLabelText('Language'), { target: { value: 'zh-CN' } });
   expect(screen.getByRole('button', { name: '确认并执行 1 项操作' })).toBe(apply);
   expect(screen.getByRole('heading', { name: '确认所选操作' })).toBeVisible();
-  expect(h.run).toHaveBeenCalledTimes(2);
+  expect(h.run).toHaveBeenCalledTimes(3);
   expect(h.move).not.toHaveBeenCalled();
   fireEvent.change(screen.getByLabelText('语言'), { target: { value: 'en' } });
   fireEvent.click(apply);
@@ -105,7 +110,7 @@ it('retains custom inputs, a pending worker request and final confirmation acros
   h.dispose();
 });
 
-it('shows a separate one-shot repair action, keeps apply unavailable and sends only failed identities on click', async () => {
+it('keeps legacy one-shot repair available without applying incomplete plans', async () => {
   const h = organizeClientRuntime();
   h.run
     .mockResolvedValueOnce({ status: 'completed', output: { moves: [], newFolders: [], merges: [] } })
@@ -130,7 +135,17 @@ it('shows a separate one-shot repair action, keeps apply unavailable and sends o
   const page = render(
     <LocaleProvider>
       <LanguagePicker />
-      <OrganizeWorkbench visible settings={settings} createController={emit => h.client(emit)} memoryStore={h.memory} />
+      <OrganizeWorkbench
+        visible
+        settings={settings}
+        createController={emit => {
+          const client = h.client(emit);
+          const generate = client.generate.bind(client);
+          client.generate = (preference, options) => generate(preference, { ...options, contentFirst: false });
+          return client;
+        }}
+        memoryStore={h.memory}
+      />
     </LocaleProvider>,
   );
   await waitFor(() => expect(screen.getByRole('button', { name: '下一步：生成整理方案' })).toBeEnabled());
@@ -190,6 +205,9 @@ it('uses the worker client to reopen a persisted review and confirms only the re
     output: {
       newFolders: [],
       merges: [],
+      ...(input.request.task === 'organize' && input.request.stage === 'analysis'
+        ? { topics: [{ title: 'Tools', itemIds: input.request.itemIds }] }
+        : {}),
       moves:
         input.request.task === 'organize' && input.request.stage === 'bookmarks'
           ? input.request.itemIds.map(itemId => ({ itemId, folderId: 'right' }))
@@ -208,8 +226,6 @@ it('uses the worker client to reopen a persisted review and confirms only the re
   );
   await waitFor(() => expect(screen.getByRole('button', { name: '下一步：生成整理方案' })).toBeEnabled());
   fireEvent.click(screen.getByRole('button', { name: '下一步：生成整理方案' }));
-  await waitFor(() => expect(screen.getByRole('button', { name: '确认分类，开始分批整理书签' })).toBeEnabled());
-  fireEvent.click(screen.getByRole('button', { name: '确认分类，开始分批整理书签' }));
   await screen.findByText('查看并调整 2 条书签');
   fireEvent.click(screen.getByText('查看并调整 2 条书签'));
   await waitFor(() => expect(screen.getByLabelText('选择 move:a')).toBeEnabled());
@@ -224,7 +240,7 @@ it('uses the worker client to reopen a persisted review and confirms only the re
   await screen.findByText('查看并调整 2 条书签');
   expect(screen.getByLabelText('选择 move:a')).not.toBeChecked();
   expect(screen.getByLabelText('选择 move:b')).toBeChecked();
-  expect(h.run).toHaveBeenCalledTimes(2);
+  expect(h.run).toHaveBeenCalledTimes(3);
   const next = await screen.findByRole('button', { name: '下一步：确认操作' });
   await waitFor(() => expect(next).toBeEnabled());
   fireEvent.click(next);
@@ -236,7 +252,7 @@ it('uses the worker client to reopen a persisted review and confirms only the re
   settings.dispose();
   h.dispose();
 });
-it('requires custom instructions, previews streaming suggestions read-only and exposes retry after failure', async () => {
+it('retains legacy streaming review, custom instructions and explicit retry', async () => {
   let fail!: (value: { status: 'failed'; reason: string; detail?: 'output-limit' }) => void;
   let disconnect!: () => void;
   const run = vi.fn<NonNullable<ConstructorParameters<typeof OrganizeController>[2]>['run']>(input => {
@@ -279,6 +295,8 @@ it('requires custom instructions, previews streaming suggestions read-only and e
       },
     );
     controller.setTree({ status: 'ready', snapshot: tree });
+    controller.generate = (preference, options) =>
+      OrganizeController.prototype.generate.call(controller, preference, { ...options, contentFirst: false });
     return controller;
   };
   const settings = new SettingsStore({
@@ -354,7 +372,7 @@ it('requires custom instructions, previews streaming suggestions read-only and e
   await waitFor(() => expect(screen.getByRole('button', { name: '下一步：确认操作' })).toBeEnabled());
   expect(screen.queryByRole('alert', { name: '整理未完成' })).toBeNull();
   const footer = screen.getByRole('button', { name: '下一步：确认操作' }).closest('.organize-footer')!;
-  expect(footer).toHaveTextContent('全部 1 批已完成');
+  expect(footer).not.toHaveTextContent('全部 1 批已完成');
   expect(screen.getByRole('region', { name: '按目标目录审核' })).toBeVisible();
   expect(screen.getByRole('list', { name: '整理后分类树' })).toBeVisible();
   fireEvent.click(screen.getByRole('checkbox', { name: /^采纳 / }));
@@ -382,7 +400,7 @@ it('requires custom instructions, previews streaming suggestions read-only and e
     output: { moves: [], newFolders: [], merges: [], unchangedIds: ['a', 'b'] },
   });
   fireEvent.click(screen.getByRole('button', { name: '确认分类，开始分批整理书签' }));
-  await screen.findByText(/全部 1 批已完成.*没有需要应用的操作/);
+  await screen.findByText(/没有需要应用的操作/);
   expect(screen.getByRole('button', { name: '下一步：确认操作' })).toBeDisabled();
 });
 it.each(APPEARANCES)('retains unchecked selection across hidden navigation in %s', async theme => {

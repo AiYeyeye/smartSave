@@ -23,7 +23,7 @@ it.each([undefined, 520, 0])('opens with a compact default and retains a valid s
   });
   expect(await toggleOverlay(5, 'https://example.test/')).toBe(true);
   expect(executeScript.mock.calls[0]).toEqual([
-    expect.objectContaining({ args: [expect.objectContaining({ width: saved === 520 ? 520 : 340 })] }),
+    expect.objectContaining({ args: [expect.objectContaining({ width: saved === 520 ? 520 : 320 })] }),
   ]);
 });
 

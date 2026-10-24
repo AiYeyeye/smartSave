@@ -1,6 +1,6 @@
 import { listModels, type ListModelsResult } from './model-discovery';
 import { ModelTransport } from './model-transport';
-import { parseModelEndpoint, type ModelAdapter } from '../domain/model-route';
+import { parseModelEndpoint, type ModelAdapter, type ReasoningEffort } from '../domain/model-route';
 import { apiModeToAdapter, curatedModelsForVendor, type ApiMode } from '../domain/ai-providers';
 import type { TreeSnapshot } from '../domain/node-reference';
 import type { SettingsStore } from '../persistence/settings';
@@ -17,6 +17,7 @@ export type ConnectionDraft = {
   model?: string;
   streaming?: boolean;
   fastMode?: boolean;
+  reasoningEffort?: ReasoningEffort;
   maxOutputTokens?: number;
 };
 
@@ -33,6 +34,7 @@ function draftConfig(draft: ConnectionDraft) {
     timeoutMs,
     ...(draft.streaming === undefined ? {} : { streaming: draft.streaming }),
     ...(draft.fastMode === undefined ? {} : { fastMode: draft.fastMode }),
+    ...(draft.reasoningEffort === undefined ? {} : { reasoningEffort: draft.reasoningEffort }),
     ...(draft.maxOutputTokens === undefined ? {} : { maxOutputTokens: draft.maxOutputTokens }),
   };
   parseModelEndpoint(config);

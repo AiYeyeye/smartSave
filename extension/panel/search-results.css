@@ -58,3 +58,43 @@
   height: 16px;
   color: var(--faint);
 }
+.search-filters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.search-filters label {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  font-size: 12px;
+}
+.search-filters select {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  text-overflow: ellipsis;
+}
+.search-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+.search-actions:empty {
+  display: none;
+}
+.search-results > h2.search-results-heading {
+  margin: 20px 0 12px;
+}
+@media (max-width: 300px) {
+  .search-filters {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+/* Retain the last list's appearance during a brief read/reconnect. Buttons still block activation. */
+.search-results.is-refreshing .search-hit-open:disabled {
+  opacity: 1;
+}

@@ -1,0 +1,15 @@
+.search-scopes { display: flex; flex-wrap: nowrap; gap: 4px; margin: 8px 0; }
+.search-scopes button { flex: 0 0 auto; min-width: 0; padding-inline: 10px; white-space: nowrap; }
+.search-scopes button[aria-pressed='true'] { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.search-scopes button[aria-pressed='true']:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
+.history-search, .history-list, .history-list li { min-width: 0; max-width: 100%; }
+.history-toolbar { display: flex; align-items: center; gap: 6px; margin-block: 10px; }
+.history-toolbar > .in-panel-select { flex: 1; min-width: 0; }
+.history-toolbar select { width: 100%; min-width: 0; }
+.history-toolbar .history-refresh { flex-shrink: 0; width: 32px; min-height: 32px; padding: 6px; }
+.history-refresh svg { width: 16px; height: 16px; }
+.history-filters { display: flex; flex-wrap: wrap; gap: 8px; }
+.history-filters .field { flex: 1 1 130px; min-width: 0; }
+.history-filters input, .history-filters select { width: 100%; min-width: 0; box-sizing: border-box; }
+.history-ai { display: flex; flex-wrap: wrap; gap: 6px; margin-block: 10px; }
+.history-list { margin-block: 8px 0; }

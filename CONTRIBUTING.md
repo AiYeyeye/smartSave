@@ -13,7 +13,7 @@ pnpm --dir extension install --frozen-lockfile
 pnpm --dir extension build
 ```
 
-在独立测试浏览器配置中加载 `extension/dist`，使用演示书签。详细结构和测试入口见 [开发说明](extension/README.md)；AI 助手还应遵守 [AGENTS.md](AGENTS.md) （[中文版](AGENTS.zh-CN.md)）、[公共架构](docs/development/architecture.md) 和 [目录规则](docs/development/repository-layout.md)。本地 Trellis 配置可选，公共开发不依赖它。
+在独立测试浏览器配置中加载 `extension/dist`，使用演示书签。详细结构和测试入口见 [开发说明](extension/README.md)；AI 助手还应遵守 [AGENTS.md](AGENTS.md) （[中文版](AGENTS.zh-CN.md)）、[公共架构](docs/development/architecture.md) 和 [目录规则](docs/development/repository-layout.md)。
 
 ## 提交修改
 
@@ -39,4 +39,4 @@ PR 写明问题、最终行为和验证结果。截图用虚构书签；请勿�
 
 ## English
 
-Use Node.js >=22.12 and pnpm 11.7.0; build and check with the commands above. Test in a disposable browser profile with synthetic bookmarks. Discuss major changes in an issue, keep PRs focused, describe validation, and update user docs and translations when behavior changes. Preserve the shared native mutation/confirmation/recovery boundary. Update privacy disclosures and dependency notices when adding network access or dependencies. Never commit credentials, personal bookmarks, private diagnostics or browser profiles. Keep private drafts in ignored `.local/private/` and generated archives in `.local/releases/`; follow the public architecture/layout and agent instructions. Local automation is optional. Contributions use PolyForm Noncommercial 1.0.0, without copyright assignment or an automatic commercial relicensing grant.
+Use Node.js >=22.12 and pnpm 11.7.0; build and check with the commands above. Test in a disposable browser profile with synthetic bookmarks. Discuss major changes in an issue, keep PRs focused, describe validation, and update user docs and translations when behavior changes. Preserve the shared native mutation/confirmation/recovery boundary. Update privacy disclosures and dependency notices when adding network access or dependencies. Never commit credentials, personal bookmarks, private diagnostics or browser profiles. Follow the architecture, layout and agent instructions linked above. Contributions use PolyForm Noncommercial 1.0.0, without copyright assignment or an automatic commercial relicensing grant.

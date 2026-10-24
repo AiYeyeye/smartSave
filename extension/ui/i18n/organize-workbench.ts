@@ -1,4 +1,20 @@
 export const organizeWorkbenchEnglish = {
+  生成与完整预览: 'Generate and review the complete plan',
+  '先分析全部书签，再生成和修订分类，最后核对完整方案并确认执行。':
+    'Analyze all bookmarks, generate and refine categories, then review the complete plan before confirming changes.',
+  正在逐条分析全部书签: 'Analyzing every bookmark',
+  正在汇总完整分类依据: 'Building categories from all topic evidence',
+  正在逐条核对分类去向: 'Checking a destination for every bookmark',
+  正在补充分类并重新核对: 'Refining categories and rechecking all bookmarks',
+  完整方案已生成: 'The complete plan is ready',
+  '内容分析 {analyzed} / {total} 条 · 分类核对 {assigned} / {total} 条':
+    'Content analyzed: {analyzed} / {total} · Destinations checked: {assigned} / {total}',
+  '明确保留 {kept} 条 · 待确认 {uncertain} 条': 'Explicitly kept: {kept} · Uncertain: {uncertain}',
+  待确认书签: 'Uncertain bookmarks',
+  '这些书签没有确定的单独移动建议；文件夹变更仍可能影响路径，请结合完整预览核对。':
+    'These bookmarks have no confirmed individual move suggestion. Folder changes may still affect their paths; check the complete preview.',
+  '暂无可执行的确定建议，请查看待确认书签。':
+    'There are no confirmed changes to apply. Review the uncertain bookmarks.',
   '经逐条确认清理疑似重复链接，保留明确指定的副本。':
     'Remove possible duplicates after individual review, keeping the explicitly chosen copies.',
   '清理链接完全相同的重复书签，保留明确指定的副本。':
@@ -48,15 +64,22 @@ export const organizeWorkbenchEnglish = {
     'Organize only bookmarks directly in this folder using existing folders. Keep subfolder contents, folder names and empty folders unchanged.',
   高级选项: 'Advanced options',
   分类方式: 'Folder style',
-  目录层级: 'Folder levels',
-  '一级（平铺）': 'One level (flat)',
-  '两级：大类 / 小类（推荐）': 'Two levels: category / subcategory (recommended)',
-  三级: 'Three levels',
+  最少层级: 'Minimum levels',
+  '提醒：': 'Note: ',
+  '请至少勾选一项建议后继续。': 'Select at least one suggestion to continue.',
+  '没有需要应用的操作，当前分类已经合适。': 'Nothing to apply; the current folders already fit.',
+  '写入前会自动备份，可在“备份与恢复”中撤销；所选的删除与合并也会执行。':
+    'A backup is made before writing and can be undone in Backup and recovery. Selected deletions and merges also run.',
+  '不限，由 AI 决定': 'Any, decided by AI',
+  '至少两级：大类 / 小类（推荐）': 'At least two: category / subcategory (recommended)',
+  至少三级: 'At least three',
   '你的分类要求（必填）': 'Your instructions (required)',
   '补充要求（选填）': 'Additional instructions (optional)',
   分类要求: 'Organization instructions',
   '例如：分成写作、画图、编程，目录用中文；拿不准的保持原位。':
     'For example: group by writing, drawing and coding; use Chinese folder names and leave uncertain items in place.',
+  '{count}/{limit}': '{count}/{limit}',
+  '已记住 {count} 条“不再建议”': '{count} “don’t suggest again” choices saved',
   '仅用于本次整理；要求会与所选范围的书签信息一起发送给 AI。{count}/{limit}':
     'Used only for this task. Instructions are sent to AI with bookmark information from the selected scope. {count}/{limit}',
   每批最多书签: 'Bookmarks per batch',

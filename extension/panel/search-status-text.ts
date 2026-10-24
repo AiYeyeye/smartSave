@@ -25,11 +25,16 @@ const counts: { pattern: RegExp; key: MessageKey; names: string[] }[] = [
 ];
 export function searchStatusText(language: Language, text: string): string {
   if (language === 'zh-CN') return text;
-  const failure = 'AI 搜索未完成，保留本地结果。';
+  const failure = 'AI 搜索未完成，保留已找到的结果。';
+  const legacyFailure = 'AI 搜索未完成，保留本地结果。';
   const cached = ' 仍可搜索上次读取的数据。';
   if (text.startsWith(failure))
-    return translate(language, 'AI 搜索未完成，保留本地结果。{reason}', {
+    return translate(language, 'AI 搜索未完成，保留已找到的结果。{reason}', {
       reason: translateKnown(language, text.slice(failure.length)),
+    });
+  if (text.startsWith(legacyFailure))
+    return translate(language, 'AI 搜索未完成，保留本地结果。{reason}', {
+      reason: translateKnown(language, text.slice(legacyFailure.length)),
     });
   if (text.endsWith(cached))
     return translate(language, '{reason} 仍可搜索上次读取的数据。', {

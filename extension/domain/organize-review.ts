@@ -18,7 +18,7 @@ export function defaultOrganizeScope(tree: TreeSnapshot): string {
   return '';
 }
 
-export function organizePaths(tree?: TreeSnapshot) {
+export function organizePaths(tree?: TreeSnapshot, rootLabel = '根目录') {
   const nodes = new Map(tree?.nodes.map(n => [n.ref.nativeId, n]));
   const paths = new Map<string, string>();
   for (const id of nodes.keys()) {
@@ -32,7 +32,7 @@ export function organizePaths(tree?: TreeSnapshot) {
     }
     let prefix = current === undefined ? '' : (paths.get(current) ?? '');
     for (const child of chain.reverse()) {
-      prefix = [prefix, nodes.get(child)!.title || '根目录'].filter(Boolean).join(' / ');
+      prefix = [prefix, nodes.get(child)!.title || rootLabel].filter(Boolean).join(' / ');
       paths.set(child, prefix);
     }
   }

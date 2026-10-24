@@ -181,6 +181,10 @@ export function organizeClientRuntime() {
     client,
     owner: () => owner,
     restart,
+    changeModel: (model: string) => {
+      value.config.model = model;
+      value.revision = 'changed';
+    },
     run,
     journal,
     memory,

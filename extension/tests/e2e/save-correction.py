@@ -61,7 +61,7 @@ with sync_playwright() as playwright:
         if args.language == 'en':
             preferences.get_by_label('语言', exact=True).select_option('en')
         page = context.new_page()
-        page.goto(f'chrome-extension://{extension_id}/panel/index.html')
+        page.goto(f'chrome-extension://{extension_id}/options/index.html#debug')
         page.get_by_role('button', name=ui('改一下', 'Change folder'), exact=True).click()
         page.get_by_label(ui('改到目录', 'Move to folder'), exact=True).select_option(fixture['target'])
         if args.language == 'en':

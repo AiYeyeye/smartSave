@@ -15,14 +15,51 @@ export function OrganizeGenerationProgress({
 }) {
   const { t, language } = useI18n();
   const statusText = (text: string) => organizeStatusText(language, text);
-  const folderReview = state.pipeline?.stage === 'folders';
+  const folderReview = state.pipeline?.stage === 'folders' && !state.pipeline.contentPhase;
+  const content = state.pipeline?.contentPhase;
   const proposal = state.proposal;
   return (
     <>
       {state.pipeline && (
         <section className="organize-batches" aria-label={t('分阶段整理进度')}>
           {state.busy && <OrganizeTiming pipeline={state.pipeline} />}
-          {folderReview ? null : (
+          {content ? (
+            <>
+              <p role="status" aria-live="polite">
+                {t(
+                  (
+                    {
+                      analysis: '正在逐条分析全部书签',
+                      planning: '正在汇总完整分类依据',
+                      assignment: '正在逐条核对分类去向',
+                      revision: '正在补充分类并重新核对',
+                      complete: '完整方案已生成',
+                    } as const
+                  )[content],
+                )}
+              </p>
+              <p>
+                {t('内容分析 {analyzed} / {total} 条 · 分类核对 {assigned} / {total} 条', {
+                  analyzed: state.pipeline.topicCompleted ?? 0,
+                  assigned: state.pipeline.completed,
+                  total: state.pipeline.total,
+                })}
+              </p>
+              {!!state.pipeline.taxonomyRevision && (
+                <p>{t('分类核对：第 {round} 轮', { round: state.pipeline.taxonomyRevision + 1 })}</p>
+              )}
+              {content === 'complete' && (
+                <>
+                  <p>
+                    {t('明确保留 {kept} 条 · 待确认 {uncertain} 条', {
+                      kept: state.pipeline.unchangedIds?.length ?? 0,
+                      uncertain: state.pipeline.uncertainIds?.length ?? 0,
+                    })}
+                  </p>
+                </>
+              )}
+            </>
+          ) : folderReview ? null : (
             <>
               <p role="status" aria-live="polite">
                 {t('已完成 {finished} / {batches} 批，已分析 {analyzed} / {total} 条书签。', {
@@ -81,7 +118,7 @@ export function OrganizeGenerationProgress({
           )}
         </section>
       )}
-      {state.busy && <BusyIndicator label={statusText(state.message)} />}
+      {state.busy && !content && <BusyIndicator label={statusText(state.message)} />}
       {state.failure && !state.busy && (
         <section className="organize-failure" role="alert" aria-label={t('整理未完成')}>
           <h3>{t('整理未完成')}</h3>

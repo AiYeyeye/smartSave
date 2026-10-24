@@ -1,13 +1,18 @@
 import { ImportWorkbench } from '../panel/ImportWorkbench';
 import { OrganizeWorkbench } from '../panel/OrganizeWorkbench';
-import { SearchResults } from '../panel/SearchResults';
+import { SearchWorkspace } from '../panel/SearchWorkspace';
+import type { SearchSource } from '../domain/history-search';
+import { OnboardingSteps } from '../panel/OnboardingSteps';
+import { useOnboarding } from '../panel/use-onboarding';
 import { CurrentPageSave } from '../panel/CurrentPageSave';
-import { SaveReceiptCard } from '../panel/SaveReceiptCard';
+import { SaveReviewLauncher, SaveReviewQueue } from '../panel/SaveReview';
 import { useEffect, useMemo, useState } from 'react';
 import { ListChecks } from 'lucide-react';
 import { SettingsStore } from '../persistence/settings';
 import { ThemeProvider, ThemePicker } from './ThemeProvider';
 import './theme.css';
+import '../panel/save-dialog.css';
+import { SAVE_CONFIRM_PORT } from '../persistence/save-confirm';
 import { BookmarkTree } from '../panel/BookmarkTree';
 import { PanelChrome, PanelFooter, SearchBox, type PopupView } from './PanelChrome';
 import { OptionsNav, parseOptionsHash, ROUTE_META, type OptionsRoute } from './OptionsNav';
@@ -21,6 +26,7 @@ import { SiteRulesSettings } from '../options/SiteRulesSettings';
 import { RecoveryWorkbench } from '../options/RecoveryWorkbench';
 import { ExportSettings } from '../options/ExportSettings';
 import { TokenUsage } from '../options/TokenUsage';
+import { PersonalizationSettings } from '../options/PersonalizationSettings';
 import { DebugLogPanel, SaveHistory } from '../options/DebugLogPanel';
 import {
   AiServicesPage,
@@ -30,7 +36,7 @@ import {
   type AiServicesTab,
 } from '../options/ai-services';
 
-export type Page = 'panel' | 'options';
+export type Page = 'panel' | 'options' | 'save';
 export type { OptionsRoute } from './OptionsNav';
 const OPTIONS_PAGE = 'options/index.html';
 
@@ -75,7 +81,9 @@ export function App({ page, overlay = false }: { page: Page; overlay?: boolean }
   useEffect(startPreferenceSync, []);
   return (
     <LocaleProvider>
-      <ThemeProvider>{page === 'panel' ? <PopupApp overlay={overlay} /> : <OptionsApp />}</ThemeProvider>
+      <ThemeProvider>
+        {page === 'panel' ? <PopupApp overlay={overlay} /> : page === 'save' ? <SaveApp /> : <OptionsApp />}
+      </ThemeProvider>
     </LocaleProvider>
   );
 }
@@ -94,8 +102,10 @@ function PopupApp({ overlay = false }: { overlay?: boolean }) {
   const { settingsStore, ai } = useShared();
   const [view, setView] = useState<PopupView>('browse');
   const [query, setQuery] = useState('');
+  const [searchSource, setSearchSource] = useState<SearchSource>('bookmarks');
+  const [recentBookmarks, setRecentBookmarks] = useState(false);
   const [batchNonce, setBatchNonce] = useState(0);
-  const [trialNonce, setTrialNonce] = useState(0);
+  const onboarding = useOnboarding();
   const [focusRequest, setFocusRequest] = useState(0);
   useSearchKey(() => {
     setView('browse');
@@ -123,6 +133,7 @@ function PopupApp({ overlay = false }: { overlay?: boolean }) {
         {t('跳到主要内容')}
       </a>
       <PanelChrome
+        searchSource={searchSource}
         focusRequest={focusRequest}
         view={view}
         query={query}
@@ -136,24 +147,53 @@ function PopupApp({ overlay = false }: { overlay?: boolean }) {
       />
       <main id="main" tabIndex={-1}>
         <div hidden={view !== 'browse'}>
-          <SaveReceiptCard onOpen={open} />
-          <CurrentPageSave settings={settingsStore} aiServices={ai.store} trialNonce={trialNonce} />
-          <SearchResults
+          <SaveReviewLauncher />
+          {onboarding.visible && !query.trim() && searchSource === 'bookmarks' && !recentBookmarks && (
+            <OnboardingSteps
+              onConfigure={() => open('ai-services/add')}
+              onSearch={() => setFocusRequest(value => value + 1)}
+              onOrganize={() => open('organize')}
+              onDismiss={onboarding.dismiss}
+            />
+          )}
+          {onboarding.saveFailed && <p role="status">{t('关闭状态未能保存，下次打开可能仍会显示步骤。')}</p>}
+          <SearchWorkspace
             query={query}
+            source={searchSource}
+            onSource={setSearchSource}
+            recentBookmarks={recentBookmarks}
+            onRecentBookmarks={setRecentBookmarks}
+            visible={view === 'browse'}
             settings={settingsStore}
             services={ai.store}
             onOrganize={() => open('organize')}
           />
-          <section className="directory" aria-label={t('书签目录')} hidden={query.trim().length > 0}>
-            <BookmarkTree batchNonce={batchNonce} />
+          <section
+            className="directory"
+            aria-label={t('书签目录')}
+            hidden={query.trim().length > 0 || searchSource !== 'bookmarks' || recentBookmarks}
+          >
+            <BookmarkTree
+              batchNonce={batchNonce}
+              positionActive={
+                view === 'browse' &&
+                !query.trim() &&
+                searchSource === 'bookmarks' &&
+                !recentBookmarks &&
+                !onboarding.visible
+              }
+            />
           </section>
         </div>
         {view === 'settings' && (
           <PopupSettings
-            onTrial={() => {
+            onOnboarding={() => {
               setQuery('');
+              setSearchSource('bookmarks');
+              setRecentBookmarks(false);
               setView('browse');
-              setTrialNonce(value => value + 1);
+              onboarding.show();
+              document.getElementById('main')?.scrollTo?.({ top: 0 });
             }}
             services={ai.services}
             features={ai.features}
@@ -177,6 +217,37 @@ function PopupApp({ overlay = false }: { overlay?: boolean }) {
   );
 }
 
+const closePopup = () => window.close();
+
+/** The toolbar popup anchored by the bookmark star; it sizes itself to this content. */
+function SaveApp() {
+  const { settingsStore, ai } = useShared();
+  const [capturing, setCapturing] = useState(false);
+  useEffect(() => {
+    const close = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !event.defaultPrevented) window.close();
+    };
+    window.addEventListener('keydown', close);
+    // Presence only: when this popup goes away the worker returns the toolbar click to the sidebar.
+    const presence =
+      typeof chrome !== 'undefined' && chrome.runtime?.connect
+        ? chrome.runtime.connect({ name: SAVE_CONFIRM_PORT })
+        : undefined;
+    return () => {
+      window.removeEventListener('keydown', close);
+      presence?.disconnect();
+    };
+  }, []);
+  return (
+    <main className="save-pop">
+      <CurrentPageSave settings={settingsStore} aiServices={ai.store} dialog onActive={setCapturing} />
+      <div className="save-pop-body" hidden={capturing}>
+        <SaveReviewQueue onOpen={openOptionsRoute} onClose={closePopup} />
+      </div>
+    </main>
+  );
+}
+
 function OptionsApp() {
   const { t, message } = useI18n();
   const { settingsStore, ai, aiController } = useShared();
@@ -184,6 +255,8 @@ function OptionsApp() {
   const [route, setRouteState] = useState<OptionsRoute>(initial.route);
   const [aiTab, setAiTab] = useState<AiServicesTab>(initial.aiTab);
   const [query, setQuery] = useState('');
+  const [searchSource, setSearchSource] = useState<SearchSource>('bookmarks');
+  const [recentBookmarks, setRecentBookmarks] = useState(false);
   const [batchNonce, setBatchNonce] = useState(0);
   const [visited, setVisited] = useState<Set<OptionsRoute>>(() => new Set([initial.route]));
   const [exportRecoveryOpen, setExportRecoveryOpen] = useState(false);
@@ -234,6 +307,7 @@ function OptionsApp() {
           <div>
             <h1>{message(meta.title)}</h1>
           </div>
+          <LanguagePicker />
           {route === 'browse' ? (
             <button type="button" onClick={() => setBatchNonce(value => value + 1)}>
               <ListChecks aria-hidden="true" />
@@ -244,6 +318,7 @@ function OptionsApp() {
         <main id="main" tabIndex={-1} className={meta.wide ? 'is-wide' : undefined}>
           <div className="view" hidden={route !== 'browse'}>
             <SearchBox
+              source={searchSource}
               value={query}
               onChange={setQuery}
               focusRequest={focusRequest}
@@ -252,12 +327,6 @@ function OptionsApp() {
             {searchLaunch.status && <p role="status">{message(searchLaunch.status)}</p>}
             <details>
               <summary>{t('快速搜索入口')}</summary>
-              <p>
-                {t(
-                  '按 Alt+Shift+K 打开搜索。也可在地址栏输入 zl，按 Tab 或空格后输入关键词。智栏内按 Ctrl+K（Mac：⌘K）聚焦搜索。',
-                )}
-              </p>
-              <p>{t('若快捷键被其他扩展占用，可在浏览器中重新设置。')}</p>
               <button
                 type="button"
                 onClick={() => {
@@ -267,13 +336,22 @@ function OptionsApp() {
                 {t('设置浏览器搜索快捷键')}
               </button>
             </details>
-            <SearchResults
+            <SearchWorkspace
               query={query}
+              source={searchSource}
+              onSource={setSearchSource}
+              recentBookmarks={recentBookmarks}
+              onRecentBookmarks={setRecentBookmarks}
+              visible={route === 'browse'}
               settings={settingsStore}
               services={ai.store}
               onOrganize={() => go('organize')}
             />
-            <section className="directory" aria-label={t('书签目录')} hidden={query.trim().length > 0}>
+            <section
+              className="directory"
+              aria-label={t('书签目录')}
+              hidden={query.trim().length > 0 || searchSource !== 'bookmarks' || recentBookmarks}
+            >
               <BookmarkTree batchNonce={batchNonce} />
             </section>
           </div>
@@ -312,7 +390,7 @@ function OptionsApp() {
           )}
           <div className="view" hidden={route !== 'appearance'}>
             <section className="surface" aria-label={t('外观设置')}>
-              <LanguagePicker />
+              <p className="hint">{t('使用页面顶部的语言选项切换简体中文或 English，立即生效。')}</p>
               <ThemePicker extra={<PanelModePicker />} />
             </section>
           </div>
@@ -322,19 +400,19 @@ function OptionsApp() {
               <SiteRulesSettings />
             </div>
           )}
+          {mounted('personalization') && (
+            <div className="view" hidden={route !== 'personalization'}>
+              <PersonalizationSettings
+                settings={settingsStore}
+                services={ai.store}
+                visible={route === 'personalization'}
+              />
+            </div>
+          )}
           {mounted('debug') && (
             <div className="view" hidden={route !== 'debug'}>
               <SaveHistory onOpen={hash => go(parseOptionsHash(hash), parseAiServicesHash(hash) ?? undefined)} />
               <DebugLogPanel />
-              <details className="surface settings-help">
-                <summary>{t('旧版单连接模型配置（兼容）')}</summary>
-                <p>
-                  {t(
-                    '新版请在「AI 服务」里连接并按功能分配模型；这里保留旧的单连接配置，供尚未迁移的搜索 / 整理 / 导入路径使用。',
-                  )}
-                </p>
-                <ModelSettings showHeading={false} store={settingsStore} fields="model" />
-              </details>
             </div>
           )}
         </main>

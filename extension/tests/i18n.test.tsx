@@ -45,6 +45,15 @@ it('every translation preserves its parameters and interpolates values as litera
 });
 
 it('organizer statuses adapt owned progress and errors while preserving diagnostic codes and native preview content', () => {
+  for (const text of [
+    '当前方案已失效，因为书签「教程；私人名称」被删除。请重新生成；未修改书签。',
+    '整理期间目录「学习」被改名为「资料」，本次结果已失效。请重新生成方案；未修改书签。',
+    '这项整理任务已失效，因为AI 模型、密钥或隐私设置被修改。请重新生成方案；未修改书签。',
+  ]) {
+    expect(organizeStatusText('en', text)).toContain('Generate a new plan');
+    expect(organizeStatusText('en', text)).not.toMatch(/[\u4e00-\u9fff]/);
+    expect(organizeStatusText('zh-CN', text)).toBe(text);
+  }
   expect(organizeStatusText('en', '正在生成第 2 / 3 批建议（100 条书签）…')).toBe(
     'Generating batch 2 / 3 (100 bookmarks)…',
   );
@@ -122,6 +131,14 @@ it('invalid stored language falls back to Chinese; storage failure retains the s
   expect(screen.getByLabelText('Language')).toHaveValue('en');
   expect(screen.getByRole('status')).toHaveTextContent('could not be saved');
   save.mockRestore();
+});
+it('starts in Chinese without a saved choice even when the browser uses English', () => {
+  localStorage.removeItem(LANGUAGE_KEY);
+  vi.spyOn(window.navigator, 'language', 'get').mockReturnValue('en-US');
+  render(<LocaleProvider><LanguagePicker /></LocaleProvider>);
+  expect(screen.getByLabelText('语言')).toHaveValue('zh-CN');
+  expect(document.documentElement.lang).toBe('zh-CN');
+  vi.restoreAllMocks();
 });
 it('search status adapts numeric progress and known errors without translating arbitrary strings', () => {
   expect(searchStatusText('en', '服务繁忙，4 秒后重试（2/3），可随时取消。')).toContain('Retrying in 4s (2/3)');

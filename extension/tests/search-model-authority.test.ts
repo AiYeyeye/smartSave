@@ -116,10 +116,10 @@ it('changing the search assignment cancels a pending request and prevents old re
   f.store.dispose();
 });
 
-it('supports legacy settings but does not silently use collection models for an unassigned multi-service search', async () => {
+it('never falls back to the old single connection, with or without AI services', async () => {
   const f = await setup();
   const authority = searchModelAuthority(f.base, f.store);
-  expect((await authority.read()).config?.model).toBe('save-model');
+  await expect(authority.read()).rejects.toThrow('unavailable');
   await f.store.upsertService(f.service, 'search-key', true);
   await expect(authority.read()).rejects.toThrow('unavailable');
   f.store.dispose();

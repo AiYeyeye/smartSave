@@ -27,7 +27,6 @@ export function ConnectedPanel({
     return (
       <div>
         <h2 className="ai-svc-panel-title">{t('已连接')}</h2>
-        <p className="ai-svc-panel-desc">{t('管理当前 AI 连接：编辑配置、查看状态或断开。')}</p>
         <div className="ai-svc-empty">
           <div>{t('还没有已连接的 AI 服务')}</div>
           <button type="button" onClick={onGoAdd}>
@@ -40,7 +39,6 @@ export function ConnectedPanel({
   return (
     <div>
       <h2 className="ai-svc-panel-title">{t('已连接')}</h2>
-      <p className="ai-svc-panel-desc">{t('管理当前 AI 连接：编辑配置、查看状态或断开。')}</p>
       <div className="ai-svc-connected-list">
         {services.map(s => (
           <div key={s.id} className="ai-svc-connected-row">
@@ -87,7 +85,6 @@ export function FeaturesPanel({
   return (
     <div>
       <h2 className="ai-svc-panel-title">{t('功能用模')}</h2>
-      <p className="ai-svc-panel-desc">{t('为各 AI 功能指定连接与模型。行内展开按连接分组，可搜索模型 ID。')}</p>
       {missing.length > 0 && usable && onQuickSetup ? (
         <div className="ai-svc-banner" role="status">
           <span>
@@ -176,11 +173,9 @@ export function ImportExportPanel({
   return (
     <div>
       <h2 className="ai-svc-panel-title">{t('导入导出')}</h2>
-      <p className="ai-svc-panel-desc">{t('备份或迁移 AI 服务配置（不含明文密钥）。')}</p>
       <div className="ai-svc-io-grid">
         <div className="ai-svc-io-card">
           <h3>{t('导入')}</h3>
-          <p>{t('从 JSON 文件恢复已连接的 AI 服务配置（不含明文密钥；导入后请重新输入密钥）。')}</p>
           <div
             className={`ai-svc-dropzone${dragover ? ' dragover' : ''}`}
             tabIndex={0}
@@ -223,7 +218,6 @@ export function ImportExportPanel({
         </div>
         <div className="ai-svc-io-card">
           <h3>{t('导出')}</h3>
-          <p>{t('导出当前已连接服务列表为 JSON（脱敏，不含 API Key），便于备份或在另一台设备导入。')}</p>
           <div className="ai-svc-io-actions">
             <button type="button" className="ai-svc-act ai-svc-act-primary" onClick={exportJson}>
               <Download aria-hidden="true" />
@@ -450,9 +444,6 @@ export function AddServicePanel({
   return (
     <div>
       <h2 className="ai-svc-panel-title">{t('添加服务')}</h2>
-      <p className="ai-svc-panel-desc">
-        {t('选择你已有的 AI 服务，用已有账号或 API Key 连接；也可填写已有的自定义端点。')}
-      </p>
       <ol className="ai-svc-steps" aria-label={t('设置步骤')}>
         <li className="is-current" aria-current="step">
           <span>1</span>
@@ -461,10 +452,6 @@ export function AddServicePanel({
         <li>
           <span>2</span>
           {t('连接与模型')}
-        </li>
-        <li>
-          <span>3</span>
-          {t('试分类网页')}
         </li>
       </ol>
       <div className="ai-svc-search-wrap">
@@ -632,7 +619,6 @@ export function AddServicePanel({
               <label className="ai-svc-toggle-row">
                 <span>
                   <strong>{t('记住密钥')}</strong>
-                  <small>{t('后台自动归类收藏需要它；保存在本机扩展存储，不上传。')}</small>
                 </span>
                 <span className="switch">
                   <input

@@ -1,4 +1,5 @@
 import { useI18n } from '../ui/i18n';
+import { withCorrectionLearning } from '../domain/correction-learning';
 import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import {
   ArrowDown,
@@ -29,8 +30,15 @@ import { submitMutation } from './mutation-client';
 import type { ConfirmMutation, MutationResult } from '../schemas/messages';
 import { BusyIndicator } from '../ui/BusyIndicator';
 import { DeferredNotice } from '../ui/DeferredNotice';
+import { useNavigationMemory } from './use-navigation-memory';
 
-export function BookmarkTree({ batchNonce = 0 }: { batchNonce?: number }) {
+export function BookmarkTree({
+  batchNonce = 0,
+  positionActive = false,
+}: {
+  batchNonce?: number;
+  positionActive?: boolean;
+}) {
   const { t, message } = useI18n();
   const [state, setState] = useState<TreeState>({ status: 'loading' });
   const [retry, setRetry] = useState(0);
@@ -62,7 +70,14 @@ export function BookmarkTree({ batchNonce = 0 }: { batchNonce?: number }) {
   return (
     <>
       {state.status === 'error' ? notice : <DeferredNotice show={state.status === 'loading'}>{notice}</DeferredNotice>}
-      {snapshot && <TreeRows snapshot={snapshot} batchNonce={batchNonce} connectionReady={state.status === 'ready'} />}
+      {snapshot && (
+        <TreeRows
+          snapshot={snapshot}
+          batchNonce={batchNonce}
+          connectionReady={state.status === 'ready'}
+          positionActive={positionActive}
+        />
+      )}
     </>
   );
 }
@@ -71,15 +86,20 @@ export function TreeRows({
   batchNonce = 0,
   connectionReady = true,
   results,
+  positionActive = false,
 }: {
   snapshot: TreeSnapshot;
   batchNonce?: number;
   connectionReady?: boolean;
   results?: { ids: readonly string[]; onOpen: (id: string) => void };
+  positionActive?: boolean;
 }) {
   const { t, message } = useI18n();
   const isSearch = results !== undefined;
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [expandedNodes, setExpandedNodes] = useState<TreeSnapshot['nodes']>();
+  const list = useRef<HTMLUListElement>(null);
+  useNavigationMemory(list, snapshot, positionActive && !isSearch, connectionReady && expandedNodes === snapshot.nodes);
   const [selectedId, setSelectedId] = useState<string>();
   const [intentMode, setIntentMode] = useState<Mode>();
   const [batch, setBatch] = useState(false);
@@ -137,7 +157,7 @@ export function TreeRows({
     setDragError('');
     setMoveResult(undefined);
     try {
-      setMoveResult(await submitMutation(request));
+      setMoveResult(await submitMutation(withCorrectionLearning(request)));
     } finally {
       setMoving(false);
       moveLock.current = false;
@@ -191,8 +211,12 @@ export function TreeRows({
           ),
           ...previous,
         }));
+        setExpandedNodes(snapshot.nodes);
       } catch {
-        if (active) setMemoryError(true);
+        if (active) {
+          setMemoryError(true);
+          setExpandedNodes(snapshot.nodes);
+        }
       }
     }
     void load();
@@ -462,7 +486,7 @@ export function TreeRows({
       {openError && <p role="alert">{message(openError)}</p>}
       {copyStatus && <p role="status">{message(copyStatus)}</p>}
       {moving && <BusyIndicator label={t('正在移动书签…')} />}
-      {moveResult && <MutationFeedback result={moveResult} />}
+      {moveResult && moveResult.status !== 'completed' && <MutationFeedback result={moveResult} />}
       {memoryError && <p role="alert">{t('展开状态无法记忆，本次仍可浏览。')}</p>}
       {batch && (
         <div className="batch-bar" role="region" aria-label={t('批量管理')}>
@@ -488,7 +512,11 @@ export function TreeRows({
           </button>
         </div>
       )}
-      <ul className={isSearch ? 'bookmark-tree search-hit-list' : 'bookmark-tree'} aria-label={t('原生书签')}>
+      <ul
+        ref={list}
+        className={isSearch ? 'bookmark-tree search-hit-list' : 'bookmark-tree'}
+        aria-label={t('原生书签')}
+      >
         {visible.map(({ id, depth }) => {
           const node = byId.get(id)!;
           const open = isOpen(id);

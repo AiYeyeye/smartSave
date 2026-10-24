@@ -1,7 +1,17 @@
 import { createParser, type EventSourceMessage } from 'eventsource-parser';
 import type { ModelAdapter } from '../domain/model-route';
 import { readModelChunks, readModelResponse, MODEL_STREAM_LIMITS, type ModelBodyObserver } from './model-byte-limits';
-import { arr, obj, str, partText, readModelReply, ModelParseError, type Json, type ModelReply } from './model-replies';
+import {
+  arr,
+  obj,
+  str,
+  partText,
+  providerFailureCode,
+  readModelReply,
+  ModelParseError,
+  type Json,
+  type ModelReply,
+} from './model-replies';
 
 interface Reducer {
   push(value: Json, event?: string): void;
@@ -26,7 +36,7 @@ const index = (value: unknown): number => {
 /** Explicit errors survive later completed snapshots. No provider body leaks into ModelResult. */
 function providerError(value: Json, event?: string): string | undefined {
   return event === 'error' || value.error != null || value.type === 'error'
-    ? (str(obj(value.error).code) ?? str(obj(value.error).type) ?? 'provider-error')
+    ? providerFailureCode(value.error)
     : undefined;
 }
 
@@ -123,7 +133,7 @@ function responsesReducer(limit: number): Reducer {
           outcome.failed = reply.failed;
         outcome.refused ||= reply.refused;
         outcome.truncated ||= reply.truncated;
-        outcome.finish = reply.finish;
+        outcome.finish = reply.finish ?? status ?? type.slice(9);
         arr(response.output).forEach((item, i) => snapshot(obj(item), i));
         if (![...parts.values()].some(part => part.text.trim()) && reply.text) set(0, 0, reply.text);
       }

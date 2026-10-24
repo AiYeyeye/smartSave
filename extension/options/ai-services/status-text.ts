@@ -1,4 +1,5 @@
 import { translate, translateKnown, type Language, type MessageKey } from '../../ui/i18n';
+import { modelFailureText } from '../model-failure-text';
 
 /** Existing UI-owned notifications, translated on render so a locale change cannot restart an operation. */
 const patterns: { pattern: RegExp; key: MessageKey; field: string }[] = [
@@ -23,10 +24,12 @@ const patterns: { pattern: RegExp; key: MessageKey; field: string }[] = [
   { pattern: /^配置完成：收藏会用 (.*) 自动归类$/s, key: '配置完成：收藏会用 {model} 自动归类', field: 'model' },
 ];
 export function serviceStatusText(language: Language, text: string): string {
-  if (language === 'zh-CN') return text;
   for (const { pattern, key, field } of patterns) {
     const match = pattern.exec(text);
-    if (match) return translate(language, key, { [field]: match[1]! });
+    if (match)
+      return translate(language, key, {
+        [field]: field === 'reason' ? modelFailureText(language, match[1]!) : match[1]!,
+      });
   }
   return translateKnown(language, text);
 }

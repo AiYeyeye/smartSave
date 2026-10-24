@@ -1,4 +1,6 @@
 export const failureMessages: Record<string, string> = {
+  'json-mode-input-required':
+    '模型服务未识别输入消息中的 JSON 输出要求，已拒绝请求。请更新并重新加载扩展后测试连接；若仍失败，请向服务商反馈 JSON 模式兼容问题。',
   'partial-invalid-targets': '少量书签的目标目录无效。本批有效建议已暂存，可显式补问一次；补问完成前整批不可执行。',
   'partial-repair-failed': '本次补问未能完成，已停止，不会再次补问。可手动重新生成未完成批次。',
   'organize-credential-required': '本次整理使用的临时密钥已失效。请重新输入密钥后继续；已完成建议保留。',
@@ -19,7 +21,10 @@ export const failureMessages: Record<string, string> = {
   redirect: '模型服务地址发生重定向，连接已停止。请在 AI 服务中核对并填写实际接口地址后重试。',
   cancelled: '本次生成已停止。请重新生成方案。',
   empty: '模型已结束回复，但没有返回整理建议。请重新生成；反复出现时更换模型。',
-  refused: '模型服务拒绝了本次整理请求。请调整分类要求或整理范围后重试。',
+  refused:
+    '模型服务拒绝回答或触发内容审核。请先用合成数据测试连接，再检查本次发送的标题、网址和分类要求；切换接口模式不能解决内容拦截。',
+  'http-400': '模型服务未接受请求。请核对接口模式、基础地址、模型 ID 和支持的输出额度；具体原因见 Debug 日志。',
+  'http-422': '模型服务未接受请求。请核对接口模式、基础地址、模型 ID 和支持的输出额度；具体原因见 Debug 日志。',
   'payload-too-large': '本次整理内容超过请求大小上限。请缩小整理范围，按子目录分批整理。',
   'overlapping-merge': '模型同时建议合并分类和单独移动其中的内容，操作存在冲突，方案已拒绝。请重新生成或缩小整理范围。',
   'privacy-excluded-descendant': '模型建议会影响已排除的子目录内容，方案已拒绝。请缩小整理范围后重试。',

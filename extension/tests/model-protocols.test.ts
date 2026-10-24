@@ -33,7 +33,7 @@ describe('request side: endpoint, JSON mode and output budget per protocol', () 
                   : adapter === 'openai-responses'
                     ? body.max_output_tokens
                     : body.max_completion_tokens;
-            expect(actual).toBe(maxOutputTokens ?? 128000);
+            expect(actual).toBe(maxOutputTokens ?? (adapter === 'anthropic' ? 4096 : undefined));
           }
     },
   );
@@ -44,15 +44,21 @@ describe('request side: endpoint, JSON mode and output budget per protocol', () 
     const body = JSON.parse(modelRequestBody(c, 'search', '{}'));
     expect(body.messages.map((m: { role: string }) => m.role)).toEqual(['system', 'user']);
     expect(body.response_format).toEqual({ type: 'json_object' });
-    expect(body.max_completion_tokens).toBe(128000);
+    expect(body.max_completion_tokens).toBeUndefined();
   });
   it('OpenAI Responses: /v1/responses, instructions + input, text.format json_object, max_output_tokens', () => {
     const c = config('openai-responses', 'https://api.openai.com/v1');
     expect(parseModelEndpoint(c).url).toBe('https://api.openai.com/v1/responses');
     const body = JSON.parse(modelRequestBody(c, 'search', '{}'));
-    expect(body).toMatchObject({ text: { format: { type: 'json_object' } }, input: '{}' });
+    expect(body).toMatchObject({
+      text: { format: { type: 'json_object' } },
+      input: [
+        { role: 'developer', content: expect.stringContaining('JSON') },
+        { role: 'user', content: '{}' },
+      ],
+    });
     expect(body.instructions).toContain('JSON');
-    expect(body.max_output_tokens).toBe(128000);
+    expect(body.max_output_tokens).toBeUndefined();
     for (const streaming of [false, true]) {
       for (const jsonMode of [false, true]) {
         const custom = JSON.parse(
@@ -69,7 +75,7 @@ describe('request side: endpoint, JSON mode and output budget per protocol', () 
     expect(parseModelEndpoint(c).url).toBe('https://api.anthropic.com/v1/messages');
     const body = JSON.parse(modelRequestBody(c, 'search', '{}'));
     expect(body.system).toContain('JSON');
-    expect(body.max_tokens).toBe(128000);
+    expect(body.max_tokens).toBe(4096);
     for (const streaming of [false, true]) {
       const custom = JSON.parse(modelRequestBody({ ...c, streaming, maxOutputTokens: 64000 }, 'organize', '{}'));
       expect(custom.max_tokens).toBe(64000);
@@ -85,7 +91,6 @@ describe('request side: endpoint, JSON mode and output budget per protocol', () 
     const body = JSON.parse(modelRequestBody(c, 'search', '{}'));
     expect(body.generationConfig).toEqual({
       responseMimeType: 'application/json',
-      maxOutputTokens: 128000,
       thinkingConfig: { thinkingBudget: 0 },
     });
     expect(body.systemInstruction.parts[0].text).toContain('JSON');

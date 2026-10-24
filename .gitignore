@@ -50,6 +50,7 @@ __pycache__/
 Thumbs.db
 
 # Local release packages and recordings in progress
+*.zip
 /release/
 /.release-work/
 /zhilan-extension.zip

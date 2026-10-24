@@ -22,7 +22,7 @@ describe('MV3 distribution contract', () => {
       'favicon',
       'sidePanel',
     ]);
-    expect(manifest.optional_permissions).toEqual(['identity']);
+    expect(manifest.optional_permissions).toEqual(['identity', 'history']);
     expect(manifest.side_panel).toEqual({ default_path: 'panel/index.html' });
     expect(manifest.web_accessible_resources).toEqual([{ resources: ['panel/index.html'], matches: ['<all_urls>'] }]);
     expect(manifest.action.default_popup).toBeUndefined();

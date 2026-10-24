@@ -6,7 +6,7 @@ import type { TreeState } from '../domain/node-reference';
 import { connectTree } from '../panel/tree-client';
 import { testConnection } from '../adapters/ai-connection';
 import { adapterToApiMode } from '../domain/ai-providers';
-import { DEFAULT_MAX_OUTPUT_TOKENS, maxOutputTokensSchema, modelStreaming } from '../domain/model-route';
+import { maxOutputTokensSchema, modelStreaming } from '../domain/model-route';
 import { Select } from '../ui/Select';
 import type { AiPrivacy } from '../domain/ai-payload';
 import { modelPresets } from '../domain/model-presets';
@@ -34,9 +34,10 @@ export function ModelSettings({
   const [timeout, setTimeoutValue] = useState('');
   const [streaming, setStreaming] = useState<boolean | undefined>(undefined);
   const [fastMode, setFastMode] = useState<boolean | undefined>(undefined);
-  const [maxOutputTokens, setMaxOutputTokens] = useState(String(DEFAULT_MAX_OUTPUT_TOKENS));
+  const [maxOutputTokens, setMaxOutputTokens] = useState('');
   const outputLimitValid =
     !['openai-compatible', 'openai-responses', 'anthropic', 'google-generative-ai'].includes(adapter) ||
+    !maxOutputTokens.trim() ||
     maxOutputTokensSchema.safeParse(Number(maxOutputTokens)).success;
   const [presetId, setPresetId] = useState('custom');
   const [discoveredModels, setDiscoveredModels] = useState<string[]>([]);
@@ -56,7 +57,7 @@ export function ModelSettings({
     setPresetId(id);
     setStreaming(undefined);
     setFastMode(undefined);
-    setMaxOutputTokens(String(DEFAULT_MAX_OUTPUT_TOKENS));
+    setMaxOutputTokens('');
     const next = modelPresets.find(item => item.id === id);
     if (next) {
       setAdapter(next.adapter);
@@ -103,7 +104,7 @@ export function ModelSettings({
             setTimeoutValue(String(value.config.timeoutMs));
             setStreaming(value.config.streaming);
             setFastMode(value.config.fastMode);
-            setMaxOutputTokens(String(value.config.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS));
+            setMaxOutputTokens(value.config.maxOutputTokens === undefined ? '' : String(value.config.maxOutputTokens));
             if (!value.presetId) {
               const matched = modelPresets.find(
                 item => item.adapter === value.config!.adapter && item.baseUrl === value.config!.baseUrl,
@@ -164,7 +165,7 @@ export function ModelSettings({
       ...(streaming === undefined ? {} : { streaming }),
       ...(fastMode === undefined ? {} : { fastMode }),
       ...(['openai-compatible', 'openai-responses', 'anthropic', 'google-generative-ai'].includes(adapter)
-        ? { maxOutputTokens: Number(maxOutputTokens) }
+        ? { maxOutputTokens: maxOutputTokens.trim() ? Number(maxOutputTokens) : undefined }
         : {}),
     };
     parseModelEndpoint(config);
@@ -395,7 +396,11 @@ export function ModelSettings({
                     setMaxOutputTokens(e.target.value);
                   }}
                 />
-                <span className="hint">{t('默认 128,000，包含推理和正文。请填写所选模型支持的输出额度。')}</span>
+                <span className="hint">
+                  {t(
+                    '留空使用服务默认上限；Anthropic 使用兼容上限。自定义值须在模型支持范围内，思考可能占用输出额度。',
+                  )}
+                </span>
                 {!outputLimitValid && <span role="alert">{t('输出上限请输入大于或等于 1 的有效整数。')}</span>}
               </label>
             )}
@@ -465,7 +470,6 @@ export function ModelSettings({
       )}
       {showPrivacy && (
         <>
-          <p>{t('控制发送到模型服务的内容。排除目录不改变导出范围。')}</p>
           <label className="check">
             <input
               type="checkbox"

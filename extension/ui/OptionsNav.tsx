@@ -14,7 +14,16 @@ import { ModeSwitch } from './ThemeProvider';
 import { useI18n } from './i18n';
 
 export type OptionsRoute =
-  'browse' | 'organize' | 'import' | 'export' | 'ai-services' | 'token-usage' | 'appearance' | 'privacy' | 'debug';
+  | 'browse'
+  | 'organize'
+  | 'import'
+  | 'export'
+  | 'ai-services'
+  | 'token-usage'
+  | 'appearance'
+  | 'personalization'
+  | 'privacy'
+  | 'debug';
 
 export const ROUTE_META: Record<OptionsRoute, { title: string; desc: string; icon: LucideIcon; wide?: boolean }> = {
   browse: { title: '书签目录', desc: '浏览、搜索与批量管理浏览器原生书签。', icon: FolderTree },
@@ -29,6 +38,7 @@ export const ROUTE_META: Record<OptionsRoute, { title: string; desc: string; ico
   },
   'token-usage': { title: 'Token 统计', desc: '', icon: ChartNoAxesCombined, wide: true },
   appearance: { title: '外观', desc: '颜色模式与主题色，弹窗和设置页同步。', icon: Palette },
+  personalization: { title: '个性化偏好', desc: '管理已记住的选择、反馈和待确认的 AI 规则。', icon: Sparkles },
   privacy: { title: '隐私与规则', desc: '控制发送给 AI 的内容、排除目录与网站规则。', icon: Shield },
   debug: { title: '收藏记录与调试', desc: '每次原生收藏的 AI 处理结果，以及可选的调用轨迹。', icon: ScrollText },
 };
@@ -36,7 +46,7 @@ export const ROUTE_META: Record<OptionsRoute, { title: string; desc: string; ico
 const GROUPS: { label: string; routes: OptionsRoute[] }[] = [
   { label: '书签', routes: ['browse', 'organize', 'import', 'export'] },
   { label: 'AI', routes: ['ai-services', 'token-usage'] },
-  { label: '偏好', routes: ['appearance', 'privacy', 'debug'] },
+  { label: '偏好', routes: ['personalization', 'appearance', 'privacy', 'debug'] },
 ];
 
 const ROUTES = new Set<string>(Object.keys(ROUTE_META));
@@ -68,7 +78,6 @@ export function OptionsNav({
         <span className="zh-logo" aria-hidden="true" />
         <div>
           <strong>{t('智栏')}</strong>
-          <small>{t('原生书签 · AI 助手')}</small>
         </div>
       </div>
       {GROUPS.map(group => (

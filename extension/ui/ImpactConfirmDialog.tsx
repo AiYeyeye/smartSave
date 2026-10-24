@@ -52,7 +52,7 @@ export function ImpactConfirmDialog({
           }
         }}
       >
-        <h2 id={title}>{t('删除影响确认')}</h2>
+        <h2 id={title}>{t('是否确认删除？')}</h2>
         {children}
         <div className="actions">
           <button onClick={onCancel} disabled={busy}>

@@ -125,9 +125,9 @@ it.each(['organize', 'import', 'classify', 'search'] as const)(
   },
 );
 
-it('only legacy installations fall back; unassigned or deleted services cannot resurrect the primary route', async () => {
+it('features use only AI services; unassigned or deleted services cannot resurrect the old single connection', async () => {
   const f = await setup();
-  expect((await f.reader('organize').snapshot()).config?.model).toBe('save-model');
+  expect((await f.reader('organize').snapshot()).config).toBeUndefined();
   await f.configure();
   await f.services.saveFeatures([]);
   expect((await f.reader('organize').snapshot()).config).toBeUndefined();
@@ -142,7 +142,7 @@ it('worker import validation accepts evidence from the import route and revokes 
   const authority = f.authority('import');
   const fetcher: typeof fetch = async (_url, init) => {
     const envelope = JSON.parse(String(init?.body));
-    const payload = JSON.parse(envelope.input);
+    const payload = JSON.parse(envelope.input[1].content);
     expect(envelope.model).toBe('import-model');
     return new Response(
       JSON.stringify({

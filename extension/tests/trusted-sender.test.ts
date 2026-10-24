@@ -4,6 +4,14 @@ import { extensionDocumentKind, trustedMutationSender } from '../domain/trusted-
 const id = 'ext';
 const panel = `chrome-extension://${id}/panel/index.html`;
 const options = `chrome-extension://${id}/options/index.html`;
+const save = `chrome-extension://${id}/save/index.html`;
+
+it('trusts only the exact top-level save document, never its framed or query variants', () => {
+  expect(extensionDocumentKind({ id, url: save, frameId: 0, tab: { id: 1, url: save } }, id)).toBe('save');
+  expect(extensionDocumentKind({ id, url: `${save}?tabId=1` }, id)).toBeUndefined();
+  expect(extensionDocumentKind({ id, url: save, frameId: 2, tab: { url: save } }, id)).toBeUndefined();
+  expect(extensionDocumentKind({ id, url: save, frameId: 2, tab: { url: 'https://evil.test/' } }, id)).toBeUndefined();
+});
 
 it('trusts the popup and options documents by exact extension id and path', () => {
   expect(extensionDocumentKind({ id, url: panel, documentId: 'popup' }, id)).toBe('panel');

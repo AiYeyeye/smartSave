@@ -141,7 +141,7 @@ describe('Anthropic native chat mapping', () => {
     const body = JSON.parse(String(chatCall[1].body));
     expect(body).toMatchObject({
       model: 'claude-sonnet-4-5',
-      max_tokens: 128000,
+      max_tokens: 64000,
       stream: false,
       messages: [{ role: 'user', content: expect.any(String) }],
     });
@@ -208,7 +208,10 @@ describe('OpenAI Responses chat mapping', () => {
     expect(body).toMatchObject({
       model: 'gpt-4.1-mini',
       stream: false,
-      input: expect.any(String),
+      input: [
+        { role: 'developer', content: expect.stringContaining('JSON') },
+        { role: 'user', content: expect.any(String) },
+      ],
       text: { format: { type: 'json_object' } },
     });
     expect(body.instructions).toContain('Return only one JSON object');

@@ -1,0 +1,9 @@
+.onboarding-steps { margin-bottom: 16px; overflow-wrap: anywhere; }
+.onboarding-steps > h2 { margin: 0 0 8px; }
+.onboarding-steps ol { margin: 16px 0; padding-left: 24px; }
+.onboarding-steps li { padding-left: 4px; margin: 0 0 18px; }
+.onboarding-steps li::marker { color: var(--accent); font-weight: 700; }
+.onboarding-steps h3 { margin: 0 0 6px; font-size: 14px; }
+.onboarding-steps p { margin: 6px 0 10px; line-height: 1.6; }
+.onboarding-steps button { min-height: 44px; max-width: 100%; white-space: normal; }
+.onboarding-steps > .primary { width: 100%; }

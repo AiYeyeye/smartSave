@@ -1,6 +1,7 @@
-import { browserMessage } from '../domain/browser-message';
+import { initializeOnboarding } from '../persistence/onboarding';
+import { browserMessage, onBrowserLanguageChange } from '../domain/browser-message';
 import { validateUrl } from '../domain/preflight';
-import { withTrustedSender } from '../domain/trusted-sender';
+import { extensionDocumentKind, withTrustedSender } from '../domain/trusted-sender';
 import type { ConfirmMutation } from '../schemas/messages';
 import { actionBadges } from './action-badge';
 export { SAVE_BADGE } from './action-badge';
@@ -15,7 +16,7 @@ export interface SavePage {
   title: string;
   url: string;
 }
-/** Brings the extension UI to the user after a capture; the default prefers the native popup and degrades to a badge. */
+/** Brings the extension UI to the user after a capture; the production host is an independent bookmark window. */
 export type OpenSaveUi = (tabId: number) => Promise<void>;
 
 type Session = { page?: SavePage; port?: chrome.runtime.Port; generation: number; uiKey?: string };
@@ -23,31 +24,6 @@ type Sender = Pick<chrome.runtime.MessageSender, 'documentId' | 'tab'>;
 
 async function setBadge(tabId: number, on: boolean): Promise<void> {
   await actionBadges()?.savePending(tabId, on);
-}
-/**
- * Brings the side panel up for the captured tab. sidePanel.open must run inside the shortcut/menu gesture, so it is
- * called synchronously with the tab id; older builds fall back to openPopup, then to a per-tab badge.
- */
-export async function openSaveUi(tabId: number): Promise<void> {
-  const sidePanel = typeof chrome !== 'undefined' ? chrome.sidePanel : undefined;
-  if (sidePanel && typeof sidePanel.open === 'function') {
-    try {
-      await sidePanel.open({ tabId });
-      return;
-    } catch {
-      /* No gesture or window: fall through. */
-    }
-  }
-  const action = typeof chrome !== 'undefined' ? chrome.action : undefined;
-  if (action && typeof action.openPopup === 'function') {
-    try {
-      await action.openPopup();
-      return;
-    } catch {
-      /* No popup declared or no focused window: fall through to the badge. */
-    }
-  }
-  await setBadge(tabId, true);
 }
 const uiKeyOf = (sender: Sender | undefined): string | undefined =>
   sender?.documentId ?? (sender?.tab?.id !== undefined ? `tab:${sender.tab.id}` : undefined);
@@ -69,7 +45,14 @@ async function activeTab(): Promise<chrome.tabs.Tab | undefined> {
   }
 }
 
-export function startSaveEntrypoints(onInvalidated: () => void = () => {}, open: OpenSaveUi = openSaveUi) {
+export function startSaveEntrypoints(
+  onInvalidated: () => void,
+  open: OpenSaveUi,
+  dialog?: {
+    sourceForSender(sender: chrome.runtime.MessageSender): Promise<number | undefined>;
+    finishCapture(sender: chrome.runtime.MessageSender, sourceTabId: number): Promise<void>;
+  },
+) {
   const sessions = new Map<number, Session>();
   const session = (id: number) => {
     let value = sessions.get(id);
@@ -98,6 +81,8 @@ export function startSaveEntrypoints(onInvalidated: () => void = () => {}, open:
   function capture(tab: chrome.tabs.Tab | undefined): SavePage | undefined {
     if (!capturable(tab)) return;
     const value = session(tab.id);
+    if (value.page && value.port && extensionDocumentKind(value.port.sender ?? {}, chrome.runtime.id) === 'save')
+      return value.page;
     value.generation++;
     onInvalidated();
     value.page = { tabId: tab.id, token: crypto.randomUUID(), url: tab.url, title: tab.title ?? tab.url };
@@ -121,7 +106,11 @@ export function startSaveEntrypoints(onInvalidated: () => void = () => {}, open:
   chrome.contextMenus.onClicked.addListener((info, tab) => {
     if (info.menuItemId === 'zhilan-save-page') activate(tab);
   });
-  chrome.runtime.onInstalled.addListener(() => {
+  chrome.runtime.onInstalled.addListener(details => {
+    if (details?.reason === 'install')
+      void initializeOnboarding(details.reason, chrome.storage.local).catch(() => {
+        /* The sidebar guide remains available from settings if local persistence fails. */
+      });
     chrome.contextMenus.create(
       {
         id: 'zhilan-save-page',
@@ -134,11 +123,14 @@ export function startSaveEntrypoints(onInvalidated: () => void = () => {}, open:
       },
     );
   });
-  // Menus survive worker/browser restarts. Refresh only the existing label when Chrome's language changes.
-  chrome.contextMenus.update?.('zhilan-save-page', { title: browserMessage('savePage') }, () => {
-    // On first install the menu may not exist yet; onInstalled creates it with the same localized title.
-    void chrome.runtime.lastError;
-  });
+  // Menus survive worker/browser restarts; update their label without replacing their handlers.
+  const refreshLanguage = () =>
+    chrome.contextMenus.update?.('zhilan-save-page', { title: browserMessage('savePage') }, () => {
+      // On first install the menu may not exist yet; onInstalled creates it with the same localized title.
+      void chrome.runtime.lastError;
+    });
+  refreshLanguage();
+  onBrowserLanguageChange(refreshLanguage);
   chrome.tabs.onUpdated.addListener((tabId, change) => {
     if (change.status !== 'loading' && change.url === undefined) return;
     invalidateTab(tabId);
@@ -177,6 +169,19 @@ export function startSaveEntrypoints(onInvalidated: () => void = () => {}, open:
       void setBadge(tabId, false);
     }
     async function bindActive(captureNow: boolean) {
+      if (extensionDocumentKind(port.sender!, chrome.runtime.id) === 'save') {
+        const tabId = await dialog?.sourceForSender(port.sender!);
+        if (!alive) return;
+        if (tabId !== undefined) {
+          if (sessions.get(tabId)?.page) attach(tabId);
+          else if (dialog) {
+            await dialog.finishCapture(port.sender!, tabId);
+            await bindActive(false);
+          }
+        }
+        // Never recapture from the now-focused popup or revive an expired capture after worker restart.
+        return;
+      }
       const tab = await activeTab();
       if (!alive) return;
       if (!tab) {
@@ -206,7 +211,11 @@ export function startSaveEntrypoints(onInvalidated: () => void = () => {}, open:
             return;
           }
           if (!owned()) return;
-          if (raw.type === 'close') invalidateTab(owner!);
+          if (raw.type === 'close') {
+            invalidateTab(owner!);
+            if (dialog && extensionDocumentKind(port.sender!, chrome.runtime.id) === 'save')
+              void dialog.finishCapture(port.sender!, owner!).then(() => bindActive(false));
+          }
         },
         () => port.disconnect(),
       );

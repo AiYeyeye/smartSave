@@ -1,5 +1,6 @@
 import type { BookmarkSource } from '../adapters/bookmarks-read';
 import type { TreeSnapshot, TreeState } from '../domain/node-reference';
+import { validCollectionTime } from '../domain/bookmark-recency';
 
 type Waiter = { resolve: (snapshot: TreeSnapshot) => void; reject: (error: Error) => void };
 export class TreeProjection {
@@ -92,6 +93,7 @@ export class TreeProjection {
             index: node.index ?? index,
             title: node.title,
             url: node.url,
+            ...(validCollectionTime(node.dateAdded) ? { dateAdded: node.dateAdded } : {}),
             childrenIds: node.children?.map(child => child.id) ?? [],
             readOnly,
             childrenWritable:

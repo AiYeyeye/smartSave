@@ -3,7 +3,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Search, X } from 'lucide-react';
 import type { ApiMode, ConnectedService, ModelMeta } from './mock-data';
 import { API_MODE_OPTIONS } from '../../domain/ai-providers';
-import { DEFAULT_MAX_OUTPUT_TOKENS, maxOutputTokensSchema } from '../../domain/model-route';
+import { maxOutputTokensSchema, REASONING_EFFORTS, type ReasoningEffort } from '../../domain/model-route';
+import { reasoningEffortOf } from '../../domain/model-thinking';
 import { discoverModels, modelsToCatalog, requestHostPermission, testConnection } from '../../adapters/ai-connection';
 import type { SettingsStore } from '../../persistence/settings';
 import { Avatar } from './Avatar';
@@ -22,9 +23,16 @@ type Draft = {
   enabled: string[];
   timeoutMs: number;
   streaming: boolean;
-  fastMode: boolean;
+  reasoningEffort: ReasoningEffort;
   maxOutputTokens: string;
 };
+const EFFORT_LABELS = {
+  low: '低（推荐）',
+  none: '关闭思考',
+  medium: '中等',
+  high: '高（更慢）',
+  default: '模型默认',
+} as const satisfies Record<ReasoningEffort, string>;
 
 export function EditServiceOverlay({
   service,
@@ -55,12 +63,13 @@ export function EditServiceOverlay({
     enabled: [...service.enabled],
     timeoutMs: service.timeoutMs ?? 60000,
     streaming: service.streaming ?? true,
-    fastMode: service.fastMode ?? true,
-    maxOutputTokens: String(service.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS),
+    reasoningEffort: reasoningEffortOf(service),
+    maxOutputTokens: service.maxOutputTokens === undefined ? '' : String(service.maxOutputTokens),
   }));
   const [keyValue, setKeyValue] = useState(initialKey);
-  const outputLimitValid = maxOutputTokensSchema.safeParse(Number(draft.maxOutputTokens)).success;
-  const outputLimit = Number(draft.maxOutputTokens);
+  const outputLimitValid =
+    !draft.maxOutputTokens.trim() || maxOutputTokensSchema.safeParse(Number(draft.maxOutputTokens)).success;
+  const outputLimit = draft.maxOutputTokens.trim() ? Number(draft.maxOutputTokens) : undefined;
   const [remember, setRemember] = useState(Boolean(initialKey));
   const [catalogQ, setCatalogQ] = useState('');
   const [addedQ, setAddedQ] = useState('');
@@ -146,7 +155,9 @@ export function EditServiceOverlay({
           enabled: draft.enabled,
           timeoutMs: draft.timeoutMs,
           streaming: draft.streaming,
-          fastMode: draft.fastMode,
+          // The effort replaces the old fast-mode switch.
+          fastMode: undefined,
+          reasoningEffort: draft.reasoningEffort,
           maxOutputTokens: outputLimit,
           status: service.status,
         },
@@ -203,7 +214,7 @@ export function EditServiceOverlay({
         return {
           ...d,
           catalog: [...catalog, ...custom],
-          enabled: enabled.length ? enabled : catalog.slice(0, 3).map(m => m.id),
+          enabled,
         };
       });
       toast(
@@ -248,7 +259,7 @@ export function EditServiceOverlay({
         vendorId: service.vendorId,
         timeoutMs: draft.timeoutMs,
         streaming: draft.streaming,
-        fastMode: draft.fastMode,
+        reasoningEffort: draft.reasoningEffort,
         maxOutputTokens: outputLimit,
         model,
       };
@@ -356,9 +367,6 @@ export function EditServiceOverlay({
             </div>
             <div className="ai-svc-field">
               <label htmlFor="ai-edit-timeout">{t('请求超时（毫秒）')}</label>
-              <small>
-                {t('流式响应按连续无事件或心跳的时间计时；持续收到数据会继续等待。非流式响应按总时间计时。')}
-              </small>
               <input
                 id="ai-edit-timeout"
                 type="number"
@@ -379,11 +387,15 @@ export function EditServiceOverlay({
                   step={1}
                   value={draft.maxOutputTokens}
                   aria-invalid={!outputLimitValid}
-                  aria-describedby="ai-edit-output-limit-help"
+                  title={t(
+                    '留空使用服务默认上限；Anthropic 使用兼容上限。自定义值须在模型支持范围内，思考可能占用输出额度。',
+                  )}
                   onChange={e => setDraft(d => ({ ...d, maxOutputTokens: e.target.value }))}
                 />
-                <p id="ai-edit-output-limit-help" className="hint">
-                  {t('默认 128,000，包含推理和正文。请填写所选模型支持的输出额度。')}
+                <p>
+                  {t(
+                    '留空使用服务默认上限；Anthropic 使用兼容上限。自定义值须在模型支持范围内，思考可能占用输出额度。',
+                  )}
                 </p>
                 {!outputLimitValid && <p role="alert">{t('输出上限请输入大于或等于 1 的有效整数。')}</p>}
               </div>
@@ -409,7 +421,6 @@ export function EditServiceOverlay({
             <label className="ai-svc-toggle-row">
               <span>
                 <strong>{t('流式响应')}</strong>
-                <small>{t('使用所选协议的原生流式接口；关闭后使用 JSON 响应。')}</small>
               </span>
               <span className="switch">
                 <input
@@ -424,31 +435,30 @@ export function EditServiceOverlay({
             <label className="ai-svc-toggle-row">
               <span>
                 <strong>{t('记住密钥')}</strong>
-                <small>{t('后台自动归类收藏需要它；保存在本机扩展存储，不上传。')}</small>
               </span>
               <span className="switch">
                 <input type="checkbox" role="switch" checked={remember} onChange={e => setRemember(e.target.checked)} />
                 <span />
               </span>
             </label>
-            <label className="ai-svc-toggle-row">
-              <span>
-                <strong>{t('优先快速响应')}</strong>
-                <small>{t('对已支持的模型关闭或降低思考量；未知模型保持原行为。')}</small>
-              </span>
-              <span className="switch">
-                <input
-                  type="checkbox"
-                  role="switch"
-                  checked={draft.fastMode}
-                  onChange={e => {
-                    invalidate();
-                    setDraft(d => ({ ...d, fastMode: e.target.checked }));
-                  }}
-                />
-                <span />
-              </span>
-            </label>
+            <div className="ai-svc-field">
+              <label htmlFor="ai-edit-reasoning">{t('思考强度')}</label>
+              <select
+                id="ai-edit-reasoning"
+                value={draft.reasoningEffort}
+                title={t('推理模型想得越多越慢，思考内容也计入输出上限。不支持的模型会自动忽略。')}
+                onChange={e => {
+                  invalidate();
+                  setDraft(d => ({ ...d, reasoningEffort: e.target.value as ReasoningEffort }));
+                }}
+              >
+                {REASONING_EFFORTS.map(effort => (
+                  <option key={effort} value={effort}>
+                    {t(EFFORT_LABELS[effort])}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
           <div className="ai-svc-models-split">
             <div className="ai-svc-models-pane">

@@ -17,7 +17,7 @@ parser.add_argument('--browser', default=os.environ.get('ZHILAN_BROWSER_EXECUTAB
 parser.add_argument('--language', choices=['zh-CN', 'en'], default='en')
 args = parser.parse_args()
 cases = [
-    ('save', 'onboarding-trial.py', ['--keywords']),
+    ('save', 'onboarding.py', ['--keywords']),
     ('organize', 'organize-background.py', []),
     ('undo', 'suspected-duplicates.py', []),
 ]

@@ -54,7 +54,7 @@ it('legacy settings test uses unsaved draft without requiring a real tree or cha
   const user = userEvent.setup();
   await waitFor(() => expect(view.getByLabelText('模型名称')).toHaveValue('saved'));
   expect(view.getByLabelText('流式响应')).not.toBeChecked();
-  expect(view.getByLabelText('最大输出 tokens')).toHaveValue(128000);
+  expect(view.getByLabelText('最大输出 tokens')).toHaveValue(null);
   fireEvent.change(view.getByLabelText('最大输出 tokens'), { target: { value: '64000' } });
   await user.clear(view.getByLabelText('模型名称'));
   await user.type(view.getByLabelText('模型名称'), 'unsaved');
@@ -157,8 +157,8 @@ it('preset changes are draft-only, clear credentials, and retain custom protocol
   expect(view.getByLabelText('API Key')).toHaveValue('');
   expect(view.getByRole('checkbox', { name: /明确记住/ })).not.toBeChecked();
   // Advanced fields remain accessible and filled by the vendor preset.
-  expect(view.getByLabelText('服务基础地址')).toHaveValue('https://api.deepseek.com');
-  expect(view.getByLabelText('模型名称')).toHaveValue('deepseek-chat');
+  expect(view.getByLabelText('服务基础地址')).toHaveValue('https://api.deepseek.com/v1');
+  expect(view.getByLabelText('模型名称')).toHaveValue('deepseek-flash');
   await user.selectOptions(view.getByLabelText('模型'), '');
   await user.clear(view.getByLabelText('模型名称'));
   await user.type(view.getByLabelText('模型名称'), 'custom-id');

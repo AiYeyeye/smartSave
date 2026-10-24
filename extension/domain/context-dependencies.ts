@@ -35,7 +35,10 @@ function descends(nodes: Map<string, Node>, node: Node, rootId: string): boolean
 export function dependencyIds(tree: TreeSnapshot, request: AiRequest): string[] {
   const ids = new Set<string>();
   switch (request.task) {
+    case 'preference-summary':
     case 'search-expand':
+    case 'history-query':
+    case 'history-rank':
       // Query-only expansion reads no bookmark metadata; route/privacy/installation still bind the call.
       break;
     case 'save':
@@ -43,9 +46,14 @@ export function dependencyIds(tree: TreeSnapshot, request: AiRequest): string[] 
       request.folderIds.forEach(id => ids.add(id));
       if (request.item.source === 'bookmark') ids.add(request.item.id);
       break;
+    case 'rename':
+    case 'search-batch':
+    case 'search-plan':
     case 'search': {
       request.itemIds.forEach(id => ids.add(id));
       request.folderIds.forEach(id => ids.add(id));
+      if ((request.task === 'search-plan' || request.task === 'search-batch') && request.folderScope)
+        ids.add(request.folderScope.nativeId);
       // Folder paths are part of the semantic search input too.
       const nodes = new Map(tree.nodes.map(node => [node.ref.nativeId, node]));
       for (const id of [...ids]) {
@@ -64,7 +72,7 @@ export function dependencyIds(tree: TreeSnapshot, request: AiRequest): string[] 
       const nodes = new Map(tree.nodes.map(n => [n.ref.nativeId, n]));
       // Staged runs only depend on what they send: the folder taxonomy, plus the batch's own bookmarks. A bookmark
       // saved or moved elsewhere in the scope meanwhile must not void a long model call or a plan under review.
-      const items = new Set(request.stage === 'bookmarks' ? request.itemIds : []);
+      const items = new Set(request.stage === 'bookmarks' || request.stage === 'analysis' ? request.itemIds : []);
       for (const node of tree.nodes)
         if (
           descends(nodes, node, request.rootId) &&
@@ -82,7 +90,14 @@ export function dependencyIds(tree: TreeSnapshot, request: AiRequest): string[] 
 /** Deterministic canonical JSON of the dependency projection; unrelated nodes never change it, deleted dependencies do. */
 export function dependencyDigest(tree: TreeSnapshot, request: AiRequest): string {
   const nodes = new Map(tree.nodes.map(n => [n.ref.nativeId, n]));
-  return JSON.stringify(dependencyIds(tree, request).map(id => project(id, nodes.get(id))));
+  return JSON.stringify(
+    dependencyIds(tree, request).map(id => ({
+      ...project(id, nodes.get(id)),
+      ...((request.task === 'search-batch' || request.task === 'search-plan') && nodes.get(id)?.ref.kind === 'bookmark'
+        ? { dateAdded: nodes.get(id)?.dateAdded }
+        : {}),
+    })),
+  );
 }
 /** Non-secret settings that shape a model call; the key is compared separately and never serialized. */
 export function settingsIdentity(context: { config?: ModelConfig; privacy: AiPrivacy }): string {

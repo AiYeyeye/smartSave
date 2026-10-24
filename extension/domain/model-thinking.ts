@@ -1,4 +1,5 @@
-import type { ModelConfig } from './model-route';
+import { DEFAULT_REASONING_EFFORT, type ModelConfig, type ReasoningEffort } from './model-route';
+import { officialModelProvider } from './model-provider';
 
 const openaiEffort = (adapter: ModelConfig['adapter'], effort: string) => ({
   key: `openai-${effort}`,
@@ -9,13 +10,21 @@ const openaiEffort = (adapter: ModelConfig['adapter'], effort: string) => ({
 /** OpenAI reasoning families, also when a gateway serves them under a vendor prefix (e.g. openai/gpt-5.2). */
 const OPENAI_REASONING_MODEL = /^(?:[\w.-]+\/)*(?:gpt-5|o[134])(?:[.-]|$)/i;
 
+/** The service's chosen effort; older records only had the fast-mode switch (off = leave the model's default). */
+export function reasoningEffortOf(config: Pick<ModelConfig, 'reasoningEffort' | 'fastMode'>): ReasoningEffort {
+  return config.reasoningEffort ?? (config.fastMode === false ? 'default' : DEFAULT_REASONING_EFFORT);
+}
+
 /**
- * Verified provider/model capabilities first. Other OpenAI-protocol endpoints serving an OpenAI reasoning model get a
- * low effort: bookmark classification needs little thinking, and its tokens count against the output limit. A gateway
- * that rejects the field is replayed once without it and remembered for a day (rejectsThinkingParameter).
+ * The user's thinking effort, translated per provider. OpenAI reasoning models (gpt-5*, o1/o3/o4, also behind
+ * gateways) take it directly; Gemini, GLM and DeepSeek only have verified "think less" controls, used for none/low.
+ * 'default' sends nothing. A gateway that rejects the field is replayed once without it and remembered for a day
+ * (rejectsThinkingParameter). Thinking tokens count against the output limit, so low is the default.
  */
 export function modelThinkingPlan(config: ModelConfig) {
-  if (config.fastMode === false) return undefined;
+  const effort = reasoningEffortOf(config);
+  if (effort === 'default') return undefined;
+  const lighter = effort === 'none' || effort === 'low';
   let host: string;
   try {
     host = new URL(config.baseUrl).hostname;
@@ -23,17 +32,30 @@ export function modelThinkingPlan(config: ModelConfig) {
     return undefined;
   }
   const openai = config.adapter === 'openai-compatible' || config.adapter === 'openai-responses';
-  if (host === 'api.openai.com' && openai) {
-    const effort =
-      config.model === 'o3-mini'
-        ? 'low'
-        : ['gpt-5', 'gpt-5-mini', 'gpt-5-nano'].includes(config.model)
-          ? 'minimal'
-          : config.model === 'gpt-5.1'
-            ? 'none'
-            : undefined;
-    if (effort) return openaiEffort(config.adapter, effort);
+  if (openai && officialModelProvider(config.baseUrl) === 'minimax' && config.model === 'MiniMax-M3.1-Flash-Preview') {
+    // This model always reasons; "none" is rejected. Use the lowest documented effort instead.
+    const value = effort === 'none' ? 'low' : effort;
+    return {
+      key: `minimax-${value}`,
+      fields: ['reasoning_effort', 'reasoning'],
+      top: config.adapter === 'openai-responses' ? { reasoning: { effort: value } } : { reasoning_effort: value },
+      generation: {},
+    };
   }
+  if (openai && OPENAI_REASONING_MODEL.test(config.model)) {
+    const bare = config.model.replace(/^(?:[\w.-]+\/)*/, '');
+    // "none" exists from gpt-5.1; gpt-5 (mini/nano) bottom out at minimal and the o-series at low.
+    const value =
+      effort !== 'none'
+        ? effort
+        : /^gpt-5(?:-(?:mini|nano))?$/i.test(bare)
+          ? 'minimal'
+          : /^o[134]/i.test(bare)
+            ? 'low'
+            : 'none';
+    return openaiEffort(config.adapter, value);
+  }
+  if (!lighter) return undefined;
   if (host === 'generativelanguage.googleapis.com' && config.adapter === 'google-generative-ai') {
     const model = config.model.replace(/^models\//, '');
     const thinkingConfig =
@@ -77,7 +99,6 @@ export function modelThinkingPlan(config: ModelConfig) {
       generation: {},
     };
   }
-  if (openai && OPENAI_REASONING_MODEL.test(config.model)) return openaiEffort(config.adapter, 'low');
   return undefined;
 }
 

@@ -125,10 +125,10 @@ it('language switching retains selection, an edited title and deletion confirmat
   fireEvent.click(screen.getByRole('button', { name: '取消' }));
   fireEvent.contextMenu(bookmark);
   fireEvent.click(screen.getByRole('menuitem', { name: '删除' }));
-  const dialog = screen.getByRole('dialog', { name: '删除影响确认' });
+  const dialog = screen.getByRole('dialog', { name: '是否确认删除？' });
   fireEvent.change(screen.getByLabelText('语言'), { target: { value: 'en' } });
-  expect(screen.getByRole('dialog', { name: 'Review deletion' })).toBe(dialog);
-  expect(dialog).toHaveTextContent('Delete “Book”');
+  expect(screen.getByRole('dialog', { name: 'Confirm deletion?' })).toBe(dialog);
+  expect(dialog).toHaveTextContent(/^Confirm deletion\?CancelConfirm delete$/);
   fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   expect(send).not.toHaveBeenCalled();
@@ -173,12 +173,20 @@ it('popup: brand, always-on search, pinned tool dock; long workbenches open in t
 it('options page: one side navigation hosts every workbench and settings page, routed by hash', async () => {
   chromeStub();
   const user = userEvent.setup();
-  location.hash = '#organize';
+  location.hash = '#rename';
   const view = render(createElement(App, { page: 'options' }));
   const nav = screen.getByRole('navigation', { name: '设置导航' });
+  expect(screen.getByRole('heading', { name: '书签目录', level: 1 })).toBeVisible();
+  expect(within(nav).queryByRole('button', { name: 'AI 书签改名', hidden: true })).toBeNull();
+  expect(screen.queryByRole('heading', { name: 'AI 书签改名', hidden: true })).toBeNull();
+  await user.click(within(nav).getByRole('button', { name: 'AI 整理' }));
   expect(screen.getByRole('region', { name: '整理工作台' })).toBeVisible();
   expect(screen.getByRole('heading', { name: 'AI 整理', level: 1 })).toBeVisible();
   expect(within(nav).getByRole('button', { name: 'AI 整理' })).toHaveAttribute('aria-current', 'page');
+  location.hash = '#rename';
+  fireEvent(window, new HashChangeEvent('hashchange'));
+  expect(screen.getByRole('heading', { name: '书签目录', level: 1 })).toBeVisible();
+  expect(screen.queryByRole('heading', { name: 'AI 书签改名', hidden: true })).toBeNull();
   expect(screen.queryByRole('button', { name: '收藏当前页面' })).toBeNull();
   await user.click(within(nav).getByRole('button', { name: '导入书签' }));
   expect(screen.getByRole('region', { name: '导入工作台' })).toBeVisible();
@@ -199,7 +207,7 @@ it('options page: one side navigation hosts every workbench and settings page, r
   expect(screen.getByRole('heading', { name: '导出与备份', level: 1 })).toBeVisible();
 });
 
-it('settings pages: privacy, records & debug (off by default) and the legacy model form stay reachable', async () => {
+it('settings pages: privacy, records & debug (off by default) are reachable and the old model form is gone', async () => {
   const user = userEvent.setup();
   render(createElement(App, { page: 'options' }));
   const nav = screen.getByRole('navigation', { name: '设置导航' });
@@ -210,9 +218,7 @@ it('settings pages: privacy, records & debug (off by default) and the legacy mod
   await user.click(within(nav).getByRole('button', { name: '收藏记录与调试' }));
   expect(screen.getByRole('switch', { name: '开启 Debug 日志' })).not.toBeChecked();
   expect(screen.getByRole('region', { name: '收藏记录' })).toBeVisible();
-  await user.click(screen.getByText('旧版单连接模型配置（兼容）'));
-  await user.click(screen.getByText('高级：协议、地址与超时'));
-  expect(screen.getByLabelText('接口协议')).toBeVisible();
+  expect(screen.queryByText('旧版单连接模型配置（兼容）')).toBeNull();
   await user.click(within(nav).getByRole('button', { name: '导出与备份' }));
   expect(screen.getByRole('region', { name: '导出设置' })).toBeVisible();
   expect(screen.getByRole('region', { name: '备份与恢复' })).not.toBeVisible();
@@ -376,7 +382,8 @@ it('move-to-top submits one move in the same parent; already-first and disconnec
   await user.click(screen.getByRole('menuitem', { name: '置顶' }));
   await waitFor(() => expect(sent).toHaveLength(1));
   expect(sent[0]!.command).toMatchObject({ type: 'move', target: book.ref, parent: second.nodes[1]!.ref, index: 0 });
-  expect(await screen.findByText(/已完成 ·/)).toBeVisible();
+  await waitFor(() => expect(screen.queryByText('正在移动书签…')).toBeNull());
+  expect(screen.queryByText(/请求编号|已完成 ·/)).toBeNull();
   view.rerender(createElement(TreeRows, { snapshot: second, connectionReady: false }));
   await user.click(screen.getByRole('button', { name: 'Book 操作' }));
   for (const name of ['置顶', '编辑', '删除']) expect(screen.getByRole('menuitem', { name })).toBeDisabled();
@@ -559,6 +566,6 @@ it('bookmark rows use the browser favicon URL and fall back locally on error', a
   expect(image).toHaveAttribute('src', 'chrome-extension://i/_favicon/?pageUrl=https%3A%2F%2Fexample.test%2F&size=32');
   expect(image).toHaveAttribute('alt', '');
   fireEvent.error(image);
-  expect(container.querySelector('img.bookmark-favicon')).toBeNull();
+  await waitFor(() => expect(container.querySelector('img.bookmark-favicon')).toBeNull());
   expect(container.querySelector('.bookmark-label svg')).not.toBeNull();
 });

@@ -20,28 +20,31 @@ export function PopupSettings({
   onOpenRoute,
   onOpenAiServices,
   onAssignFeature,
-  onTrial,
+  onOnboarding,
 }: {
   services: ConnectedService[];
   features: FeatureAssignment[];
   onOpenRoute: (route: string) => void;
   onOpenAiServices: (tab: AiServicesTab) => void;
   onAssignFeature: (featureId: string, connId: string, modelId: string) => void;
-  onTrial?: () => void;
+  onOnboarding?: () => void;
 }) {
   const { t, message } = useI18n();
   return (
     <div className="popup-settings">
+      <section className="popup-block" aria-label={t('语言设置')}>
+        <LanguagePicker />
+        <p className="hint">{t('默认简体中文；切换后立即应用到全部智栏页面。')}</p>
+      </section>
       <section className="popup-block" aria-label={t('外观')}>
         <h2>{t('外观')}</h2>
         <ModeSwitch />
         <AccentPicker compact />
-        <LanguagePicker />
       </section>
       <AiSidebarSummary services={services} features={features} onOpen={onOpenAiServices} onAssign={onAssignFeature} />
-      {onTrial && (
-        <button type="button" onClick={onTrial}>
-          {t('试分类当前网页')}
+      {onOnboarding && (
+        <button type="button" onClick={onOnboarding}>
+          {t('新手操作步骤')}
         </button>
       )}
       <section className="popup-block" aria-label={t('完整设置')}>

@@ -41,6 +41,22 @@ export const obj = (value: unknown): Json =>
 export const arr = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
 export const str = (value: unknown): string | undefined => (typeof value === 'string' ? value : undefined);
 
+/** Recognize the specific JSON-mode prerequisite without exposing remote text to callers. */
+export function isJsonModeInputError(message: unknown): boolean {
+  return (
+    typeof message === 'string' &&
+    /\bmessages\s+must\s+contain\s+the\s+word\s+['"]json['"]/i.test(message) &&
+    /\bjson_object\b/i.test(message)
+  );
+}
+
+export function providerFailureCode(error: unknown): string {
+  const record = obj(error);
+  return isJsonModeInputError(record.message)
+    ? 'json-mode-input-required'
+    : (str(record.code) ?? str(record.type) ?? 'provider-error');
+}
+
 /** OpenAI-style content: a string, or an array of { type, text } parts (some proxies), or null. */
 function contentText(content: unknown, accept: (type: string | undefined) => boolean): string {
   if (typeof content === 'string') return content;
@@ -195,7 +211,7 @@ export function readModelReply(adapter: ModelConfig['adapter'], raw: unknown): M
     return {
       text: '',
       truncated: false,
-      failed: str(obj(record.error).code) ?? str(obj(record.error).type) ?? 'provider-error',
+      failed: providerFailureCode(record.error),
     };
   switch (adapter) {
     case 'openai-responses':

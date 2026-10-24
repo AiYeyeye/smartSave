@@ -205,9 +205,6 @@ export function RecoveryWorkbench({
   return (
     <section ref={root} className="surface" aria-label={t('备份与恢复')} aria-busy={busy}>
       <h2>{t('备份与恢复')}</h2>
-      <p className="hint">
-        {t('收藏、整理与导入的操作记录保存在这里。撤销前先预览影响；结果未知的操作不会自动重试。')}
-      </p>
       <p className="hint">{recoveryStatusText(language, capacity)}</p>
       <StateMessage kind={error ? 'error' : busy ? 'loading' : 'empty'} title={t('恢复状态')}>
         {typeof status === 'string'
@@ -234,13 +231,7 @@ export function RecoveryWorkbench({
         </button>
       </div>
       <section className="recovery-group" aria-label={t('撤销最近操作')}>
-        <h3>{t('撤销最近操作')}</h3>
-        <p className="hint">
-          {t(
-            '最近 {count} 次已完成的收藏、编辑、移动、删除与整理批次。撤销只回退有回执的步骤；之后被改动过的项目会被跳过并保留现状。',
-            { count: UNDO_LIMIT },
-          )}
-        </p>
+        <h3 title={t('撤销只回退有回执的步骤；之后被改动过的项目会跳过并保留现状。')}>{t('撤销最近操作')}</h3>
         {undoable.length ? (
           <ul className="recovery-list">
             {undoable.map(record => (
@@ -259,12 +250,7 @@ export function RecoveryWorkbench({
         )}
       </section>
       <section className="recovery-group" aria-label={t('需要你处理')}>
-        <h3>{t('需要你处理')}</h3>
-        <p className="hint">
-          {t(
-            '这些操作没有拿到完整回执，扩展不知道浏览器里最终写成了什么。先在书签管理器核对，再决定核对、停止或隔离；隔离只是登记，不代表完成或失败。',
-          )}
-        </p>
+        <h3 title={t('这些操作没有完整回执，请先在书签管理器核对再处理。')}>{t('需要你处理')}</h3>
         {groups.attention.length ? (
           <ul className="recovery-list">
             {groups.attention.map(record => (
@@ -362,11 +348,6 @@ export function RecoveryWorkbench({
       <details className="recovery-advanced">
         <summary>{t('高级：合并恢复、副本恢复、清理快照与完整记录')}</summary>
         <section aria-label={t('完整恢复记录')}>
-          <p className="hint">
-            {t(
-              '合并恢复只补回当前缺失且可证明位置的内容；新副本可能产生重复，不会认领原身份；清理快照后本批次不能再撤销或恢复。',
-            )}
-          </p>
           {everything.length ? (
             <ul className="recovery-list">
               {everything.map(record => (
@@ -426,7 +407,6 @@ export function RecoveryWorkbench({
         {copySource && (
           <section aria-label={t('副本恢复选择')}>
             <h3>{t('恢复为新副本（可能重复）')}</h3>
-            <p>{t('不证明这些节点缺失；不会按路径、标题或网址认领现有节点。源备份只读保留。')}</p>
             <label className="field">
               {t('当前目标目录')}
               <Select value={destination} onChange={e => setDestination(e.target.value)}>

@@ -330,19 +330,9 @@ export function ExportSettings({ visible }: { visible: boolean }) {
         </p>
       )}
       <details className="workflow-help">
-        <summary>{t('导出内容说明')}</summary>
-        <p>
-          {t('JSON、HTML、Markdown 保留原始 URL 和空目录，不包含模型、密钥、规则或日志。导出文件不是完整恢复备份。')}
-        </p>
-      </details>
-      <details className="workflow-help">
         <summary>{t('自动更新 JSON 文件（可选）')}</summary>
         <h3>{t('自动 JSON 专用文件')}</h3>
-        <p>
-          {t(
-            '首次授权后会覆盖此专用输出文件及外部修改，不反向同步，不逐次确认，不自动换路径。后台是唯一自动写入者；浏览器关闭时不运行。文件关闭成功且持久回执匹配后才记录成功；中断可能已更新文件但没有成功回执。',
-          )}
-        </p>
+        <p className="organize-notice">{t('提醒：授权后会持续覆盖这个文件；浏览器关闭时不会更新。')}</p>
         <label className="check">
           <input type="checkbox" checked={consent} disabled={busy} onChange={e => setConsent(e.target.checked)} />
           {t('我同意专用输出覆盖规则')}
@@ -373,11 +363,7 @@ export function ExportSettings({ visible }: { visible: boolean }) {
           })}
         </p>
         {record && ['paused', 'needs-permission', 'scope-invalid'].includes(record.status) && (
-          <p role="alert">
-            {t(
-              '输出已暂停。权限或文件错误请明确重新授权；范围失效请清空并重新选择目录，再选择文件启用。不会自动重试或回退全树。',
-            )}
-          </p>
+          <p role="alert">{t('输出已暂停：请重新授权文件，或重新选择导出范围。')}</p>
         )}
         <div className="actions">
           <button disabled={busy || !supported || !consent || !!scopeError} onClick={pick}>

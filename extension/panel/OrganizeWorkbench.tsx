@@ -21,6 +21,7 @@ import { useI18n } from '../ui/i18n';
 import { organizeActionNames as actionNames } from './organize-action-text';
 import { OrganizeReviewStep } from './OrganizeReviewStep';
 import { OrganizeConfirmation } from './OrganizeConfirmation';
+import { OrganizeInteractiveReview } from './OrganizeInteractiveReview';
 type CreateController = (emit: (state: OrganizeState) => void) => OrganizeWorkbenchOwner;
 export function OrganizeWorkbench({
   visible,
@@ -184,6 +185,7 @@ export function OrganizeWorkbench({
           allowRename,
           levels,
           staged: true,
+          contentFirst: true,
           batchSize,
           protectedFolderIds: latest.protectedFolderIds,
           rejectedSignatures: latest.rejected.map(r => r.signature),
@@ -265,10 +267,11 @@ export function OrganizeWorkbench({
     }
     return false;
   }, [currentTree, state.scopeId, memory.protectedFolderIds]);
-  const currentPaths = useMemo(() => pathLabels(currentTree), [currentTree]);
-  const proposalPaths = useMemo(() => pathLabels(proposal?.tree), [proposal?.tree]);
-  const projectedPaths = useMemo(() => pathLabels(review?.tree), [review?.tree]);
-  const folderReview = state.pipeline?.stage === 'folders';
+  const rootLabel = t('根目录');
+  const currentPaths = useMemo(() => pathLabels(currentTree, rootLabel), [currentTree, rootLabel]);
+  const proposalPaths = useMemo(() => pathLabels(proposal?.tree, rootLabel), [proposal?.tree, rootLabel]);
+  const projectedPaths = useMemo(() => pathLabels(review?.tree, rootLabel), [review?.tree, rootLabel]);
+  const folderReview = state.pipeline?.stage === 'folders' && !state.pipeline.contentPhase;
   const bookmarkMoves = useMemo(() => {
     const nodes = new Map(proposal?.tree.nodes.map(node => [node.ref.nativeId, node]));
     return (
@@ -361,11 +364,19 @@ export function OrganizeWorkbench({
       {state.task && !state.task.connected && <p role="status">{t('正在重新连接整理任务…方案已保存，不会丢失。')}</p>}
       <WorkflowSteps
         labels={
-          method === 'ai'
+          method === 'ai' && state.pipeline && !state.pipeline.contentPhase
             ? [t('选择范围'), t('分类方案'), t('分批书签'), t('确认执行')]
-            : [t('选择范围'), t('查看方案'), t('确认执行')]
+            : [t('选择范围'), t(method === 'ai' ? '生成与完整预览' : '查看方案'), t('确认执行')]
         }
-        current={method === 'ai' ? (step === 3 ? 4 : step === 2 && state.pipeline && !folderReview ? 3 : step) : step}
+        current={
+          method === 'ai' && state.pipeline && !state.pipeline.contentPhase
+            ? step === 3
+              ? 4
+              : step === 2 && !folderReview
+                ? 3
+                : step
+            : step
+        }
       />
       <OrganizeScopeStep
         hidden={step !== 1}
@@ -423,7 +434,7 @@ export function OrganizeWorkbench({
                 : folderReview
                   ? t('先核对文件夹分类')
                   : state.pipeline
-                    ? t('分批查看书签建议')
+                    ? t(state.pipeline.contentPhase ? '生成与完整预览' : '分批查看书签建议')
                     : t('查看并选择建议')}
         </h3>
         <div className="actions" hidden={!!state.result || (!!state.failure && !state.busy)}>
@@ -434,7 +445,7 @@ export function OrganizeWorkbench({
               owner.current?.cancel();
             }}
           >
-            {state.busy && state.pipeline?.stage === 'bookmarks'
+            {state.busy && (state.pipeline?.stage === 'bookmarks' || state.pipeline?.contentPhase)
               ? t('暂停后续批次')
               : state.busy || memoryBusy
                 ? t('停止当前任务')
@@ -449,8 +460,18 @@ export function OrganizeWorkbench({
             setStep(2);
           }}
         />
+        {step === 2 && (
+          <OrganizeInteractiveReview
+            state={state}
+            targets={targetLabels}
+            review={async edit => {
+              if (!owner.current?.reviewContent) throw Error('unavailable');
+              await owner.current.reviewContent(edit);
+            }}
+          />
+        )}
         <OrganizeReviewStep
-          hidden={step !== 2}
+          hidden={step !== 2 || (!!state.pipeline?.contentPhase && !proposal)}
           state={state}
           method={method}
           memory={memory}
@@ -476,6 +497,7 @@ export function OrganizeWorkbench({
             target: (id, value) => owner.current?.target(id, value),
           }}
         />
+
         <OrganizeConfirmation
           state={state}
           step={step}
@@ -503,14 +525,6 @@ export function OrganizeWorkbench({
           }}
         />
       </div>
-      <details className="workflow-help">
-        <summary>{t('整理说明')}</summary>
-        <p>
-          {t(
-            '只整理所选目录。精确重复按原始链接匹配；疑似重复忽略 utm_* 参数、http/https、www 和末尾斜杠， 保留其他参数与片段的差异。所有重复项都由你选择保留或删除，预览后再确认执行。执行失败会停止，已执行的操作可从恢复记录核对。',
-          )}
-        </p>
-      </details>
       <details className="workflow-help" onToggle={e => setRecoveryOpen(e.currentTarget.open)}>
         <summary>{t('恢复与撤销记录')}</summary>
         <RecoveryWorkbench visible={visible && recoveryOpen} />

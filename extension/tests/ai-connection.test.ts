@@ -50,7 +50,7 @@ it('tests draft classification without saving, primary-route comparison or real 
     expect(body.model).toBe('new-model');
     expect(body.stream).toBe(false);
     expect(body.max_output_tokens).toBe(64000);
-    const payload = JSON.parse(body.input);
+    const payload = JSON.parse(body.input[1].content);
     expect(payload.task).toBe('save');
     expect(payload.items).toHaveLength(1);
     expect(payload.folderTree.split('\n')).toHaveLength(2);

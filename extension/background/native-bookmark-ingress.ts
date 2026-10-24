@@ -54,6 +54,10 @@ export type NativeBookmarkIngressOptions = {
   debug?: DebugLog;
   /** Receipts the popup shows (where it went / why AI did not run). Optional for tests. */
   receipts?: SaveReceiptLog;
+  suggestName?: (receiptId: string) => Promise<void>;
+  /** Capture the originating browser window before the settling/model delay. */
+  reviewWindow?: () => Promise<number | undefined>;
+  reviewReady?: (receipt: SaveReceipt, windowId: number) => Promise<void>;
   rules?: Pick<SiteRulesStore, 'load' | 'subscribe'>;
   keywords?: Pick<BookmarkKeywordsStore, 'remember'>;
   /** Toolbar badge hint; never throws. */
@@ -63,6 +67,9 @@ export type NativeBookmarkIngressOptions = {
 };
 
 const DEFAULT_SETTLING_MS = 800;
+/** A hand-made star/Ctrl+D cannot create this many bookmarks this fast; sync and bulk writes do. */
+const BURST_MS = 1000;
+const BURST_COUNT = 4;
 const LOOPBACK = /^(localhost|127\.\d+\.\d+\.\d+|\[::1\])$/i;
 
 /** True when AiServicesStore「智能收藏」has a connection+model assignment. */
@@ -99,6 +106,7 @@ export async function resolveSaveRoute(ai: AiServicesStore): Promise<SaveRoute> 
     timeoutMs: service.timeoutMs ?? 60000,
     ...(service.streaming === undefined ? {} : { streaming: service.streaming }),
     ...(service.fastMode === undefined ? {} : { fastMode: service.fastMode }),
+    ...(service.reasoningEffort === undefined ? {} : { reasoningEffort: service.reasoningEffort }),
     ...(service.maxOutputTokens === undefined ? {} : { maxOutputTokens: service.maxOutputTokens }),
   };
   const key = ai.credential(service.id);
@@ -199,6 +207,9 @@ export function startNativeBookmarkIngress(options: NativeBookmarkIngressOptions
 
   let importing = false;
   const pending = new Map<string, ReturnType<typeof setTimeout>>();
+  // Sync and bulk writes arrive as bursts; their receipts stay reviewable but never take over the toolbar popup.
+  const recent: { id: string; at: number }[] = [];
+  const quiet = new Set<string>();
   let disposed = false;
   const active = new Set<{ id: string; transport?: ModelTransport; invalidated: boolean; cause?: string }>();
   const lifetime = createWorkerTaskLifetime();
@@ -262,12 +273,16 @@ export function startNativeBookmarkIngress(options: NativeBookmarkIngressOptions
     }
     clearPending(id);
     const observedAt = Date.now();
+    while (recent.length && observedAt - recent[0]!.at > BURST_MS) recent.shift();
+    recent.push({ id, at: observedAt });
+    if (recent.length >= BURST_COUNT) for (const item of recent) quiet.add(item.id);
+    const reviewWindow = options.reviewWindow?.().catch(() => undefined);
     debug('observed', { bookmarkId: id, parentId: node.parentId });
     pending.set(
       id,
       setTimeout(() => {
         pending.delete(id);
-        void classify(id, observedAt).catch(error =>
+        void classify(id, observedAt, reviewWindow).catch(error =>
           debug('error', {
             bookmarkId: id,
             reason: error instanceof Error ? error.message : 'unknown',
@@ -287,16 +302,47 @@ export function startNativeBookmarkIngress(options: NativeBookmarkIngressOptions
       }
   };
 
-  async function classify(bookmarkId: string, observedAt = Date.now()): Promise<NativeClassifyResult> {
+  async function classify(
+    bookmarkId: string,
+    observedAt = Date.now(),
+    reviewWindow?: Promise<number | undefined>,
+  ): Promise<NativeClassifyResult> {
     if (disposed) return { status: 'skipped', reason: 'disposed', bookmarkId };
     const release = lifetime.acquire();
+    const review: { receiptId?: string } = {};
     try {
       await ready;
-      const first = await classifyBookmark(bookmarkId, observedAt);
+      const first = await classifyBookmark(bookmarkId, observedAt, undefined, review);
       if (first.status !== 'retry') return first;
-      const second = await classifyBookmark(bookmarkId, observedAt, { receiptId: first.receiptId, attempt: 1 });
+      const second = await classifyBookmark(bookmarkId, observedAt, { receiptId: first.receiptId, attempt: 1 }, review);
       return second.status === 'retry' ? { status: 'failed', reason: 'stale-context', bookmarkId } : second;
     } finally {
+      try {
+        const muted = quiet.delete(bookmarkId);
+        const windowId = await reviewWindow;
+        const receipt = review.receiptId && (await receipts?.latestForBookmark(bookmarkId));
+        if (
+          !disposed &&
+          !muted &&
+          windowId !== undefined &&
+          receipt &&
+          receipt.id === review.receiptId &&
+          !receipt.reviewedAt &&
+          receipt.status !== 'classifying' &&
+          receipt.status !== 'undone' &&
+          receipt.reason !== 'excluded' &&
+          receipt.nameStatus !== 'pending'
+        ) {
+          const tree = await projection.fresh();
+          if (
+            tree.installationId === receipt.installationId &&
+            tree.nodes.some(node => node.ref.nativeId === bookmarkId && node.url === receipt.url)
+          )
+            await options.reviewReady?.(receipt, windowId);
+        }
+      } catch {
+        // A failed window must never change classification results or replay a bookmark write.
+      }
       release();
     }
   }
@@ -305,6 +351,7 @@ export function startNativeBookmarkIngress(options: NativeBookmarkIngressOptions
     bookmarkId: string,
     observedAt: number,
     retry?: { receiptId: string; attempt: number },
+    review: { receiptId?: string } = {},
   ): Promise<ClassifyAttempt> {
     const attempt = retry?.attempt ?? 0;
     if (disposed) return { status: 'skipped', reason: 'disposed', bookmarkId };
@@ -355,6 +402,7 @@ export function startNativeBookmarkIngress(options: NativeBookmarkIngressOptions
           applyMs: applyStartedAt === undefined ? undefined : now - applyStartedAt,
         },
       });
+      review.receiptId = receipt.id;
     };
 
     /** Which input changed while the run was in flight; logged so a stale failure is explainable. */
@@ -472,8 +520,17 @@ export function startNativeBookmarkIngress(options: NativeBookmarkIngressOptions
         await finish(node.parentId === choice.folderId ? 'kept' : 'moved', {
           toId: choice.folderId,
           toPath: folderPath(after, choice.folderId),
+          ...(options.suggestName ? { nameStatus: 'pending' as const } : {}),
         });
         setBadge('done');
+        if (options.suggestName) {
+          await options.suggestName(receipt.id).catch(async () => {
+            await receipts?.patch(receipt.id, { nameStatus: 'failed' }).catch(() => {});
+          });
+          // Missing model configuration can legitimately skip name advice.
+          if ((await receipts?.get(receipt.id).catch(() => undefined))?.nameStatus === 'pending')
+            await receipts?.patch(receipt.id, { nameStatus: 'unchanged' }).catch(() => {});
+        }
         return { status: 'completed', bookmarkId, destinationId: choice.folderId, createdFolderIds: [] };
       } catch (error) {
         const stale = error instanceof Error && error.message === 'stale-context';
@@ -619,6 +676,9 @@ export function startNativeBookmarkIngress(options: NativeBookmarkIngressOptions
       }
 
       const plan = planNativeSaveApply(live, bookmarkId, assignment.folderId, response.output.newFolders);
+      if ('suggestedTitle' in assignment && assignment.suggestedTitle && assignment.suggestedTitle !== node.title)
+        receipt.suggestedTitle = assignment.suggestedTitle;
+      receipt.nameStatus = receipt.suggestedTitle ? 'ready' : 'unchanged';
       const rememberKeywords = () =>
         options.keywords
           ?.remember({

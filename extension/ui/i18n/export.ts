@@ -63,6 +63,8 @@ export const exportEnglish = {
     'JSON, HTML and Markdown preserve original URLs and empty folders. Models, keys, rules and logs are excluded. Exported files are not full recovery backups.',
   '自动更新 JSON 文件（可选）': 'Automatically update a JSON file (optional)',
   '自动 JSON 专用文件': 'Dedicated file for automatic JSON output',
+  '提醒：授权后会持续覆盖这个文件；浏览器关闭时不会更新。':
+    'Note: once authorized, this file is overwritten continuously; it is not updated while the browser is closed.',
   '首次授权后会覆盖此专用输出文件及外部修改，不反向同步，不逐次确认，不自动换路径。后台是唯一自动写入者；浏览器关闭时不运行。文件关闭成功且持久回执匹配后才记录成功；中断可能已更新文件但没有成功回执。':
     'After initial authorization, automatic output overwrites this dedicated file, including external edits. It does not sync changes back, ask before each write or change paths automatically. Only the background worker writes automatically, while the browser is running. Success is recorded only after the file closes successfully and the saved receipt matches. An interruption may leave the file updated without a success receipt.',
   我同意专用输出覆盖规则: 'I agree to the dedicated file overwrite rules',
@@ -73,6 +75,8 @@ export const exportEnglish = {
   '当前输出根：{roots}；排除：{excluded}': 'Current output roots: {roots}; excluded: {excluded}',
   '持久状态：{status}；最近成功：{time}': 'Saved status: {status}; last success: {time}',
   无: 'None',
+  '输出已暂停：请重新授权文件，或重新选择导出范围。':
+    'Output is paused: authorize the file again, or choose the export scope again.',
   '输出已暂停。权限或文件错误请明确重新授权；范围失效请清空并重新选择目录，再选择文件启用。不会自动重试或回退全树。':
     'Output is paused. For permission or file errors, authorize again explicitly. For an invalid scope, clear the selection, choose folders again, then select a file to enable output. There is no automatic retry or whole-tree fallback.',
   '选择专用 JSON 文件': 'Choose dedicated JSON file',

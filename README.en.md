@@ -23,6 +23,7 @@ Saving a page is easy. Finding it months later can take a little more work. Zhil
 | --- | --- |
 | File bookmarks as you save | Click the browser's star and let website rules or your configured AI suggest where it belongs. Correct or undo a misplaced bookmark. |
 | Find pages in your own words | Describe what you remember, or search by title, URL, Chinese pinyin or initials. |
+| Find previously visited pages | Enable optional history search, filter by time, title or URL, or explicitly ask AI to interpret a description. Bookmark a result when you find it. |
 | Organize a collection | Select folders, review the AI's suggestions and choose whether to apply them. Close the page while suggestions are generated and return later. |
 | Review duplicates | Compare duplicate or similar links and choose which ones to keep. |
 | Import, export and recover | Work with common bookmark formats, inspect recent operations and preview undo or recovery. |
@@ -46,22 +47,18 @@ Screenshots use demonstration bookmarks.
 
 ## Get started
 
-You need **Chrome / Edge 116+**, **Node.js 22.12+** and **pnpm 11.7.0**.
+You need **Chrome / Edge 127+**.
 
-```sh
-git clone https://github.com/AiYeyeye/smartSave.git
-cd smartSave
-pnpm --dir extension install --frozen-lockfile
-pnpm --dir extension build
-```
+1. Download **zhilan-0.1.0-candidate.zip** from the [download page](https://github.com/AiYeyeye/smartSave/releases/tag/v0.1.0-preview.20261023) and extract it to a permanent folder.
+2. Open `chrome://extensions` or `edge://extensions` and enable **Developer mode**.
+3. Choose **Load unpacked** and select the extracted folder containing `manifest.json`.
+4. Pin Zhilan to the toolbar and click its icon to open your bookmarks.
 
-1. Open `chrome://extensions` or `edge://extensions` and enable **Developer mode**.
-2. Choose **Load unpacked** and select the project's `extension/dist` folder.
-3. Pin Zhilan to the toolbar and click its icon to open your bookmarks.
+This is a preview build. Installation needs no Node or pnpm. See [installation](docs/guides/install.md) for updates and [development](extension/README.md) to build from source.
 
-You can browse, search and manage bookmarks without connecting AI. For automatic classification and AI search, add an existing model service under **Settings → AI services**, then choose a model for each feature. Try the current-page classification preview first; it does not save or move bookmarks.
+You can browse, search and manage bookmarks without connecting AI. For automatic classification and AI search, add an existing model service under **Settings → AI services**, then choose a model for each feature. After installation, the sidebar shows steps for AI setup, bookmarking, search and organization. Dismiss them when ready; reopen them from Getting started in sidebar settings.
 
-Supported connections include OpenAI-compatible services, OpenAI Responses, Anthropic, Gemini and local services such as Ollama and LM Studio. See [model setup](docs/guides/model-setup.md) for configuration details.
+Supported connections include OpenAI-compatible services, OpenAI Responses, Anthropic, Gemini and local services such as Ollama and LM Studio. See [model setup](docs/guides/model-setup.en.md) for configuration details.
 
 ## Everyday shortcuts
 

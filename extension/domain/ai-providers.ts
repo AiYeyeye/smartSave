@@ -64,7 +64,7 @@ export const SUB_VENDORS: readonly ProviderVendor[] = [
     kind: 'sub',
     adapter: 'anthropic',
     baseUrl: 'https://api.anthropic.com',
-    curatedModels: ['claude-sonnet-4-5', 'claude-opus-4-1', 'claude-haiku-4-5'],
+    curatedModels: ['claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-opus-5-5'],
     oauth: 'blocked',
     oauthNote:
       'Anthropic 自 2026 年 2 月起明确禁止第三方工具使用 Claude Pro/Max 订阅登录。请改用 Anthropic API Key（console.anthropic.com）。',
@@ -175,7 +175,7 @@ export const KEY_VENDORS: readonly ProviderVendor[] = [
     letter: 'A',
     kind: 'api',
     adapter: 'anthropic',
-    curatedModels: ['claude-sonnet-4-5', 'claude-opus-4-1', 'claude-haiku-4-5'],
+    curatedModels: ['claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-opus-5-5'],
   },
   {
     id: 'google-gemini',
@@ -186,7 +186,7 @@ export const KEY_VENDORS: readonly ProviderVendor[] = [
     letter: 'G',
     kind: 'api',
     adapter: 'openai-compatible',
-    curatedModels: ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash'],
+    curatedModels: ['gemini-3.8-flash', 'gemini-3.5-flash-lite'],
   },
   {
     id: 'xai-key',
@@ -197,7 +197,7 @@ export const KEY_VENDORS: readonly ProviderVendor[] = [
     letter: 'x',
     kind: 'api',
     adapter: 'openai-compatible',
-    curatedModels: ['grok-3', 'grok-3-mini', 'grok-2'],
+    curatedModels: ['grok-4.3'],
   },
   {
     id: 'moonshot',
@@ -219,7 +219,7 @@ export const KEY_VENDORS: readonly ProviderVendor[] = [
     letter: 'Z',
     kind: 'api',
     adapter: 'openai-compatible',
-    curatedModels: ['glm-4.5', 'glm-4.5-air', 'glm-4-flash'],
+    curatedModels: ['glm-5.3', 'glm-5.2', 'glm-4.7'],
   },
   {
     id: 'deepseek',
@@ -230,7 +230,7 @@ export const KEY_VENDORS: readonly ProviderVendor[] = [
     letter: 'D',
     kind: 'api',
     adapter: 'openai-compatible',
-    curatedModels: ['deepseek-chat', 'deepseek-reasoner'],
+    curatedModels: ['deepseek-flash', 'deepseek-v4-pro'],
   },
   {
     id: 'qwen',
@@ -252,7 +252,7 @@ export const KEY_VENDORS: readonly ProviderVendor[] = [
     letter: '智',
     kind: 'api',
     adapter: 'openai-compatible',
-    curatedModels: ['glm-4.5', 'glm-4-flash', 'glm-4-plus'],
+    curatedModels: ['glm-5.3', 'glm-5.2', 'glm-4.7-flash'],
   },
   {
     id: 'siliconflow',
@@ -263,7 +263,7 @@ export const KEY_VENDORS: readonly ProviderVendor[] = [
     letter: 'S',
     kind: 'api',
     adapter: 'openai-compatible',
-    curatedModels: ['deepseek-ai/DeepSeek-V3', 'Qwen/Qwen2.5-72B-Instruct'],
+    curatedModels: ['deepseek-ai/DeepSeek-V3.2', 'deepseek-ai/DeepSeek-V4-Flash'],
   },
   {
     id: 'volc',
@@ -274,18 +274,18 @@ export const KEY_VENDORS: readonly ProviderVendor[] = [
     letter: '火',
     kind: 'api',
     adapter: 'openai-compatible',
-    curatedModels: ['doubao-pro-32k', 'doubao-lite-32k'],
+    curatedModels: [],
   },
   {
     id: 'minimax',
     name: 'MiniMax',
-    subtitle: 'api.minimaxi.com/v1',
-    baseUrl: 'https://api.minimaxi.com/v1',
+    subtitle: 'api.minimax.cn/v1',
+    baseUrl: 'https://api.minimax.cn/v1',
     avatarClass: 'c-minimax',
     letter: 'M',
     kind: 'api',
     adapter: 'openai-compatible',
-    curatedModels: ['MiniMax-Text-01', 'abab6.5s-chat'],
+    curatedModels: ['MiniMax-M3', 'MiniMax-M2.7', 'MiniMax-M2.5'],
   },
   {
     id: 'openrouter-key',
@@ -306,7 +306,7 @@ export const KEY_VENDORS: readonly ProviderVendor[] = [
     letter: 'Q',
     kind: 'api',
     adapter: 'openai-compatible',
-    curatedModels: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768'],
+    curatedModels: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'],
   },
   {
     id: 'mistral',

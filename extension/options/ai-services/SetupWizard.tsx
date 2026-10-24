@@ -4,7 +4,6 @@ import { Check, Search, Sparkles, X, Zap } from 'lucide-react';
 import type { ConnectedService, FeatureAssignment } from './mock-data';
 import { Avatar } from './Avatar';
 import { DialogPortal } from './portal';
-import { TrialGuide } from './TrialGuide';
 
 /** Small / fast model ids: good for per-bookmark work that should feel instant and cost little. */
 const FAST = /(mini|flash|haiku|lite|nano|small|turbo|instant|air|8b|7b|3b|1\.5b)/i;
@@ -31,14 +30,14 @@ export function recommendModels(ids: string[]): { fast?: string; strong?: string
 
 export function recommendAssignments(
   features: FeatureAssignment[],
-  serviceId: string,
+  _serviceId: string,
   enabled: string[],
 ): Record<string, string> {
   const { fast, strong } = recommendModels(enabled);
   const out: Record<string, string> = {};
   for (const feature of features) {
-    // Keep what the user already chose on another connection; fill everything that is empty.
-    if (feature.connId && feature.modelId && feature.connId !== serviceId) {
+    // Keep every existing assignment, including another model on this same connection.
+    if (feature.connId && feature.modelId) {
       out[feature.id] = KEEP;
       continue;
     }
@@ -51,7 +50,7 @@ export function recommendAssignments(
 const KEEP = '__keep__';
 const NONE = '__none__';
 
-type Step = 'models' | 'features' | 'quick' | 'trial';
+type Step = 'models' | 'features' | 'quick';
 
 /**
  * After connecting a service: pick which of its models to use, then which model each feature uses.
@@ -143,10 +142,9 @@ export function SetupWizard({
             ? { featureId: f.id, connId: service.id, modelId: value }
             : { featureId: f.id, connId: '', modelId: '' };
         });
-      await onAssign(changes);
+      if (changes.length) await onAssign(changes);
       const save = changes.find(c => c.featureId === 'save');
-      if (onboarding) setStep('trial');
-      else onClose(save?.modelId ? `配置完成：收藏会用 ${save.modelId} 自动归类` : '配置完成');
+      onClose(save?.modelId ? `配置完成：收藏会用 ${save.modelId} 自动归类` : '配置完成');
     } catch {
       setError('功能配置保存失败，请重试。');
     } finally {
@@ -161,13 +159,21 @@ export function SetupWizard({
     setError('');
     try {
       const nextCatalog = catalog.some(model => model.id === id) ? catalog : [...catalog, { id, ctx: '自定义' }];
-      await onSaveModels([...new Set([...service.enabled, id])], nextCatalog);
+      const nextEnabled = [...new Set([...service.enabled, id])];
+      await onSaveModels(nextEnabled, nextCatalog);
+      if (features.some(feature => feature.connId && feature.modelId)) {
+        setCatalog(nextCatalog);
+        setEnabled(nextEnabled);
+        setChoice(recommendAssignments(features, service.id, [id]));
+        setStep('features');
+        return;
+      }
       await onAssign(
         features
           .filter(feature => !feature.connId || !feature.modelId)
           .map(feature => ({ featureId: feature.id, connId: service.id, modelId: id })),
       );
-      setStep('trial');
+      onClose(`配置完成：收藏会用 ${id} 自动归类`);
     } catch {
       setError('配置尚未完成，请重试。已保存的服务会保留。');
     } finally {
@@ -190,7 +196,7 @@ export function SetupWizard({
     <DialogPortal>
       <div className="ai-svc-backdrop" aria-hidden="true" />
       <div
-        className={`ai-svc-dialog ai-svc-wizard${step === 'quick' || step === 'trial' ? ' is-compact' : ''}`}
+        className={`ai-svc-dialog ai-svc-wizard${step === 'quick' ? ' is-compact' : ''}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby="ai-wizard-title"
@@ -219,16 +225,9 @@ export function SetupWizard({
               </span>
               {t('选择已有服务')}
             </li>
-            <li
-              className={step === 'trial' ? 'is-done' : 'is-current'}
-              aria-current={step !== 'trial' ? 'step' : undefined}
-            >
+            <li className="is-current" aria-current="step">
               <span>2</span>
               {t('连接与模型')}
-            </li>
-            <li className={step === 'trial' ? 'is-current' : ''} aria-current={step === 'trial' ? 'step' : undefined}>
-              <span>3</span>
-              {t('试分类网页')}
             </li>
           </ol>
         ) : (
@@ -321,20 +320,11 @@ export function SetupWizard({
                 disabled={busy || !quickModel.trim() || NOT_CHAT.test(quickModel)}
                 onClick={() => void finishQuick()}
               >
-                {busy ? t('保存中…') : t('保存并继续')}
-              </button>
-            </footer>
-          </div>
-        ) : step === 'trial' ? (
-          <div className="ai-svc-dialog-body ai-svc-wizard-body">
-            <TrialGuide />
-            <footer className="ai-svc-dialog-foot">
-              <button
-                type="button"
-                className="ai-svc-act ai-svc-act-primary"
-                onClick={() => onClose('配置已保存，可随时从侧栏设置试分类')}
-              >
-                {t('完成，稍后试分类')}
+                {busy
+                  ? t('保存中…')
+                  : features.some(feature => feature.connId && feature.modelId)
+                    ? t('保存并继续')
+                    : t('保存并完成')}
               </button>
             </footer>
           </div>
@@ -431,9 +421,7 @@ export function SetupWizard({
           </div>
         ) : (
           <div className="ai-svc-dialog-body ai-svc-wizard-body is-features" key="features">
-            <p className="ai-svc-wizard-intro">
-              {t('以下分配仅按模型名称初选，尚未评测速度、价格与准确率。请按已有服务的能力调整。')}
-            </p>
+            <p>{t('模型已保存。请选择哪些功能切换到新模型；保持现有表示继续使用原模型。')}</p>
             <div className="ai-svc-wizard-all">
               <span>{t('全部使用')}</span>
               <select aria-label={t('全部功能使用')} value="" onChange={e => e.target.value && setAll(e.target.value)}>
@@ -457,9 +445,7 @@ export function SetupWizard({
                     value={choice[f.id] ?? NONE}
                     onChange={e => setChoice(previous => ({ ...previous, [f.id]: e.target.value }))}
                   >
-                    {f.connId && f.modelId && f.connId !== service.id ? (
-                      <option value={KEEP}>{keepLabel(f)}</option>
-                    ) : null}
+                    {f.connId && f.modelId ? <option value={KEEP}>{keepLabel(f)}</option> : null}
                     {ordered.map(id => (
                       <option key={id} value={id}>
                         {id}
@@ -484,7 +470,7 @@ export function SetupWizard({
               </button>
               <span className="ai-svc-dialog-hint" />
               <button type="button" className="ai-svc-act ai-svc-act-ghost" onClick={() => onClose()} disabled={busy}>
-                {t('跳过')}
+                {t('保持现有分配')}
               </button>
               <button
                 type="button"

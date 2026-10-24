@@ -4,17 +4,16 @@ English · [简体中文](AGENTS.zh-CN.md)
 
 ## Start here
 
-Read [README](README.en.md), [repository layout](docs/development/repository-layout.md), [architecture](docs/development/architecture.md), and [development commands](extension/README.md) before editing. Inspect `git status` and preserve existing work. This public checkout must build and test without any private files or agent-specific installation.
+Read [README](README.en.md), [repository layout](docs/development/repository-layout.md), [architecture](docs/development/architecture.md), and [development commands](extension/README.md) before editing. Inspect `git status` and preserve existing work.
 
 ## Repository boundaries
 
 - `extension/`: production extension, tests, synthetic fixtures and build configuration.
 - `docs/`: maintained guides, reference, development, legal and build documentation; `docs/media/` holds reviewed public demonstration assets.
 - `tools/`: repository/document validation, packaging and asset tools. `.github/`: CI and contribution templates.
-- `.local/`: ignored private archives, diagnostics, temporary work and release ZIPs. Never stage or publish it.
-- `.trellis/`, `.agents/`, `.codex/`: optional, ignored local automation. If present, read the relevant local workflow/spec before changing its area. Do not require these directories in public code, tests or docs, and do not force-add them.
+- Build outputs and release ZIPs are generated files; keep them out of Git.
 
-Store submission material, original product requirements, design attachments, prototypes, research, personal bookmarks, real model responses, credentials and session journals are private. Use `.local/private/<category>/` for local material. Put reusable synthetic fixtures in `extension/tests/fixtures/` or `extension/import/fixtures/`.
+Put reusable synthetic fixtures in `extension/tests/fixtures/` or `extension/import/fixtures/`. Do not commit credentials, personal bookmarks or browser profiles.
 
 ## Implementation contracts
 
@@ -22,7 +21,7 @@ Native browser bookmarks are authoritative. Use the existing mutation coordinato
 
 ## Validation
 
-Keep README focused on what the product does and how to use it, in everyday language. Put a brief license-name link and maintainer contact at the end. Keep internal validation status, store submission material and private archive details out of README; implementation and test instructions belong in developer documentation.
+Keep README focused on what the product does and how to use it, in everyday language. Put a brief license-name link and maintainer contact at the end. Keep documentation focused on current usage and implementation; put build and test instructions in developer documentation.
 
 From the repository root:
 
@@ -38,4 +37,4 @@ pnpm --dir extension build
 pnpm --dir extension release:source
 ```
 
-The repository check reads the Git index; stage only the intended files before the final check. Integration tests and the final build run sequentially. Use synthetic data and disposable profiles for browser tests. Source checks do not satisfy the manual release gates; see [release status](docs/release/status.md). Report actual results and limits, update affected links and both language versions, and keep generated output ignored. History cleanup is separate from an ordinary deletion commit; never rewrite shared history as routine cleanup.
+The repository check reads the Git index; stage only the intended files before the final check. Integration tests and the final build run sequentially. Use synthetic data and disposable profiles for browser tests. Source checks do not satisfy the manual release gates; see [build and packaging](docs/release/checklist.md). Report actual results and limits, update affected links and both language versions, and keep generated output ignored. Do not rewrite shared Git history.

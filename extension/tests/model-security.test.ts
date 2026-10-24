@@ -500,7 +500,10 @@ describe('task prompts and classification policy', () => {
       /at most 2 levels below the target root[\s\S]*rewriting existing titles is not allowed/,
     );
     expect(modelSystemPrompt('save', { maxNewDepth: 1, allowRename: true })).toMatch(
-      /at most 1 level below[\s\S]*rewriting an existing title is allowed/,
+      /at most 1 level below[\s\S]*suggestedTitle[\s\S]*later human confirmation/,
+    );
+    expect(modelSystemPrompt('save', DEFAULT_CLASSIFICATION_POLICY)).not.toContain(
+      'rewriting existing titles is not allowed',
     );
     expect(modelSystemPrompt('organize', DEFAULT_CLASSIFICATION_POLICY)).toContain('at most 3 levels');
     for (const task of ['search', 'import-map'] as const)
@@ -508,11 +511,14 @@ describe('task prompts and classification policy', () => {
   });
   it('asks organize runs for a broad/sub taxonomy by default and keeps it out of other tasks', () => {
     const organize = modelSystemPrompt('organize', organizePolicy({}));
-    expect(organize).toContain('Hierarchy policy: build a 2-level taxonomy');
-    expect(organize).toContain('at most 2 levels below the target root');
+    expect(organize).toContain('Hierarchy policy: build a hierarchy at least 2 levels deep');
+    expect(organize).toContain('Go deeper than level 2');
+    expect(organize).toContain('at most 4 levels below the target root');
     expect(organize).toContain('知识/数学');
-    expect(modelSystemPrompt('organize', organizePolicy({ levels: 1 }))).toContain('keep a flat taxonomy');
-    expect(modelSystemPrompt('organize', organizePolicy({ levels: 3 }))).toContain('build a 3-level taxonomy');
+    expect(modelSystemPrompt('organize', organizePolicy({ levels: 1 }))).toContain(
+      'choose the depth the content needs',
+    );
+    expect(modelSystemPrompt('organize', organizePolicy({ levels: 3 }))).toContain('at least 3 levels deep');
     expect(modelSystemPrompt('save', organizePolicy({}))).not.toContain('Hierarchy policy');
     expect(organize).not.toMatch(/about 5 to 12/);
     for (const style of ['project follows PARA', 'source groups by the website', 'numbered follows Johnny.Decimal'])

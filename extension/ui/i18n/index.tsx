@@ -45,6 +45,9 @@ export function LocaleProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     document.documentElement.lang = language;
     document.title = translate(language, '智栏 · 书签助手');
+    if (window.parent !== window && location.pathname.endsWith('/panel/index.html') && location.hash.startsWith('#overlay=')) {
+      window.parent.postMessage({ type: 'zhilan-overlay-language', language }, '*');
+    }
   }, [language]);
   const value = useMemo(
     () => ({
@@ -79,7 +82,7 @@ export function useI18n() {
 export function LanguagePicker() {
   const { language, choose, saved, t } = useI18n();
   return (
-    <fieldset>
+    <fieldset className="language-picker">
       <legend>{t('语言')}</legend>
       <select aria-label={t('语言')} value={language} onChange={event => choose(parse(event.target.value))}>
         <option value="zh-CN" lang="zh-CN">
@@ -90,9 +93,6 @@ export function LanguagePicker() {
         </option>
       </select>
 
-      <p className="hint">
-        {t('仅同步语言、明暗模式和主题色；服务密钥、网址、目录规则和书签关键词保留在本机。同步不可用时仍可正常使用。')}
-      </p>
       {!saved && <p role="status">{t('语言已切换，但无法保存。重新打开后可能恢复默认语言。')}</p>}
     </fieldset>
   );

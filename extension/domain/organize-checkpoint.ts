@@ -6,6 +6,7 @@ import { scopeNodes } from './organize-proposal';
 import { dependencyDigest, settingsIdentity } from './context-dependencies';
 import type { ModelAuthority } from '../adapters/model-authority';
 import { batchCommandSchema, organizerBindingSchema } from '../schemas/messages';
+import { organizeContentSchema } from './organize-content';
 
 const id = z.string().min(1);
 const ids = z.array(id);
@@ -19,6 +20,7 @@ const tree = z.strictObject({
   nodes: z.array(nodeSchema.extend({ ref: nodeRefSchema.strict() }).strict()),
 });
 const batch = z.strictObject({
+  taxonomyRevision: z.literal([0, 1]).optional(),
   id,
   itemIds: ids.min(1),
   status: z.enum(['pending', 'accepted', 'merged']),
@@ -51,10 +53,12 @@ export const organizeCheckpointSchema = z
       protectedFolderIds: ids.optional(),
       rejectedSignatures: z.array(z.string()).max(500).optional(),
       batchSize: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+      contentFirst: z.boolean().optional(),
     }),
     stage: z.enum(['folders', 'bookmarks', 'complete']),
     status: z.enum(['running', 'review', 'paused', 'failed', 'invalid']),
     folderPlan: folderPlan.optional(),
+    content: organizeContentSchema.optional(),
     bookmarkIds: ids,
     batches: z.array(batch),
     selection,
@@ -70,6 +74,72 @@ export const organizeCheckpointSchema = z
   .superRefine((value, context) => {
     const invalid = () => context.addIssue({ code: 'custom', message: 'invalid-organize-checkpoint' });
     const unique = (values: string[]) => new Set(values).size === values.length;
+    if (!!value.content !== !!value.options.contentFirst) invalid();
+    if (value.content) {
+      const content = value.content;
+      const completed = new Set(
+        value.batches.filter(batch => batch.status === 'merged').flatMap(batch => batch.itemIds),
+      );
+      if (
+        !unique(content.reviewedIds ?? []) ||
+        content.reviewedIds?.some(id => !completed.has(id)) ||
+        !unique((content.feedback ?? []).map(job => job.id)) ||
+        content.feedback?.some(job => !unique(job.itemIds) || job.itemIds.some(id => !completed.has(id))) ||
+        (content.phase === 'complete' && content.feedback?.some(job => job.status === 'pending'))
+      )
+        invalid();
+      const all = content.analysis.flatMap(batch => batch.itemIds);
+      const offered = new Set(value.bookmarkIds);
+      if (
+        !unique(content.analysis.map(batch => batch.id)) ||
+        !unique(all) ||
+        all.length !== offered.size ||
+        all.some(id => !offered.has(id))
+      )
+        invalid();
+      let pending = false;
+      for (const batch of content.analysis) {
+        if (!batch.output) pending = true;
+        else {
+          if (pending) invalid();
+          const output = batch.output;
+          const mentioned = [...(output.topics ?? []).flatMap(topic => topic.itemIds), ...(output.uncertainIds ?? [])];
+          if (
+            !unique(mentioned) ||
+            mentioned.length !== batch.itemIds.length ||
+            mentioned.some(id => !batch.itemIds.includes(id)) ||
+            output.moves.length ||
+            output.newFolders.length ||
+            output.merges.length ||
+            output.renames?.length ||
+            output.removeFolders?.length ||
+            output.unchangedIds?.length ||
+            output.categorySuggestions?.length
+          )
+            invalid();
+        }
+      }
+      if (content.phase !== 'analysis' && pending) invalid();
+      const expectedStage =
+        content.phase === 'complete' ? 'complete' : content.phase === 'assignment' ? 'bookmarks' : 'folders';
+      if (
+        value.stage !== expectedStage ||
+        (value.stage === 'folders' &&
+          (value.folderPlan ||
+            value.selection.selected.length ||
+            Object.keys(value.selection.targets).length ||
+            value.status === 'review'))
+      )
+        invalid();
+      const suggestions = (content.revisionSuggestions ?? []).flatMap(suggestion => suggestion.itemIds);
+      if (
+        !unique(suggestions) ||
+        suggestions.some(id => !offered.has(id)) ||
+        (suggestions.length && content.taxonomyRevision !== 1)
+      )
+        invalid();
+      if (value.batches.some(batch => batch.taxonomyRevision !== content.taxonomyRevision)) invalid();
+    } else if (value.batches.some(batch => batch.taxonomyRevision !== undefined)) invalid();
     if (
       value.submission &&
       (value.stage !== 'complete' ||
@@ -123,9 +193,16 @@ export const organizeCheckpointSchema = z
       if (unmerged && item.status === 'merged') invalid();
       if (item.output) {
         const offered = new Set(item.itemIds);
-        const mentioned = [...item.output.moves.map(move => move.itemId), ...(item.output.unchangedIds ?? [])];
+        const mentioned = [
+          ...item.output.moves.map(move => move.itemId),
+          ...(item.output.unchangedIds ?? []),
+          ...(item.output.uncertainIds ?? []),
+        ];
         if (
           !unique(mentioned) ||
+          (value.content && mentioned.length !== offered.size) ||
+          (!value.content && (item.output.uncertainIds?.length || item.output.categorySuggestions?.length)) ||
+          item.output.topics?.length ||
           mentioned.some(itemId => !offered.has(itemId)) ||
           item.output.newFolders.length ||
           item.output.merges.length ||

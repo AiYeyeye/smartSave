@@ -38,6 +38,7 @@ export async function runOrganizeBatch({
   repairOnce,
   diagnosticRunId,
   onProgress,
+  retryFeedback,
 }: {
   run: StagedRun;
   ids: string[];
@@ -45,6 +46,7 @@ export async function runOrganizeBatch({
   model: OrganizeModel;
   repairOnce: boolean;
   diagnosticRunId?: string;
+  retryFeedback?: string;
   onProgress: (update: ModelProgress, context: { bookmarkCount: number; timeoutMs: number }) => void;
 }): Promise<ModelResult> {
   const repair = repairOnce && run.repair?.ids === ids ? run.repair.candidate : undefined;
@@ -59,12 +61,12 @@ export async function runOrganizeBatch({
         diagnosticRunId,
         ...run.context,
         request,
-        ...(!repair
+        ...(!repair && !run.content
           ? { organizeRepair: { knownIds: run.folderOutput?.newFolders.map(folder => folder.id) ?? [] } }
           : {}),
         signal,
         timeoutMs,
-        policy: organizePolicy(run.options),
+        policy: { ...organizePolicy(run.options), ...(retryFeedback ? { retryFeedback } : {}) },
         onProgress: update => onProgress(update, { bookmarkCount: request.itemIds.length, timeoutMs }),
       }),
       signal,

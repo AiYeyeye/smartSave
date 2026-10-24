@@ -419,9 +419,6 @@ export function ImportWorkbench({
                 selected: selected.length,
               })}
             </p>
-            {checkpoint.requestId && (
-              <p>{t('日志请求：{id}。checkpoint 阶段不代表写入完成。', { id: checkpoint.requestId })}</p>
-            )}
             <details className="workflow-help">
               <summary>{t('任务和跳过项详情')}</summary>
               <p>
@@ -576,7 +573,6 @@ export function ImportWorkbench({
                   .length,
               })}
             </p>
-            <p>{t('确认后将添加这些书签到浏览器。写入前会自动备份，请核对所选内容。')}</p>
             <details className="workflow-help">
               <summary>{t('查看即将创建的书签和目录')}</summary>
               {plan.command.operations.map(operation => (
@@ -713,14 +709,6 @@ export function ImportWorkbench({
           </button>
         )}
       </div>
-      <details className="workflow-help">
-        <summary>{t('支持的文件与导入说明')}</summary>
-        <p>
-          {t(
-            '支持 HTML、JSON、CSV、TXT、Markdown；不支持 Excel/PDF。文件编码为 UTF-8（可带 BOM）或带 BOM 的 UTF-16。只添加 HTTP(S) 链接，不修改已有书签；AI 会重新分类，不保留旧目录结构。',
-          )}
-        </p>
-      </details>
       <details className="workflow-help" onToggle={e => setRecoveryOpen(e.currentTarget.open)}>
         <summary>{t('恢复与撤销记录')}</summary>
         <RecoveryWorkbench visible={visible && recoveryOpen} />

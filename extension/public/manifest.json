@@ -3,7 +3,7 @@
   "name": "__MSG_extensionName__",
   "version": "0.1.0",
   "description": "__MSG_extensionDescription__",
-  "minimum_chrome_version": "116",
+  "minimum_chrome_version": "127",
   "optional_host_permissions": [
     "https://*/*",
     "http://*/*"
@@ -18,7 +18,8 @@
     "sidePanel"
   ],
   "optional_permissions": [
-    "identity"
+    "identity",
+    "history"
   ],
   "background": {
     "service_worker": "service-worker.js",

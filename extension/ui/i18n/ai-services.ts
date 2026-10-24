@@ -1,4 +1,7 @@
 export const aiServicesEnglish = {
+  '模型已保存。请选择哪些功能切换到新模型；保持现有表示继续使用原模型。':
+    'The models are saved. Choose which features should switch; keeping an assignment continues to use its existing model.',
+  保持现有分配: 'Keep existing assignments',
   '用 Claude Pro/Max 登录': 'Sign in with Claude Pro/Max',
   '用 GitHub 账号登录': 'Sign in with GitHub',
   '用 Kimi 订阅登录': 'Sign in with a Kimi subscription',
@@ -78,7 +81,6 @@ export const aiServicesEnglish = {
   设置步骤: 'Setup steps',
   选择已有服务: 'Choose your service',
   连接与模型: 'Connection & model',
-  试分类网页: 'Try a webpage',
   筛选服务: 'Filter services',
   用账号登录: 'Sign in with an account',
   '用 API KEY 连接': 'Connect with an API key',
@@ -139,14 +141,22 @@ export const aiServicesEnglish = {
   '流式响应按连续无事件或心跳的时间计时；持续收到数据会继续等待。非流式响应按总时间计时。':
     'Streaming times out only when no events or heartbeats arrive. Active streams keep running. Non-streaming responses use a total timeout.',
   '最大输出 tokens': 'Maximum output tokens',
-  '默认 128,000，包含推理和正文。请填写所选模型支持的输出额度。':
-    'Default: 128,000, including reasoning and answer text. Use a limit supported by your model.',
+  '留空使用服务默认上限；Anthropic 使用兼容上限。自定义值须在模型支持范围内，思考可能占用输出额度。':
+    'Leave blank for the service default; Anthropic uses a compatible limit. A custom value must fit the model. Thinking may consume the output budget.',
   '输出上限请输入大于或等于 1 的有效整数。': 'Enter a whole number of at least 1 for the output limit.',
   测试模型: 'Test model',
   流式响应: 'Stream responses',
   '使用所选协议的原生流式接口；关闭后使用 JSON 响应。':
     'Use native streaming for the selected protocol. Turn off to use JSON responses.',
   优先快速响应: 'Prefer faster responses',
+  思考强度: 'Reasoning effort',
+  '低（推荐）': 'Low (recommended)',
+  关闭思考: 'Off',
+  中等: 'Medium',
+  '高（更慢）': 'High (slower)',
+  模型默认: 'Model default',
+  '推理模型想得越多越慢，思考内容也计入输出上限。不支持的模型会自动忽略。':
+    'More reasoning is slower and counts toward the output limit. Models without this control ignore it.',
   '对已支持的模型关闭或降低思考量；未知模型保持原行为。':
     'Disable or reduce reasoning for supported models. Other models keep their default behavior.',
   该服务的模型: 'Available models',
@@ -173,8 +183,6 @@ export const aiServicesEnglish = {
   '配置尚未完成，请重试。已保存的服务会保留。': 'Setup is not complete. Try again; your saved service is retained.',
   '保持现有：{model}': 'Keep current: {model}',
   '设置 {service}': 'Set up {service}',
-  '连接已有服务，选择模型，再用当前网页试分类。也可以稍后继续。':
-    'Connect your existing service, choose a model, then try classifying a webpage. You can continue later.',
   '选择模型，再决定每个功能用哪个。可以跳过，之后在「AI 服务」里改。':
     'Choose models and assign them to features. You can skip this and change it later in AI services.',
   选择模型: 'Choose models',
@@ -188,30 +196,7 @@ export const aiServicesEnglish = {
   打开高级配置: 'Open advanced setup',
   稍后配置: 'Set up later',
   保存并继续: 'Save and continue',
-  在网页侧栏试一次: 'Try it in the webpage sidebar',
-  打开网页侧栏: 'Open the sidebar',
-  '回到要分类的网页，点击智栏图标。': 'Return to your webpage and click the Zhilan icon.',
-  点击侧栏设置: 'Open sidebar settings',
-  '找到侧栏右上角的齿轮图标。': 'Click the gear at the top right of the sidebar.',
-  选择试分类: 'Choose the page trial',
-  '在快速设置中点击这一项。': 'Choose this item in Quick settings.',
-  核对后发送: 'Check, then send',
-  '检查标题和网址，再点击发送。': 'Check the title and URL, then send.',
-  '操作示意 · 点击紫色标记处': 'Illustrated guide · click the highlighted areas',
-  试分类操作图解: 'Illustrated page-trial steps',
-  '遵循隐私设置；不读取正文，不会创建或移动书签。':
-    'Uses your privacy settings. No page body is read and no bookmarks are created or moved.',
-  '使用哪个模型？密钥需要记住吗？': 'Which model? Do I need to remember the key?',
-  '回到你想分类的网页，点击智栏图标打开侧栏。': 'Return to a webpage and click the Zhilan icon to open the sidebar.',
-  '打开侧栏设置，选择「试分类当前网页」。': 'Open sidebar settings and choose “Try classifying this page”.',
-  '检查网页标题和网址，再点击「发送并试分类」。':
-    'Check the page title and URL, then choose “Send and try classification”.',
-  '使用「智能收藏」分配的模型，遵循现有隐私设置，不读取正文。试分类只显示建议，不会创建或移动书签。':
-    'The trial uses the Smart save model and your privacy settings, without reading page body text. It shows a suggestion without creating or moving bookmarks.',
-  '若密钥只保留在当前设置页，请先在服务设置中启用「记住密钥」，才能在侧栏或后台使用。':
-    'If the key is only kept in this settings page, enable Remember key before using it in the sidebar or background.',
-  '配置已保存，可随时从侧栏设置试分类': 'Settings saved. You can try classification from sidebar settings at any time.',
-  '完成，稍后试分类': 'Done, try later',
+  保存并完成: 'Save and finish',
   '在 {count} 个模型中搜索…': 'Search models ({count})…',
   搜索模型: 'Search models',
   推荐: 'Suggested',

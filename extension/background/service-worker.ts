@@ -6,7 +6,8 @@ import { SettingsStore } from '../persistence/settings';
 import { AiServicesStore } from '../persistence/ai-services';
 import { featureModelSettings } from '../adapters/feature-model-settings';
 import { startOrganizerAuthority } from './organizer-authority';
-import { openSaveUi, startSaveEntrypoints } from './save-entrypoints';
+import { startSaveEntrypoints } from './save-entrypoints';
+import { SaveDialogHost, startSaveDialogService } from './save-dialog';
 import {
   isClaimedOverlayDocument,
   overlayTrustRestored,
@@ -24,7 +25,7 @@ import { setOverlayDocumentTrust, withTrustedSender } from '../domain/trusted-se
 import { OwnWriteGuard } from './own-write-guard';
 import { nativeSaveBadge, startNativeBookmarkIngress } from './native-bookmark-ingress';
 import { SiteRulesStore } from '../persistence/site-rules';
-import { SaveReceiptLog } from '../persistence/save-receipts';
+import { pendingSaveReceipts, readSaveReceipts, SaveReceiptLog } from '../persistence/save-receipts';
 import { startWorkerDiagnostics } from './worker-diagnostics';
 import { OrganizeTaskOwner } from './organize-task-owner';
 import { startOrganizeTaskService } from './organize-task-service';
@@ -35,7 +36,12 @@ import { OrganizeTaskBadge } from './organize-task-badge';
 import { SaveCorrectionOwner, startSaveCorrectionService } from './save-correction';
 import { BookmarkKeywordsStore } from '../persistence/bookmark-keywords';
 import { startBookmarkKeywords } from './bookmark-keywords';
+import { CorrectionLearning } from './correction-learning';
+import { saveNameSuggestions } from './save-name-suggestion';
+import { startNativePreferenceLearning } from './native-preference-learning';
+import { watchBrowserLanguage } from '../domain/browser-message';
 
+watchBrowserLanguage();
 const workerDiagnostics = startWorkerDiagnostics();
 const badges = actionBadges();
 if (badges) void badges.initialize(chrome.tabs);
@@ -61,18 +67,22 @@ chrome.action.onClicked.addListener(tab => {
   });
 });
 
-/** Shortcut / page menu saves: show the UI for the captured tab in the chosen mode. */
-async function openSaveSurface(tabId: number) {
-  if (panelMode() === 'overlay') {
-    const tab = await chrome.tabs.get(tabId).catch(() => undefined);
-    if (tab && (await toggleOverlay(tabId, tab.url, true))) return;
-  }
-  await openSaveUi(tabId);
-}
+const saveDialog = new SaveDialogHost({
+  pending: async () =>
+    pendingSaveReceipts(await readSaveReceipts(chrome.storage.local))
+      .map(receipt => receipt.id)
+      .reverse(),
+  hint: (tabId, on) => void Promise.resolve(badges?.savePending(tabId, on)).catch(() => {}),
+});
+startSaveDialogService(saveDialog);
 
 const { validateSaveContext, livePageForSender } = startSaveEntrypoints(
   () => coordinator?.purgeSavePreviews(),
-  openSaveSurface,
+  tabId =>
+    saveDialog.openCapture(tabId).catch(async () => {
+      await badges?.savePending(tabId, true);
+    }),
+  saveDialog,
 );
 const projection = startTreeService();
 const bookmarkKeywords = new BookmarkKeywordsStore(chrome.storage.local, () => projection.fresh());
@@ -96,6 +106,19 @@ const ownWrites = new OwnWriteGuard();
 const writer = ownWrites.wrap(bookmarksWrite(chrome.bookmarks));
 const persistence = new ImportPersistenceStore();
 const organizeSettings = featureModelSettings(initializedSettings, aiServices, 'organize');
+const correctionLearning = new CorrectionLearning(projection, organizeSettings, chrome.storage.local);
+const learningReady = settingsReady.then(() => persistence.all()).then(records => correctionLearning.start(records));
+void learningReady.catch(() => {});
+startNativePreferenceLearning({
+  projection,
+  bookmarks: chrome.bookmarks,
+  guard: ownWrites,
+  settings: organizeSettings,
+  learn: async (id, installationId, examples) => {
+    await learningReady;
+    await correctionLearning.enqueue(id, installationId, examples);
+  },
+});
 const organizeMemory = new OrganizeMemoryStore(chrome.storage.local);
 const organizerAuthority = startOrganizerAuthority(organizeSettings, workerDiagnostics);
 const organizeTasks = new OrganizeTaskOwner({
@@ -103,6 +126,10 @@ const organizeTasks = new OrganizeTaskOwner({
   settings: organizeSettings,
   store: persistence.organizeCheckpoints,
   memory: organizeMemory,
+  learn: async (id, installationId, examples) => {
+    await learningReady;
+    await correctionLearning.enqueue(id, installationId, examples);
+  },
 });
 const organizeBadge = badges ? new OrganizeTaskBadge(badges, chrome.storage.session) : undefined;
 if (organizeBadge) {
@@ -145,6 +172,10 @@ const coordinator = startMutationService(
   organizeTaskAuthority,
 );
 const saveReceipts = new SaveReceiptLog(chrome.storage.local);
+coordinator.onCompleted = async record => {
+  await learningReady;
+  await correctionLearning.observe(record);
+};
 const siteRules = new SiteRulesStore(chrome.storage.local);
 const nativeSaves = startNativeBookmarkIngress({
   projection,
@@ -153,6 +184,13 @@ const nativeSaves = startNativeBookmarkIngress({
   writer,
   guard: ownWrites,
   receipts: saveReceipts,
+  reviewWindow: async () => (await chrome.windows.getLastFocused({ windowTypes: ['normal'] })).id,
+  reviewReady: (receipt, windowId) => saveDialog.openAutomatic(receipt.id, windowId),
+  suggestName: saveNameSuggestions(
+    projection,
+    featureModelSettings(initializedSettings, aiServices, 'save'),
+    saveReceipts,
+  ),
   rules: siteRules,
   keywords: bookmarkKeywords,
   badge: nativeSaveBadge,

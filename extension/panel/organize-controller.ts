@@ -5,6 +5,9 @@ import { MODEL_BYTE_LIMITS } from '../adapters/model-byte-limits';
 import { createDebugLog, type DebugDetail } from '../domain/debug-log';
 import { cancellable } from '../domain/cancellable';
 import { OrganizeBatchExecutor } from './organize-batch-executor';
+import { contentBatches, runContentOrganize } from './organize-content-run';
+import { reviewContent, type OrganizeInteraction } from '../domain/organize-interaction';
+import { preferenceEvidence, type PersonalPreference } from '../domain/personalization';
 import { serializeAiPayload, serializedItemRequestSize } from '../domain/ai-payload';
 import { parseModelOutput } from '../schemas/model-output';
 import {
@@ -21,6 +24,7 @@ import {
 } from '../domain/organize-batches';
 import { modelOutputTokenLimit, modelStreaming } from '../domain/model-route';
 import { organizeProgressPreview } from '../domain/organize-progress';
+import { organizeChangeSummary, organizeChanges } from '../domain/organize-change-report';
 import { organizePreference, type OrganizePreference } from '../domain/organize-preferences';
 import { defaultOrganizeScope, organizeRejectionKey } from '../domain/organize-review';
 import { organizePolicy, PLAN_FEEDBACK } from '../domain/classification-policy';
@@ -58,6 +62,12 @@ const scopeDependencies = (tree: TreeSnapshot, rootId: string, bookmarkIds?: str
     ...(bookmarkIds ? { stage: 'bookmarks' as const, itemIds: bookmarkIds } : { itemIds: [] }),
   });
 const PREPARE_TIMEOUT_MS = 10_000;
+type StaleBase = {
+  tree: TreeSnapshot;
+  rootId: string;
+  bookmarkIds?: string[];
+  context: Awaited<ReturnType<ModelAuthority['read']>>;
+};
 export class OrganizeController {
   private state: OrganizeState = {
     tree: { status: 'loading' },
@@ -80,6 +90,8 @@ export class OrganizeController {
   /** Scope digest recorded when the retained baseline (scan or proposal) was taken. */
   private scopeDigest?: string;
   private scopeBookmarks?: string[];
+  /** The tree the retained digest was taken from, so a voided plan can say what changed. */
+  private scopeTree?: TreeSnapshot;
   private operation?: { generation: number; controller: AbortController; timer: ReturnType<typeof setTimeout> };
   private reviewing = false;
   private staged?: StagedRun;
@@ -107,8 +119,16 @@ export class OrganizeController {
   ) {
     // Tree changes arrive through setTree and are judged against the retained scope; settings/permissions revoke outright.
     this.stop = authority?.subscribe(change => {
-      if (change !== 'tree')
-        this.invalidate(undefined, change === 'permissions' ? 'permissions-changed' : 'settings-changed');
+      if (change === 'tree') return;
+      const active = this.state.busy || !!this.state.proposal || !!this.scanTree || !!this.staged?.content;
+      this.invalidate(
+        active
+          ? change === 'permissions'
+            ? '模型服务的访问权限被撤销，当前方案已失效。请重新授权后重新生成；未修改书签。'
+            : 'AI 模型、密钥或隐私设置被修改，当前方案已失效。请重新生成；未修改书签。'
+          : undefined,
+        change === 'permissions' ? 'permissions-changed' : 'settings-changed',
+      );
     });
   }
   private publish() {
@@ -182,7 +202,7 @@ export class OrganizeController {
       this.state.busy = false;
       this.state.message = '已停止本次生成；未修改书签，可以重新生成。';
     }
-    if (this.state.proposal || this.scanTree) {
+    if (this.state.proposal || this.scanTree || this.state.pipeline?.contentPhase) {
       this.state.invalid = true;
       this.state.message = '范围、书签、隐私或模型设置已变化；旧提案已失效，保留选择供核对，请重新生成。';
     }
@@ -199,11 +219,18 @@ export class OrganizeController {
     if (
       tree.status === 'ready' &&
       !this.state.invalid &&
-      (this.state.proposal || this.scanTree) &&
+      (this.state.proposal || this.scanTree || this.staged?.content) &&
       this.scopeDigest !== undefined &&
       scopeDependencies(tree.snapshot, this.state.scopeId, this.scopeBookmarks) !== this.scopeDigest
-    )
-      this.invalidate(undefined, 'scope-tree-changed');
+    ) {
+      const changes = this.scopeTree
+        ? organizeChanges(this.scopeTree, tree.snapshot, this.state.scopeId, this.scopeBookmarks)
+        : [];
+      this.invalidate(
+        changes.length ? `当前方案已失效，因为${organizeChangeSummary(changes)}。请重新生成；未修改书签。` : undefined,
+        'scope-tree-changed',
+      );
+    }
     this.publish();
   }
   selectScope(id: string) {
@@ -243,6 +270,61 @@ export class OrganizeController {
     this.state.selected = reconcileOrganizeSelection(this.state.proposal, this.state.selected, this.state.targets);
     this.publish();
   }
+  reviewContent(edit: OrganizeInteraction) {
+    if (!this.staged || this.applying || this.pendingRequestId) throw Error('organize-task-unavailable');
+    const result = reviewContent(this.staged, this.state, edit);
+    this.publish();
+    const run = this.staged;
+    const evidenceIds = [...result.ids, run.request.rootId];
+    let targetPath = '';
+    if (result.kind === 'destination') {
+      const folders = new Map(run.approved!.destinations.map(folder => [folder.id, folder]));
+      const path: string[] = [];
+      let folder = folders.get(result.targetId);
+      while (folder) {
+        path.unshift(folder.title);
+        if (run.context.tree.nodes.some(node => node.ref.nativeId === folder!.id)) evidenceIds.push(folder.id);
+        folder = folders.get(folder.parentId ?? '');
+      }
+      targetPath = path.join(' / ');
+    }
+    // Large selections retain the feedback; destination examples are individual so no label is truncated.
+    const entries: PersonalPreference[] =
+      result.kind === 'feedback'
+        ? [
+            {
+              id: crypto.randomUUID(),
+              text: result.text,
+              source: 'feedback',
+              status: 'active',
+              enabled: true,
+              scopes: ['search', 'organize', 'save', 'import'],
+              updatedAt: Date.now(),
+              evidence: preferenceEvidence(run.context.tree, evidenceIds),
+            },
+          ]
+        : result.ids.map(id => {
+            const node = run.context.tree.nodes.find(node => node.ref.nativeId === id)!;
+            return {
+              id: `organize-choice:${id}`,
+              text: `「${node.title || id}」 → 「${targetPath}」`,
+              source: 'choice',
+              status: 'active',
+              enabled: true,
+              scopes: ['search', 'organize', 'save', 'import'],
+              updatedAt: Date.now(),
+              evidence: preferenceEvidence(run.context.tree, [
+                id,
+                ...evidenceIds.filter(value => !result.ids.includes(value)),
+              ]),
+            };
+          });
+    return entries;
+  }
+  preferenceSaveFailed(failed: boolean) {
+    if (this.state.pipeline) this.state.pipeline = { ...this.state.pipeline, preferenceSaveFailed: failed };
+    this.publish();
+  }
   choice(id: string, choice: DuplicateChoice) {
     if (this.state.busy || this.state.invalid) return;
     this.clearReview();
@@ -257,7 +339,7 @@ export class OrganizeController {
   }
   cancel() {
     this.record('cancel-requested', { cause: 'user-or-preference' });
-    if (!this.applying && this.staged?.approved && this.state.busy) {
+    if (!this.applying && (this.staged?.approved || this.staged?.content) && this.state.busy) {
       this.pauseBatches();
       return;
     }
@@ -282,6 +364,7 @@ export class OrganizeController {
       this.scanTree = structuredClone(this.state.tree.snapshot);
       this.state.duplicates = duplicateGroups(this.scanTree, this.state.scopeId);
       this.scopeBookmarks = undefined;
+      this.scopeTree = this.scanTree;
       this.scopeDigest = scopeDependencies(this.scanTree, this.state.scopeId);
       this.state.choices = {};
       this.state.proposal = undefined;
@@ -361,12 +444,14 @@ export class OrganizeController {
     let generation = this.generation;
     const startedAt = Date.now();
     let phase: NonNullable<OrganizeState['failure']>['phase'] = '准备整理';
+    let staleBase: StaleBase | undefined;
     this.state.failure = undefined;
     this.staged = undefined;
     this.state.pipeline = undefined;
     try {
       const selectedPreference = organizePreference(preference);
       options = structuredClone(options);
+      if (options.contentFirst) options.staged = true;
       if (options.unfiledOnly) options = { ...options, staged: true, cleanupEmpty: false, allowRename: false };
       if (!this.authority || !this.model || this.state.tree.status !== 'ready') throw Error('unavailable');
       this.state.proposal = undefined;
@@ -378,6 +463,8 @@ export class OrganizeController {
       const operation = this.operation!;
       const context = await cancellable(this.authority.read(), operation.controller.signal);
       const rootId = this.state.scopeId;
+      // Staged folder planning only depends on folders; a one-shot run depends on every bookmark in scope.
+      staleBase = { tree: context.tree, rootId, context, ...(options.staged ? { bookmarkIds: [] } : {}) };
       if (!context.config) throw Error('model-unconfigured');
       const outputTokenLimit = modelOutputTokenLimit(context.config);
       if (
@@ -423,6 +510,41 @@ export class OrganizeController {
           bookmarkIds: request.itemIds.filter(id => bookmarks.has(id)),
           queue: [],
         };
+        if (options.contentFirst) {
+          request.stage = 'analysis';
+          request.contentFirst = true;
+          request.preserveExistingFolders = !!options.unfiledOnly;
+          request.itemIds = [...this.staged.bookmarkIds];
+          this.staged.content = {
+            phase: 'analysis',
+            taxonomyRevision: 0,
+            analysis: contentBatches(this.staged, request).map(itemIds => ({ id: crypto.randomUUID(), itemIds })),
+          };
+          this.scopeBookmarks = this.staged.bookmarkIds;
+          this.scopeTree = context.tree;
+          this.scopeDigest = scopeDependencies(context.tree, rootId, this.scopeBookmarks);
+          this.state.invalid = false;
+          this.state.pipeline = {
+            stage: 'folders',
+            contentPhase: 'analysis',
+            status: 'running',
+            total: bookmarkCount,
+            batchSize: options.batchSize ?? ORGANIZE_BATCH_SIZE,
+            folderCount: request.folderIds.length,
+            completed: 0,
+            topicCompleted: 0,
+            elapsedMs: 0,
+            activeSince: Date.now(),
+            batchCount: 0,
+            finished: [],
+            lockedActionIds: [],
+          };
+          await this.persistGeneration();
+          if (generation !== this.generation || operation.controller.signal.aborted) return;
+          phase = '模型生成';
+          await this.executeContent(generation);
+          return;
+        }
         request.stage = 'folders';
         request.itemIds = request.itemIds.filter(id => !bookmarks.has(id));
         request.sampleLimit = 2;
@@ -515,9 +637,11 @@ export class OrganizeController {
       // One correction round: a locally rejected plan goes back to the model with the reason, never more than once.
       for (let attempt = 0; ; attempt++) {
         if (generation !== this.generation) throw Error('stale');
-        if (result.status !== 'completed') throw Error(result.detail ?? result.reason ?? 'model-failed');
-        phase = '方案校验';
         try {
+          // Schema and compiler rejections share this single correction budget.
+          // Provider, incomplete, cancelled and stale responses are not retried here.
+          if (result.status !== 'completed') throw Error(result.detail ?? result.reason ?? 'model-failed');
+          phase = '方案校验';
           if (options.staged) {
             const output = parseModelOutput(result.output, {
               ...JSON.parse(serializeAiPayload(context.tree, context.privacy, request)),
@@ -547,6 +671,7 @@ export class OrganizeController {
       this.scanTree = undefined;
       this.state.duplicates = [];
       this.scopeBookmarks = options.staged ? this.staged?.bookmarkIds : undefined;
+      this.scopeTree = context.tree;
       this.scopeDigest = scopeDependencies(context.tree, rootId, this.scopeBookmarks);
       this.accept(proposal, options.rejectedSignatures);
       if (this.state.pipeline) {
@@ -560,7 +685,9 @@ export class OrganizeController {
       if (generation !== this.generation) return;
       this.lease?.close();
       this.lease = undefined;
-      this.state.invalid = true;
+      this.state.invalid =
+        !this.staged?.content ||
+        (error instanceof Error && ['stale', 'stale-context', 'checkpoint-unavailable'].includes(error.message));
       if (this.state.pipeline) this.state.pipeline = { ...this.state.pipeline, status: 'failed' };
       const reason = error instanceof Error ? error.message : '';
       this.state.failure = {
@@ -575,9 +702,28 @@ export class OrganizeController {
           ? `等待连接、后续流数据或完整非流式响应超过 ${this.state.progress.timeoutSeconds} 秒，请重试。`
           : failureMessage(reason);
       this.state.message = `${timeout} 未修改书签。`;
+      if (reason === 'stale-context' && staleBase) {
+        const explained = await this.staleMessage(staleBase);
+        if (generation !== this.generation) return;
+        if (explained) this.state.message = explained;
+      }
     } finally {
       this.finish(generation);
     }
+  }
+  /** Say what voided a run: the changed folders or planned bookmarks, else the settings. Undefined if unknown. */
+  private async staleMessage(base: StaleBase): Promise<string | undefined> {
+    try {
+      const current = await this.authority!.read();
+      const changes = organizeChanges(base.tree, current.tree, base.rootId, base.bookmarkIds);
+      if (changes.length)
+        return `整理期间${organizeChangeSummary(changes)}，本次结果已失效。请重新生成方案；未修改书签。`;
+      if (settingsIdentity(current) !== settingsIdentity(base.context) || current.key !== base.context.key)
+        return '整理期间 AI 模型、密钥或隐私设置被修改，本次结果已失效。请重新生成方案；未修改书签。';
+    } catch {
+      /* Fall back to the generic explanation. */
+    }
+    return undefined;
   }
   private retainReview() {
     // Review belongs to the live workbench session, not a wall-clock deadline.
@@ -592,12 +738,68 @@ export class OrganizeController {
       throw Error('checkpoint-unavailable');
     }
   }
+  private async executeContent(generation: number) {
+    const run = this.staged!;
+    const operation = this.operation!;
+    const check = async () => {
+      const current = await cancellable(this.authority!.read(), operation.controller.signal);
+      if (run.requiresCredential && !current.key) throw Error('organize-credential-required');
+      if (generation !== this.generation || operation.controller.signal.aborted) throw Error('cancelled');
+      if (
+        scopeDependencies(current.tree, run.request.rootId, run.bookmarkIds) !== this.scopeDigest ||
+        current.tree.installationId !== run.context.tree.installationId ||
+        settingsIdentity(current) !== settingsIdentity(run.context) ||
+        current.key !== run.context.key
+      )
+        throw Error('stale-context');
+    };
+    await check();
+    clearTimeout(operation.timer);
+    await runContentOrganize({
+      run,
+      state: this.state,
+      model: this.model!,
+      signal: operation.controller.signal,
+      diagnosticRunId: this.runId,
+      publish: () => this.publish(),
+      persist: () => this.persistGeneration(),
+      check,
+      rejected: (proposal, action) => this.rejected(proposal, action),
+    });
+    if (generation === this.generation) this.retainReview();
+  }
+  private async resumeContent() {
+    if (this.state.busy || this.state.invalid || !this.staged?.content || this.staged.content.phase === 'complete')
+      return;
+    let generation = this.generation;
+    try {
+      const pending = this.begin();
+      generation = this.generation;
+      await pending;
+      this.state.pipeline = { ...this.state.pipeline!, status: 'running', activeSince: Date.now() };
+      await this.executeContent(generation);
+    } catch (error) {
+      if (generation !== this.generation) return;
+      const reason = error instanceof Error ? error.message : 'unknown-error';
+      if (reason === 'stale-context' || reason === 'stale') {
+        this.invalidate('书签或配置已变化，请重新生成整理方案。未修改书签。', 'content-context-changed');
+        return;
+      }
+      if (reason === 'checkpoint-unavailable') this.state.invalid = true;
+      this.state.pipeline = { ...this.state.pipeline!, status: 'failed' };
+      this.state.failure = { code: reason, phase: '模型生成', elapsedSeconds: 0 };
+      this.state.message = `${failureMessage(reason)} 已完成的分析已保留，可继续未完成批次。未修改书签。`;
+    } finally {
+      this.finish(generation);
+    }
+  }
   /** Confirm taxonomy only; native writes still require the final apply step. */
   async confirmFolders() {
     if (
       this.state.busy ||
       this.state.invalid ||
       !this.staged ||
+      this.staged.content ||
       !this.state.proposal ||
       this.state.pipeline?.stage !== 'folders'
     )
@@ -663,7 +865,13 @@ export class OrganizeController {
     }
   }
   pauseBatches() {
-    if (!this.staged?.approved || this.state.pipeline?.stage !== 'bookmarks' || this.applying) return;
+    if (
+      (!this.staged?.approved && !this.staged?.content) ||
+      !this.state.pipeline ||
+      this.state.pipeline.stage === 'complete' ||
+      this.applying
+    )
+      return;
     this.record('paused');
     this.stopAnalysisClock();
     this.generation++;
@@ -686,6 +894,7 @@ export class OrganizeController {
       this.state.busy ||
       this.state.invalid ||
       !this.staged?.folderReview ||
+      this.staged.content ||
       !this.state.pipeline ||
       this.state.result
     )
@@ -722,6 +931,7 @@ export class OrganizeController {
     return this.resumeBatches(true);
   }
   async resumeBatches(repairOnce = false) {
+    if (this.staged?.content) return this.resumeContent();
     const run = this.staged;
     if (
       this.state.busy ||
@@ -913,7 +1123,17 @@ export class OrganizeController {
       const reason = error instanceof Error ? error.message : '';
       if (reason === 'checkpoint-unavailable') this.state.invalid = true;
       if (reason === 'stale-context' || reason === 'stale') {
-        this.invalidate('书签或配置已变化，之前的批次已失效；请重新生成文件夹方案。未修改书签。');
+        const explained = await this.staleMessage({
+          tree: this.scopeTree ?? run.context.tree,
+          rootId: run.request.rootId,
+          bookmarkIds: run.bookmarkIds,
+          context: run.context,
+        });
+        if (generation !== this.generation) return;
+        this.invalidate(
+          explained ?? '书签或配置已变化，之前的批次已失效；请重新生成文件夹方案。未修改书签。',
+          'batch-context-changed',
+        );
         return;
       }
       this.state.failure = {
@@ -1000,6 +1220,7 @@ export class OrganizeController {
       this.staged = restored.run;
       this.scopeInitialized = true;
       this.scopeBookmarks = this.staged?.bookmarkIds;
+      this.scopeTree = context.tree;
       this.scopeDigest = scopeDependencies(context.tree, this.state.scopeId, this.scopeBookmarks);
       this.retainReview();
     } catch (error) {

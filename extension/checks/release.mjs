@@ -26,27 +26,19 @@ async function inventory(root, excluded = [], excludeLocalFiles = false) {
   await walk(root);
   return result;
 }
-// 2026-10: the UI is the native side panel; sidePanel.setPanelBehavior / sidePanel.open need Chrome 116.
-export const approvedMinimumChromeVersion = 116;
+// 2026-10: sidePanel.setPanelBehavior / sidePanel.open need Chrome 116; the save confirmation popup needs action.openPopup (Chrome 127).
+export const approvedMinimumChromeVersion = 127;
 export const manualRequirements = [
-  {
-    id: 'historical-p1',
-    status: 'historical',
-    evidence: 'docs/release/status.md#historical-evidence',
-    blocking: false,
-  },
-  ...[
-    'chrome-restart-reliability',
-    'edge-no-page-restart',
-    'p2-models',
-    'p3-recovery',
-    'p4-privacy',
-    'windows-ac01-20-four-themes-performance',
-    'approved-minimum-browser-matrix',
-    'independent-review',
-    'user-acceptance',
-  ].map(id => ({ id, status: 'NOT RUN', evidence: null, blocking: true })),
-];
+  'chrome-restart-reliability',
+  'edge-no-page-restart',
+  'p2-models',
+  'p3-recovery',
+  'p4-privacy',
+  'windows-ac01-20-four-themes-performance',
+  'approved-minimum-browser-matrix',
+  'independent-review',
+  'user-acceptance',
+].map(id => ({ id, status: 'NOT RUN', evidence: null, blocking: true }));
 export function releaseGate(result) {
   return [
     ...result.sourceErrors,

@@ -11,9 +11,13 @@ import { useI18n, type MessageKey } from '../ui/i18n';
 import './token-usage.css';
 
 const PURPOSES: Record<TokenPurpose, MessageKey> = {
+  'preference-summary': 'AI 总结偏好',
+  rename: 'AI 书签改名',
   save: '智能收藏',
   search: '语义搜索',
   'search-expand': '搜索扩展',
+  'history-query': '历史查询理解',
+  'history-rank': '历史结果排序',
   organize: 'AI 整理',
   'import-map': '导入映射',
   'import-classify': '导入分类',
@@ -85,14 +89,12 @@ export function TokenUsage({ visible = true }: { visible?: boolean }) {
             </div>
           </dl>
           <p className="hint token-note">
-            {t('仅累计服务返回的用量；中断响应可能不完整。')}
             {summary.missing > 0 && <span>{t('{count} 次未提供用量', { count: summary.missing })}</span>}
             {summary.partial > 0 && <span>{t('{count} 次用量不完整', { count: summary.partial })}</span>}
           </p>
           {summary.requests === 0 ? (
             <div className="surface token-empty">
               <h2>{t('暂无调用记录')}</h2>
-              {!ledger.since && <p>{t('从更新后的首次模型调用开始记录，仅保存在本机。')}</p>}
             </div>
           ) : (
             <>

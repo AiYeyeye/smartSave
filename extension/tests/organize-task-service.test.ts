@@ -47,6 +47,7 @@ function setup() {
     get: vi.fn(async () => view),
     list: vi.fn(async () => []),
     command: vi.fn(async () => view),
+    reviewContent: vi.fn(async () => view),
     select: vi.fn(async () => view),
     dispose: vi.fn(),
     subscribe: vi.fn((listener: (value: OrganizeTaskView) => void) => {

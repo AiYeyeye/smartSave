@@ -33,6 +33,13 @@ export type SaveReceipt = {
   source?: 'rule' | 'domain' | 'ai';
   ms?: number;
   timing?: SaveTiming;
+  suggestedTitle?: string;
+  nameStatus?: 'pending' | 'ready' | 'unchanged' | 'uncertain' | 'failed';
+  nameReview?: 'kept' | 'applied';
+  nameRequestId?: string;
+  /** Explicit review only; closing the dialog does not resolve a receipt. */
+  reviewedAt?: number;
+  reviewRequestId?: string;
 };
 
 type LocalArea = {
@@ -48,6 +55,17 @@ export async function readSaveReceipts(storage: LocalArea): Promise<SaveReceipt[
   } catch {
     return [];
   }
+}
+
+/** Latest receipt per bookmark that still waits for an explicit review (newest first, like the stored list). */
+export function pendingSaveReceipts(receipts: SaveReceipt[]) {
+  const seen = new Set<string>();
+  return receipts.filter(receipt => {
+    const key = JSON.stringify([receipt.installationId, receipt.bookmarkId]);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return !receipt.reviewedAt && receipt.status !== 'undone' && receipt.reason !== 'missing-bookmark';
+  });
 }
 
 /** Serialized writer: the service worker is the only owner, so one promise chain is enough. */
@@ -79,7 +97,13 @@ export class SaveReceiptLog {
       const list = await readSaveReceipts(this.storage);
       let count = 0;
       const next = list.map(receipt => {
-        if (receipt.status !== 'classifying') return receipt;
+        if (receipt.status !== 'classifying') {
+          if (receipt.nameStatus === 'pending') {
+            count++;
+            return { ...receipt, nameStatus: 'failed' as const };
+          }
+          return receipt;
+        }
         count++;
         return { ...receipt, status: 'failed' as const, reason: 'worker-interrupted' };
       });
@@ -94,7 +118,11 @@ export class SaveReceiptLog {
       const index = list.findIndex(item => item.id === receipt.id);
       if (index >= 0) list[index] = receipt;
       else list.unshift(receipt);
-      await this.storage.set({ [SAVE_RECEIPTS_KEY]: list.slice(0, SAVE_RECEIPTS_LIMIT) });
+      await this.storage.set({
+        [SAVE_RECEIPTS_KEY]: list.filter(
+          (item, index) => index < SAVE_RECEIPTS_LIMIT || (!!item.suggestedTitle && !item.nameReview),
+        ),
+      });
       return receipt;
     });
   }

@@ -1,9 +1,12 @@
 import type { TreeSnapshot } from '../domain/node-reference';
+import type { HistoryAiRequest } from '../domain/history-search';
 import type { SettingsStore } from '../persistence/settings';
 import { connectTree } from '../panel/tree-client';
 /** Which owner changed: tree port state, settings/session envelope, or a removed host permission. Legacy no-argument notifiers are treated as settings-level changes. */
 export type ModelAuthorityChange = 'tree' | 'settings' | 'permissions';
 export interface ModelAuthority {
+  /** Required for history tasks; verifies consent, native permission and volatile record evidence. */
+  validateHistory?(request: HistoryAiRequest): Promise<void>;
   read(): Promise<Awaited<ReturnType<SettingsStore['snapshot']>> & { tree: TreeSnapshot }>;
   subscribe(listener: (change?: ModelAuthorityChange) => void): () => void;
 }

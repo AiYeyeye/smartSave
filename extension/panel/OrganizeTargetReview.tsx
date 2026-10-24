@@ -76,17 +76,18 @@ export function OrganizeTargetReview({
     }
     return [...result];
   }, [actions, targets]);
-  const paths = useMemo(() => organizePaths(proposal.tree), [proposal.tree]);
+  const rootLabel = t('根目录');
+  const paths = useMemo(() => organizePaths(proposal.tree, rootLabel), [proposal.tree, rootLabel]);
   const chosen = new Set(selected);
   if (!groups.length) return null;
   return (
     <section className="organize-target-review" aria-label={t('按目标目录审核')}>
-      <h3>{t('按目标目录审核')}</h3>
+      <h3 className="organize-section-title">{t('按目标目录审核')}</h3>
       {groups.map(([id, items]) => {
         const count = items.filter(action => chosen.has(action.id)).length;
         const label = targetLabels.get(id) ?? id;
         return (
-          <article key={id}>
+          <article key={id} className="organize-target-group">
             <GroupChoice
               checked={count === items.length}
               mixed={count > 0 && count < items.length}

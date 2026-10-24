@@ -9,6 +9,7 @@ import type { OrganizeRequest, approvedOrganizeFolders } from './organize-batche
 import type { DuplicateChoice } from './exact-duplicates';
 import type { DuplicateGroup } from './suspected-duplicates';
 import type { OrganizeRepair } from './organize-partial-repair';
+import type { OrganizeContent } from './organize-content';
 
 export interface OrganizeState {
   task?: {
@@ -27,6 +28,16 @@ export interface OrganizeState {
     }[];
   };
   pipeline?: {
+    contentPhase?: OrganizeContent['phase'];
+    taxonomyRevision?: 0 | 1;
+    completedIds?: string[];
+    bookmarkTargets?: Record<string, string>;
+    reviewedIds?: string[];
+    reclassifyingIds?: string[];
+    preferenceSaveFailed?: boolean;
+    topicCompleted?: number;
+    uncertainIds?: string[];
+    unchangedIds?: string[];
     stage: 'folders' | 'bookmarks' | 'complete';
     status: 'review' | 'running' | 'paused' | 'failed' | 'invalid';
     total: number;
@@ -51,6 +62,8 @@ export interface OrganizeState {
   invalid: boolean;
   busy: boolean;
   message: string;
+  /** Something the user must act on (a failed command, a lost connection); shown once as a 提醒 line. */
+  notice?: string;
   repair?: { count: number; retained: number };
   failure?: {
     code: string;
@@ -73,12 +86,14 @@ export interface OrganizeState {
 export type GenerationOptions = OrganizeOptions & {
   rejectedSignatures?: string[];
   staged?: boolean;
+  contentFirst?: boolean;
   batchSize?: number;
 };
 export type RunContext = Awaited<ReturnType<ModelAuthority['read']>> & {
   config: NonNullable<Awaited<ReturnType<ModelAuthority['read']>>['config']>;
 };
 export type StagedRun = {
+  content?: OrganizeContent;
   /** Volatile, unaccepted evidence. Restart requires regenerating this batch. */
   repair?: { ids: string[]; candidate: OrganizeRepair };
   requiresCredential?: boolean;

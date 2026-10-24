@@ -1,0 +1,59 @@
+/* Toolbar popup for a native save, compact like the browser's own bookmark bubble. Chrome sizes the popup to this content. */
+html:has(.save-pop),
+html:has(.save-pop) body { width: 352px; overflow-x: hidden; }
+.save-pop { width: 352px; padding: 10px 12px; display: grid; gap: 8px; background: var(--surface); color: var(--text); overflow-wrap: anywhere; }
+.save-pop-body { display: grid; gap: 8px; min-width: 0; }
+
+.save-pop-head { display: flex; align-items: center; gap: 8px; min-height: 28px; }
+.save-pop-mark { flex: none; width: 18px; height: 18px; color: var(--accent-text); }
+.save-pop-status { flex: 1; min-width: 0; margin: 0; font-size: 13px; font-weight: 600; letter-spacing: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.save-pop-count { flex: none; padding: 1px 7px; border-radius: 999px; background: var(--accent-soft-2); color: var(--accent-text); font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.save-pop-close { flex: none; width: 28px; height: 28px; min-height: 28px; margin-inline-end: -4px; padding: 0; border: 0; background: transparent; box-shadow: none; color: var(--muted); }
+.save-pop-close svg { width: 16px; height: 16px; }
+
+.save-pop-form { display: grid; gap: 10px; min-width: 0; }
+.save-pop-fields { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: center; gap: 8px 10px; }
+.save-pop-label { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); white-space: nowrap; }
+.save-pop-ai { padding: 0 4px; border-radius: 4px; background: var(--accent-soft-2); color: var(--accent-text); font-size: 10px; font-weight: 700; line-height: 15px; }
+.save-pop-input { width: 100%; min-width: 0; min-height: 32px; padding: 5px 9px; font-size: 13px; text-overflow: ellipsis; }
+
+.save-pop-folder { width: 100%; min-width: 0; min-height: 36px; padding: 3px 8px 3px 9px; justify-content: flex-start; gap: 8px; text-align: start; font-weight: 400; box-shadow: none; }
+.save-pop-folder > span { flex: 1; min-width: 0; display: grid; }
+.save-pop-folder strong,
+.save-pop-folder small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.save-pop-folder strong { font-size: 13px; font-weight: 500; }
+.save-pop-folder small { color: var(--muted); font-size: 11px; line-height: 1.3; }
+.save-pop-folder svg { flex: none; width: 16px; height: 16px; }
+.save-pop-folder > svg:first-child { color: var(--accent-text); }
+.save-pop-folder .is-open { transform: rotate(180deg); }
+.save-pop-tree { grid-column: 1 / -1; min-width: 0; }
+.save-pop-tree .folder-picker-tree { margin: 0; max-height: 216px; }
+.folder-picker-tree.is-compact .folder-picker-row { min-height: 30px; gap: 4px; }
+.folder-picker-tree.is-compact .folder-picker-row[aria-selected='true'] { background: var(--accent-soft-2); }
+.folder-picker-tree.is-compact .folder-picker-toggle { width: 22px; flex-basis: 22px; min-height: 26px; }
+.folder-picker-tree.is-compact .folder-picker-leaf { width: 22px; }
+.folder-picker-tree.is-compact svg { width: 15px; height: 15px; }
+
+.save-pop-actions { display: flex; justify-content: flex-end; align-items: center; gap: 8px; }
+.save-pop-actions > button { min-height: 32px; padding: 0 14px; }
+.save-pop-actions > .primary { min-width: 84px; }
+.save-pop-actions > .ghost { color: var(--muted); box-shadow: none; }
+.save-pop-note { margin: 0; font-size: 12px; line-height: 1.45; color: var(--muted); }
+.save-pop-note.is-warn { color: var(--warn); }
+
+.save-pop-details { margin: 0 -12px -4px; padding: 2px 12px 0; border-top: 1px solid var(--border); font-size: 12px; color: var(--muted); }
+.save-pop-details > summary { width: fit-content; padding: 5px 0; display: inline-flex; align-items: center; gap: 6px; list-style: none; cursor: pointer; }
+.save-pop-details > summary::-webkit-details-marker { display: none; }
+.save-pop-details > summary::after { content: ''; width: 5px; height: 5px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: translateY(-2px) rotate(45deg); }
+.save-pop-details[open] > summary::after { transform: translateY(1px) rotate(225deg); }
+.save-pop-details dl { margin: 2px 0 8px; display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 3px 10px; }
+.save-pop-details dt { color: var(--faint); }
+.save-pop-details dd { margin: 0; color: var(--text); overflow-wrap: anywhere; }
+.save-pop-details [role='alert'] { margin: 0 0 6px; color: var(--warn); }
+.save-pop-detail-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.save-pop-detail-actions > button { min-height: 28px; padding: 0 10px; font-size: 12px; }
+.save-pop-link { min-height: 0; padding: 0; border: 0; background: none; box-shadow: none; color: var(--accent-text); font-size: 12px; font-weight: 500; text-decoration: underline; text-underline-offset: 2px; }
+.save-pop-link:hover:not(:disabled) { background: none; }
+
+/* Sidebar: only the entry that opens the popup. */
+.save-review-launcher { margin-bottom: 10px; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }

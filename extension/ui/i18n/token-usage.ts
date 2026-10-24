@@ -1,4 +1,6 @@
 export const tokenUsageEnglish = {
+  历史查询理解: 'History query interpretation',
+  历史结果排序: 'History result ranking',
   'Token 统计': 'Token usage',
   今日: 'Today',
   '近 7 天': 'Last 7 days',

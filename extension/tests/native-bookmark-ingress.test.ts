@@ -3,7 +3,11 @@ import type { BookmarkSource } from '../adapters/bookmarks-read';
 import type { BookmarkWriter } from '../adapters/bookmarks-write';
 import { TreeProjection } from '../background/tree-projection';
 import { OwnWriteGuard } from '../background/own-write-guard';
-import { isSaveFeatureConfigured, startNativeBookmarkIngress } from '../background/native-bookmark-ingress';
+import {
+  isSaveFeatureConfigured,
+  startNativeBookmarkIngress,
+  type NativeBookmarkIngressOptions,
+} from '../background/native-bookmark-ingress';
 import { AiServicesStore, type ConnectedServiceRecord } from '../persistence/ai-services';
 import { SettingsStore } from '../persistence/settings';
 import { noopDebugLog } from '../domain/debug-log';
@@ -66,9 +70,138 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it('shows a native-save review only after model completion using the window captured at creation', async () => {
+  const reviewReady = vi.fn(async () => {}),
+    reviewWindow = vi.fn(async () => 7);
+  const h = await harness({ streaming: false, reviewReady, reviewWindow });
+  let resolve!: (response: Response) => void;
+  h.fetchMock.mockImplementation(
+    () =>
+      new Promise(done => {
+        resolve = done;
+      }),
+  );
+  const node = { syncing: false, id: 'auto-review', parentId: '1', title: 'Synthetic', url: 'https://auto.test/' };
+  h.find('1').children!.push(node);
+  await h.writer.create({ parentId: '2', title: 'touch' });
+  h.onCreated.emit(node.id, node);
+  expect(reviewWindow).toHaveBeenCalledOnce();
+  await vi.waitFor(() => expect(h.fetchMock).toHaveBeenCalledOnce());
+  expect(reviewReady).not.toHaveBeenCalled();
+  resolve(
+    new Response(
+      JSON.stringify({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                assignments: [{ itemId: node.id, folderId: '2', suggestedTitle: 'Suggested name' }],
+                newFolders: [],
+              }),
+            },
+          },
+        ],
+      }),
+    ),
+  );
+  await vi.waitFor(() => expect(reviewReady).toHaveBeenCalledOnce());
+  expect(reviewReady).toHaveBeenCalledWith(
+    expect.objectContaining({ status: 'moved', suggestedTitle: 'Suggested name', nameStatus: 'ready' }),
+    7,
+  );
+  expect(h.find(node.id).title).toBe('Synthetic');
+  h.ingress.dispose();
+});
+
+it('waits for name advice after local classification and keeps the save when opening fails', async () => {
+  let done!: () => void;
+  const suggestName = vi.fn(
+    () =>
+      new Promise<void>(resolve => {
+        done = resolve;
+      }),
+  );
+  const reviewReady = vi.fn(async () => {
+    throw Error('window blocked');
+  });
+  const h = await harness({
+    reviewReady,
+    reviewWindow: async () => 7,
+    suggestName,
+    rules: {
+      load: async () => [
+        {
+          host: 'auto.test',
+          folder: { installationId: 'install', nativeId: '2', kind: 'folder' },
+          includeSubdomains: false,
+        },
+      ],
+      subscribe: () => () => {},
+    },
+  });
+  const node = { syncing: false, id: 'local-review', parentId: '1', title: 'Synthetic', url: 'https://auto.test/' };
+  h.find('1').children!.push(node);
+  await h.writer.create({ parentId: '2', title: 'touch' });
+  h.onCreated.emit(node.id, node);
+  await vi.waitFor(() => expect(suggestName).toHaveBeenCalledOnce());
+  expect(h.find(node.id).parentId).toBe('2');
+  expect(reviewReady).not.toHaveBeenCalled();
+  done();
+  await vi.waitFor(() => expect(reviewReady).toHaveBeenCalledOnce());
+  expect((await readSaveReceipts(h.storage))[0]).toMatchObject({ status: 'moved', nameStatus: 'unchanged' });
+  expect(h.fetchMock).not.toHaveBeenCalled();
+  h.ingress.dispose();
+});
+
+it('a sync-like burst still leaves receipts but never takes over the toolbar popup', async () => {
+  const reviewReady = vi.fn(async () => {});
+  const h = await harness({
+    reviewReady,
+    reviewWindow: async () => 7,
+    rules: {
+      load: async () => [
+        {
+          host: 'auto.test',
+          folder: { installationId: 'install', nativeId: '2', kind: 'folder' },
+          includeSubdomains: false,
+        },
+      ],
+      subscribe: () => () => {},
+    },
+  });
+  await h.writer.create({ parentId: '2', title: 'touch' });
+  const burst = [1, 2, 3, 4].map(index => ({
+    syncing: false,
+    id: `burst-${index}`,
+    parentId: '1',
+    title: `Synced ${index}`,
+    url: `https://auto.test/${index}`,
+  }));
+  for (const node of burst) {
+    h.find('1').children!.push(node);
+    h.onCreated.emit(node.id, node);
+  }
+  // Settled either way (concurrent moves may invalidate each other); none of them may open the popup.
+  await vi.waitFor(async () => {
+    const receipts = await readSaveReceipts(h.storage);
+    expect(receipts.filter(receipt => receipt.status !== 'classifying')).toHaveLength(4);
+  }, 8000);
+  await new Promise(resolve => setTimeout(resolve, 1100));
+  expect(reviewReady).not.toHaveBeenCalled();
+  const single = { syncing: false, id: 'by-hand', parentId: '1', title: 'By hand', url: 'https://auto.test/hand' };
+  h.find('1').children!.push(single);
+  h.onCreated.emit(single.id, single);
+  await vi.waitFor(() => expect(reviewReady).toHaveBeenCalledOnce(), 5000);
+  expect(reviewReady).toHaveBeenCalledWith(expect.objectContaining({ bookmarkId: 'by-hand' }), 7);
+  h.ingress.dispose();
+}, 20_000);
+
 async function harness(
   opts: {
     configureSave?: boolean;
+    reviewReady?: NativeBookmarkIngressOptions['reviewReady'];
+    reviewWindow?: NativeBookmarkIngressOptions['reviewWindow'];
+    suggestName?: NativeBookmarkIngressOptions['suggestName'];
     settlingMs?: number;
     syncLegacy?: boolean;
     rememberKey?: boolean;
@@ -227,6 +360,9 @@ async function harness(
     fetch: fetchMock,
     rules: opts.rules,
     keywords,
+    reviewReady: opts.reviewReady,
+    reviewWindow: opts.reviewWindow,
+    suggestName: opts.suggestName,
   });
 
   return {

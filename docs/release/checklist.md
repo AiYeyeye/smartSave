@@ -17,10 +17,10 @@ pnpm --dir extension release:source
 python tools/package-release.py --candidate
 ```
 
-打包工具重新构建并校验产物，在 `.local/releases/` 生成 ZIP 和 SHA-256 校验文件。压缩包内仅包含运行扩展所需的文件和许可证，不包含源码、测试、浏览器配置或私有资料。
+打包工具重新构建并校验产物，在 `.local/releases/` 生成 ZIP 和 SHA-256 校验文件。压缩包根目录含 `manifest.json`，并包含运行扩展所需的文件和许可证。
 
-The packager rebuilds and validates production assets, then writes a ZIP and SHA-256 sidecar to `.local/releases/`. It includes extension runtime files and license notices, without source, tests, browser profiles or private material.
+The packager rebuilds and validates production assets, then writes a ZIP and SHA-256 sidecar to `.local/releases/`. The ZIP has `manifest.json` at its root and includes extension runtime files and license notices.
 
-不带 `--candidate` 的正式打包会先执行 `release:ready`。它同时检查人工发布条件；不要通过删除条件或把候选包改名来跳过检查。开发命令和浏览器测试方式见 [扩展开发说明](../../extension/README.md)。
+不带 `--candidate` 的正式打包会先执行 `release:ready`。它同时检查浏览器兼容性、恢复、权限、性能及人工审核条件。开发命令和浏览器测试方式见 [扩展开发说明](../../extension/README.md)。
 
-Packaging without `--candidate` runs `release:ready`, which also enforces manual release conditions. Do not bypass these by removing checks or renaming a candidate package. See [extension development](../../extension/README.md) for test commands and browser workflows.
+Packaging without `--candidate` runs `release:ready`, which also checks browser compatibility, recovery, permissions, performance and manual review requirements. See [extension development](../../extension/README.md) for test commands and browser workflows.

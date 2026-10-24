@@ -19,16 +19,19 @@ export function useSaveReceipts() {
     const storage = localArea();
     if (!storage) return;
     let live = true;
-    void readSaveReceipts(storage).then(list => {
-      if (live) setReceipts(list);
-    });
+    let revision = 0;
     const onChanged = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
       if (area !== 'local' || !Object.hasOwn(changes, SAVE_RECEIPTS_KEY)) return;
+      revision++;
       const next = changes[SAVE_RECEIPTS_KEY]?.newValue;
       setReceipts(Array.isArray(next) ? (next as SaveReceipt[]) : []);
     };
     const changes = chrome.storage.onChanged;
     changes.addListener(onChanged);
+    const initialRevision = revision;
+    void readSaveReceipts(storage).then(list => {
+      if (live && revision === initialRevision) setReceipts(list);
+    });
     return () => {
       live = false;
       changes.removeListener(onChanged);
@@ -55,11 +58,13 @@ export function ReceiptView({
   receipt,
   onDismiss,
   onOpen,
+  onInteract,
   compact = false,
 }: {
   receipt: SaveReceipt;
   onDismiss?: () => void;
   onOpen?: (route: string) => void;
+  onInteract?: () => void;
   compact?: boolean;
 }) {
   const { t, message: localize, language } = useI18n();
@@ -143,7 +148,7 @@ export function ReceiptView({
         : t('操作编号：{id}', { id: receipt.correction.requestId });
   }
   return (
-    <div className={`receipt is-${tone}`} role="status" aria-live="polite">
+    <div className={`receipt is-${tone}`} role="status" aria-live="polite" onFocusCapture={onInteract}>
       <span className="receipt-icon" aria-hidden="true">
         <Icon />
       </span>
@@ -160,6 +165,11 @@ export function ReceiptView({
             : ''}
           {receipt.ms && receipt.status !== 'skipped' ? ` · ${(receipt.ms / 1000).toFixed(1)}s` : ''}
         </span>
+        {receipt.nameStatus === 'pending' && <span className="receipt-meta">{t('正在生成名称建议…')}</span>}
+        {receipt.nameStatus === 'unchanged' && <span className="receipt-meta">{t('未建议改名，保留原名')}</span>}
+        {receipt.nameStatus === 'uncertain' && <span className="receipt-meta">{t('信息不足，保留原名')}</span>}
+        {receipt.nameStatus === 'failed' && <span className="receipt-meta">{t('名称建议未完成')}</span>}
+        {receipt.nameReview === 'applied' && <span className="receipt-meta">{t('书签名称已更新')}</span>}
         {undoState !== 'idle' && undoState !== 'busy' ? (
           <span className="receipt-meta">{localize(undoState)}</span>
         ) : null}
@@ -201,12 +211,20 @@ export function ReceiptView({
         </div>
       ) : null}
       {correcting && <SaveCorrection receiptId={receipt.id} onClose={() => setCorrecting(false)} />}
+      {!compact &&
+        !correcting &&
+        receipt.suggestedTitle &&
+        !receipt.nameReview &&
+        ['moved', 'kept'].includes(receipt.status) && (
+          <SaveCorrection receiptId={receipt.id} nameOnly onClose={() => onDismiss?.()} />
+        )}
     </div>
   );
 }
 
 /** Popup card for the latest native save. Dismissal is remembered per receipt. */
 export function SaveReceiptCard({ onOpen }: { onOpen: (route: string) => void }) {
+  const { t } = useI18n();
   const receipts = useSaveReceipts();
   const [seen, setSeen] = useState<string | undefined>();
   useEffect(() => {
@@ -217,18 +235,46 @@ export function SaveReceiptCard({ onOpen }: { onOpen: (route: string) => void })
       if (typeof value === 'string') setSeen(value);
     });
   }, []);
-  const latest = receipts[0];
-  if (!latest || latest.id === seen || Date.now() - latest.at > FRESH_MS) return null;
+  const [selected, setSelected] = useState('');
+  const pending = receipts.filter(
+    receipt => receipt.suggestedTitle && !receipt.nameReview && ['moved', 'kept'].includes(receipt.status),
+  );
+  const latest =
+    pending.find(receipt => receipt.id === selected) ?? pending.find(receipt => receipt.id !== seen) ?? receipts[0];
+  if (!latest || (!pending.includes(latest) && (latest.id === seen || Date.now() - latest.at > FRESH_MS))) return null;
+  if (latest.id === seen) return <button onClick={() => setSeen(undefined)}>{t('待确认名称')}</button>;
   // A finished, successful move stays visible but can be dismissed; failures keep their call to action.
   return (
-    <ReceiptView
-      key={latest.id + latest.status}
-      receipt={latest}
-      onOpen={onOpen}
-      onDismiss={() => {
-        setSeen(latest.id);
-        void localArea()?.set({ [SEEN_KEY]: latest.id });
-      }}
-    />
+    <>
+      {pending.length > 1 && (
+        <label className="field">
+          {t('待确认名称')}
+          <select
+            value={latest.id}
+            onChange={event => {
+              setSelected(event.target.value);
+              setSeen(undefined);
+            }}
+          >
+            {pending.map(receipt => (
+              <option key={receipt.id} value={receipt.id}>
+                {receipt.title}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      <ReceiptView
+        key={latest.id}
+        receipt={latest}
+        onOpen={onOpen}
+        onInteract={() => setSelected(latest.id)}
+        onDismiss={() => {
+          setSelected('');
+          setSeen(latest.id);
+          void localArea()?.set({ [SEEN_KEY]: latest.id });
+        }}
+      />
+    </>
   );
 }

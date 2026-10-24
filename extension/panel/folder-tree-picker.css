@@ -1,0 +1,22 @@
+.folder-picker { min-width: 0; }
+.folder-picker-label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 7px; color: var(--muted); }
+.folder-picker-trigger { width: 100%; display: flex; align-items: center; gap: 10px; text-align: start; min-height: 52px; padding: 9px 12px; }
+.folder-picker-trigger > span { flex: 1; min-width: 0; }
+.folder-picker-trigger strong, .folder-picker-trigger small { display: block; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+.folder-picker-trigger strong { font-weight: 500; }
+.folder-picker-trigger small { margin-top: 3px; color: var(--muted); font-size: 11px; }
+.folder-picker svg { flex-shrink: 0; width: 17px; height: 17px; }
+.folder-picker-trigger > svg:first-child { color: var(--accent-text); }
+.folder-picker-trigger > svg:last-child { width: 15px; }
+.folder-picker-trigger .is-open { transform: rotate(180deg); }
+.folder-picker-tree { margin-top: 8px; padding: 4px; max-height: 184px; overflow: auto; overscroll-behavior: contain; border-radius: 12px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--border); }
+.folder-picker-row { display: flex; align-items: center; gap: 6px; min-height: 44px; padding-right: 8px; border-radius: 8px; cursor: pointer; }
+.folder-picker-row[aria-selected="true"] { background: var(--accent-soft-2); color: var(--accent-text); }
+.folder-picker-row[aria-disabled="true"] { color: var(--muted); cursor: default; }
+.folder-picker-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.folder-picker-row:hover { background: var(--accent-soft); }
+.folder-picker-name { min-width: 0; flex: 1; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; font-size: 13px; }
+.folder-picker-toggle { padding: 0; width: 44px; min-height: 44px; flex: 0 0 44px; display: grid; place-items: center; border: 0; background: transparent; box-shadow: none; }
+.folder-picker-toggle .is-open { transform: rotate(90deg); }
+.folder-picker-leaf { width: 44px; flex-shrink: 0; }
+.folder-picker-check { color: var(--accent-text); }

@@ -14,11 +14,13 @@ type Page = z.infer<typeof pageSchema>;
 export function CurrentPageSave({
   settings,
   aiServices,
-  trialNonce = 0,
+  dialog = false,
+  onActive,
 }: {
   settings?: SettingsStore;
   aiServices?: AiServicesStore;
-  trialNonce?: number;
+  dialog?: boolean;
+  onActive?: (active: boolean) => void;
 }) {
   const { message: localize } = useI18n();
   const [page, setPage] = useState<Page>();
@@ -30,8 +32,9 @@ export function CurrentPageSave({
   );
   const [lastSnapshot, setLastSnapshot] = useState<TreeSnapshot>();
   const port = useRef<chrome.runtime.Port | undefined>(undefined);
-  const [trial, setTrial] = useState(false);
-  const lastTrial = useRef(0);
+  useEffect(() => {
+    onActive?.(!!page);
+  }, [page, onActive]);
   useEffect(() => {
     if (typeof chrome === 'undefined' || !chrome.runtime?.connect) return;
     const connection = chrome.runtime.connect({ name: SAVE_PORT });
@@ -62,6 +65,18 @@ export function CurrentPageSave({
       setMessage('收藏入口连接已关闭；请重新打开智栏。');
     });
     connection.postMessage({ type: 'register' });
+    const refresh = (message: unknown) => {
+      if (
+        dialog &&
+        !current.current &&
+        message &&
+        typeof message === 'object' &&
+        'type' in message &&
+        message.type === 'saveDialogUpdated'
+      )
+        connection.postMessage({ type: 'register' });
+    };
+    if (dialog) chrome.runtime.onMessage.addListener(refresh);
     const stop = connectTree(chrome.runtime, next => {
       if (next.status === 'ready') setLastSnapshot(next.snapshot);
       setTree(next);
@@ -70,25 +85,10 @@ export function CurrentPageSave({
       current.current = undefined;
       port.current = undefined;
       connection.disconnect();
+      if (dialog) chrome.runtime.onMessage.removeListener(refresh);
       stop();
     };
-  }, []);
-  useEffect(() => {
-    if (!trialNonce || trialNonce === lastTrial.current) return;
-    lastTrial.current = trialNonce;
-    if (current.current) {
-      setMessage('请先关闭当前卡片，再开始新的试分类。');
-      return;
-    }
-    setTrial(true);
-    setMessage('正在获取当前网页…');
-    try {
-      if (!port.current) throw Error('disconnected');
-      port.current.postMessage({ type: 'capture' });
-    } catch {
-      setMessage('无法连接当前网页，请重新打开智栏后试分类。');
-    }
-  }, [trialNonce]);
+  }, [dialog]);
   async function extractBody() {
     const frozen = current.current;
     if (!frozen) throw Error('stale');
@@ -106,7 +106,7 @@ export function CurrentPageSave({
     });
   }
   // Keep explicitly captured shortcut/context-menu sessions, without an idle manual-save CTA.
-  if (!page) return trial && message ? <p role="status">{localize(message)}</p> : null;
+  if (!page) return message ? <p role="status">{localize(message)}</p> : null;
   const snapshot = tree.status === 'ready' ? tree.snapshot : lastSnapshot;
   return (
     <>
@@ -114,18 +114,17 @@ export function CurrentPageSave({
         <SaveCard
           key={page.token}
           page={page}
+          folderTree={dialog}
           snapshot={snapshot}
           connectionReady={tree.status === 'ready'}
           settings={settings}
           aiServices={aiServices}
-          readOnlyTrial={trial}
           rulesStore={rules}
           extractBody={extractBody}
           onClose={() => {
             current.current = undefined;
             setPage(undefined);
             setMessage('');
-            setTrial(false);
             try {
               port.current?.postMessage({ type: 'close' });
             } catch {

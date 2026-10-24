@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { OrganizeInteraction } from '../domain/organize-interaction';
 import type { ModelSettingsReader } from '../adapters/feature-model-settings';
 import { browserModelAuthority } from '../adapters/model-authority';
 import type { OrganizeTaskView } from '../background/organize-task-owner';
@@ -30,6 +31,7 @@ export type OrganizeWorkbenchOwner = Pick<
   toggle(id: string, selected: boolean): void | Promise<void>;
   toggleMany(ids: string[], selected: boolean): void | Promise<void>;
   target(id: string, target: string): void | Promise<void>;
+  reviewContent?(edit: OrganizeInteraction): unknown;
   cancel(): void | Promise<void>;
   pauseBatches(): void | Promise<void>;
   confirmFolders(): void | Promise<void>;
@@ -43,6 +45,14 @@ export type OrganizeWorkbenchOwner = Pick<
   setVisible?(visible: boolean): void;
 };
 
+/** What changed, when the worker reports a task voided by changes (stale-context with a detail). */
+function staleText(error: unknown): string | undefined {
+  if (!(error instanceof Error) || error.message !== 'stale-context') return undefined;
+  const detail = (error as Error & { detail?: unknown }).detail;
+  return typeof detail === 'string' && detail
+    ? `这项整理任务已失效，因为${detail}。请重新生成方案；未修改书签。`
+    : '整理范围内的书签或设置有改动，这项整理任务已失效。请重新生成方案；未修改书签。';
+}
 /** Page observer and explicit command client. Disposing it never cancels worker generation. */
 export class OrganizeTaskClient implements OrganizeWorkbenchOwner {
   private local: OrganizeController;
@@ -65,6 +75,7 @@ export class OrganizeTaskClient implements OrganizeWorkbenchOwner {
   private result?: MutationResult;
   private requestId?: string;
   private message?: string;
+  private restoreFailed = false;
   private context = 0;
   private pending = new Set<() => void>();
   constructor(
@@ -97,10 +108,10 @@ export class OrganizeTaskClient implements OrganizeWorkbenchOwner {
       ...state,
       tree: this.tree,
       // Disconnected is not invalid: the plan stays saved in the worker, so only block actions until reconnected.
-      busy: state.busy || this.editing > 0 || (this.mode === 'remote' && !this.connected),
+      busy: state.busy || this.editing > 0 || (this.mode === 'remote' && !this.connected && !this.restoreFailed),
       invalid: state.invalid,
       ...(this.mode === 'remote' && this.result ? { result: this.result } : {}),
-      ...(this.message ? { message: this.message } : {}),
+      ...(this.message ? { message: this.message, notice: this.message } : {}),
       task: {
         id: this.mode === 'remote' ? this.current?.id : undefined,
         revision: this.mode === 'remote' ? this.current?.revision : undefined,
@@ -142,7 +153,7 @@ export class OrganizeTaskClient implements OrganizeWorkbenchOwner {
   }
   private async taskRpc(input: OrganizeTaskMessage) {
     const reply = organizeTaskReplySchema.parse(await this.rpc(input));
-    if (!reply.ok) throw Error(reply.reason);
+    if (!reply.ok) throw Object.assign(Error(reply.reason), reply.detail ? { detail: reply.detail } : {});
     if (
       input.action === 'list'
         ? !('tasks' in reply)
@@ -154,6 +165,7 @@ export class OrganizeTaskClient implements OrganizeWorkbenchOwner {
   private accept(task: OrganizeTaskView) {
     if (this.closed || (this.current?.id === task.id && task.revision < this.current.revision)) return;
     this.current = task;
+    this.restoreFailed = false;
     if (this.port) {
       this.connected = true;
       this.retries = 0;
@@ -194,6 +206,18 @@ export class OrganizeTaskClient implements OrganizeWorkbenchOwner {
       port.onMessage.addListener((input: unknown) => {
         if (this.closed || this.port !== port) return;
         this.retries = 0;
+        const failure = z
+          .strictObject({
+            version: z.literal(1),
+            id: z.string(),
+            error: z.string(),
+            detail: z.string().max(500).optional(),
+          })
+          .safeParse(input);
+        if (failure.success && failure.data.id === this.current?.id && failure.data.error !== 'organize-task-busy') {
+          this.failRestore(failure.data.id, Object.assign(Error(failure.data.error), { detail: failure.data.detail }));
+          return;
+        }
         const reply = z.strictObject({ version: z.literal(1), task: organizeTaskViewSchema }).safeParse(input);
         if (!reply.success || this.mode !== 'remote' || reply.data.task.id !== this.current?.id) return;
         this.accept(reply.data.task);
@@ -219,6 +243,23 @@ export class OrganizeTaskClient implements OrganizeWorkbenchOwner {
       this.publish();
     }
   }
+  private failRestore(id: string, error: unknown) {
+    this.message = staleText(error) ?? '无法恢复这项整理任务，请检查范围和模型配置；未自动继续分析。';
+    if (this.current?.id === id && !this.requestId && !this.current.submission) {
+      this.restoreFailed = true;
+      this.current = {
+        ...this.current,
+        state: {
+          ...this.current.state,
+          busy: false,
+          invalid: true,
+          progress: undefined,
+          ...(this.current.state.pipeline ? { pipeline: { ...this.current.state.pipeline, status: 'invalid' } } : {}),
+        },
+      };
+    }
+    this.publish();
+  }
   private enqueue(action: () => Promise<void>): Promise<void> {
     this.editing++;
     this.publish();
@@ -233,10 +274,14 @@ export class OrganizeTaskClient implements OrganizeWorkbenchOwner {
             ? '请先在 AI 服务中为智能整理分配可用模型，再开始生成。'
             : error instanceof Error && error.message === 'organize-credential-required'
               ? '需要重新输入本次整理使用的 API Key，再点击继续；已完成建议保留。'
-              : error instanceof Error &&
-                  ['organize-task-conflict', 'organize-checkpoint-conflict'].includes(error.message)
-                ? '整理进度已被其他页面更新，请重新读取任务后再操作。'
-                : '整理请求未获确认，请重新读取已保存任务；不会自动重发分析或书签写入。';
+              : staleText(error)
+                ? staleText(error)!
+                : error instanceof Error &&
+                    ['organize-task-conflict', 'organize-checkpoint-conflict'].includes(error.message)
+                  ? '整理进度已被其他页面更新，请重新读取任务后再操作。'
+                  : this.requestId
+                    ? '整理请求未获确认，请重新读取已保存任务；不会自动重发分析或书签写入。'
+                    : '执行前的核对没有完成，书签未修改。请重试；仍失败时重新读取已保存任务。';
         this.publish();
       })
       .finally(() => {
@@ -291,9 +336,8 @@ export class OrganizeTaskClient implements OrganizeWorkbenchOwner {
       this.accept(reply.task);
       this.watch();
       if (reply.task.submission || this.requestId) await this.observe();
-    } catch {
-      this.message = '无法恢复这项整理任务，请检查范围和模型配置；未自动继续分析。';
-      this.publish();
+    } catch (error) {
+      if (!this.closed && context === this.context) this.failRestore(id, error);
     }
   }
   private async credential(required = false) {
@@ -310,6 +354,7 @@ export class OrganizeTaskClient implements OrganizeWorkbenchOwner {
     this.context++;
     this.mode = 'local';
     this.current = undefined;
+    this.restoreFailed = false;
     this.result = undefined;
     this.requestId = undefined;
     this.message = undefined;
@@ -334,6 +379,7 @@ export class OrganizeTaskClient implements OrganizeWorkbenchOwner {
           allowRename: options.unfiledOnly ? false : options.allowRename,
           ...(options.levels === undefined ? {} : { levels: options.levels }),
           unfiledOnly: options.unfiledOnly,
+          contentFirst: options.contentFirst,
           protectedFolderIds: options.protectedFolderIds,
           rejectedSignatures: options.rejectedSignatures,
         },
@@ -405,6 +451,28 @@ export class OrganizeTaskClient implements OrganizeWorkbenchOwner {
   target(id: string, target: string) {
     return this.edit({ actionId: id, targetId: target });
   }
+  reviewContent(edit: OrganizeInteraction) {
+    if (this.mode !== 'remote') return this.local.reviewContent(edit);
+    let accepted = false;
+    return this.enqueue(async () => {
+      if (!this.current) return;
+      const reply = await this.taskRpc({
+        version: 1,
+        type: 'organizeTask',
+        action: 'reviewContent',
+        id: this.current.id,
+        expectedRevision: this.current.revision,
+        edit,
+      });
+      if ('task' in reply) {
+        this.message = undefined;
+        this.accept(reply.task);
+        accepted = true;
+      }
+    }).then(() => {
+      if (!accepted) throw Error('organize-task-conflict');
+    });
+  }
   async deselectForMemory(id: string) {
     if (this.mode !== 'remote') {
       this.local.toggle(id, false);
@@ -453,6 +521,12 @@ export class OrganizeTaskClient implements OrganizeWorkbenchOwner {
         },
       );
     }
+    if (this.mode === 'remote' && this.restoreFailed) {
+      // Restoration never resumed analysis or writes. Leave the unavailable observer; retain its saved checkpoint.
+      this.selectScope(this.current?.state.scopeId ?? '');
+      this.local.cancel();
+      return;
+    }
     if (this.mode === 'remote') return this.command('cancel');
     this.local.cancel();
   }
@@ -491,13 +565,19 @@ export class OrganizeTaskClient implements OrganizeWorkbenchOwner {
       }
       lease.setActive?.(true);
       try {
-        const raw = await this.rpc({
-          version: 1,
-          type: 'registerOrganizeTaskPreview',
-          organizerContext: lease.token,
-          checkpointId: task.id,
-          checkpointRevision: task.revision,
-        });
+        this.message = undefined;
+        this.publish();
+        // Re-checking a large plan against the live bookmarks takes a while (seconds per thousand bookmarks).
+        const raw = await this.rpc(
+          {
+            version: 1,
+            type: 'registerOrganizeTaskPreview',
+            organizerContext: lease.token,
+            checkpointId: task.id,
+            checkpointRevision: task.revision,
+          },
+          MUTATION_REPLY_TIMEOUT_MS,
+        );
         const preview = z.strictObject({ status: z.literal('preview'), proposal: confirmSchema }).parse(raw).proposal;
         if (
           this.closed ||

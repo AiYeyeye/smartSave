@@ -29,6 +29,7 @@ import type { TreeProjection } from './tree-projection';
 type JournalIndex = Map<string, { unsettled: boolean; quarantine?: OperationRecord['quarantine'] }>;
 
 export class MutationCoordinator {
+  onCompleted?: (record: OperationRecord) => Promise<void>;
   private registeredRequestIds = new Set<string>();
   private previews = new Map<string, ConfirmMutation>();
   purgeSavePreviews() {
@@ -116,10 +117,10 @@ export class MutationCoordinator {
   // Retain ambiguous state even when its final journal write fails in this worker.
   private volatile = new Map<string, { result: MutationResult; semantics: string }>();
   private requestSemantics(request: OperationRecord['request']): string {
-    const { installationId, scope, command, recovery, importBinding, organizerBinding } =
+    const { installationId, scope, command, recovery, importBinding, organizerBinding, learning } =
       durableMutationRequestSchema.parse(request);
     // Cleanup clears before; epochs/revisions are preview freshness, not retry identity.
-    return JSON.stringify({ installationId, scope, command, recovery, importBinding, organizerBinding });
+    return JSON.stringify({ installationId, scope, command, recovery, importBinding, organizerBinding, learning });
   }
   private cacheResult(record: OperationRecord, result: MutationResult) {
     this.volatile.set(record.requestId, { result, semantics: this.requestSemantics(record.request) });
@@ -572,6 +573,7 @@ export class MutationCoordinator {
       record.result = operationResult(record, 'unknown', 'journal-checkpoint-failed');
     }
     this.cacheResult(record, record.result);
+    if (record.result.status === 'completed') await this.onCompleted?.(record).catch(() => {});
     return record.result;
   }
   private async reconcile(record: OperationRecord, explicit = false): Promise<MutationResult> {
@@ -603,6 +605,7 @@ export class MutationCoordinator {
         this.reindex(await this.journal.all());
         this.blocked = false;
         this.cacheResult(record, candidate);
+        await this.onCompleted?.({ ...record, result: candidate }).catch(() => {});
         return candidate;
       } catch {
         this.blocked = true;

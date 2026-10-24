@@ -6,6 +6,7 @@ export interface SearchHit {
   title: string;
   url: string;
   path: string;
+  dateAdded?: number;
 }
 const normalize = (text: string) => text.normalize('NFKC').toLowerCase();
 const compact = (text: string) => text.replace(/\s+/g, '');
@@ -27,11 +28,10 @@ function nearPrefix(a: string, b: string, limit: number): boolean {
   }
   return previous.slice(Math.max(0, a.length - limit)).some(distance => distance <= limit);
 }
-export class SearchIndex {
+/** Shared text matching; documents do not carry bookmark mutation authority. */
+export class SearchDocumentsIndex {
   private readonly entries: { hit: SearchHit; title: string; fields: string[]; phonetic: string[]; words: string[] }[];
-  constructor(tree: TreeSnapshot, records: readonly BookmarkKeywordRecord[] = []) {
-    const keywords = new Map(currentBookmarkKeywords(tree, records).map(record => [record.nativeId, record.keywords]));
-    const nodes = new Map(tree.nodes.map(node => [node.ref.nativeId, node]));
+  constructor(documents: { hit: SearchHit; keywords?: readonly string[] }[]) {
     const phonetics = new Map<string, string[]>();
     const transliterate = (text: string) => {
       let value = phonetics.get(text);
@@ -44,49 +44,32 @@ export class SearchIndex {
       }
       return value;
     };
-    this.entries = tree.nodes
-      .filter(node => node.ref.kind === 'bookmark' && node.url !== undefined)
-      .map(node => {
-        const path: string[] = [];
-        const seen = new Set([node.ref.nativeId]);
-        let parent = node.parentId;
-        while (parent !== undefined) {
-          if (seen.has(parent)) throw Error('invalid-tree');
-          seen.add(parent);
-          const folder = nodes.get(parent);
-          if (!folder) throw Error('invalid-tree');
-          path.unshift(folder.title);
-          parent = folder.parentId;
-        }
-        let host = '';
-        let pathname = '';
-        try {
-          const url = new URL(node.url!);
-          host = url.hostname;
-          pathname = decodeURI(url.pathname);
-        } catch {
-          /* Historical unsupported URLs remain searchable, not openable. */
-        }
-        const title = normalize(node.title);
-        const fields = [node.url!, host, pathname, path.join(' / '), ...(keywords.get(node.ref.nativeId) ?? [])].map(
-          normalize,
-        );
-        const phonetic = [node.title, ...path].flatMap(transliterate);
-        const words = [
-          ...new Set(
-            [title, ...fields, ...phonetic]
-              .flatMap(field => [field, ...field.split(/[^\p{L}\p{N}]+/u)])
-              .filter(Boolean),
-          ),
-        ];
-        return {
-          hit: { id: node.ref.nativeId, title: node.title, url: node.url!, path: path.join(' / ') },
-          title,
-          fields,
-          phonetic,
-          words,
-        };
-      });
+    this.entries = documents.map(({ hit, keywords = [] }) => {
+      let host = '';
+      let pathname = '';
+      try {
+        const url = new URL(hit.url);
+        host = url.hostname;
+        pathname = decodeURI(url.pathname);
+      } catch {
+        /* Historical unsupported URLs remain searchable, not openable. */
+      }
+      const title = normalize(hit.title);
+      const fields = [hit.url, host, pathname, hit.path, ...keywords].map(normalize);
+      const phonetic = [hit.title, hit.path].flatMap(transliterate);
+      const words = [
+        ...new Set(
+          [title, ...fields, ...phonetic].flatMap(field => [field, ...field.split(/[^\p{L}\p{N}]+/u)]).filter(Boolean),
+        ),
+      ];
+      return {
+        hit,
+        title,
+        fields,
+        phonetic,
+        words,
+      };
+    });
   }
   all(): SearchHit[] {
     return this.entries.map(entry => ({ ...entry.hit }));
@@ -150,5 +133,39 @@ export class SearchIndex {
       })
       .sort((a, b) => a.score - b.score || a.order - b.order)
       .map(entry => entry.hit);
+  }
+}
+
+export class SearchIndex extends SearchDocumentsIndex {
+  constructor(tree: TreeSnapshot, records: readonly BookmarkKeywordRecord[] = []) {
+    const keywords = new Map(currentBookmarkKeywords(tree, records).map(record => [record.nativeId, record.keywords]));
+    const nodes = new Map(tree.nodes.map(node => [node.ref.nativeId, node]));
+    super(
+      tree.nodes
+        .filter(node => node.ref.kind === 'bookmark' && node.url !== undefined)
+        .map(node => {
+          const path: string[] = [];
+          const seen = new Set([node.ref.nativeId]);
+          let parent = node.parentId;
+          while (parent !== undefined) {
+            if (seen.has(parent)) throw Error('invalid-tree');
+            seen.add(parent);
+            const folder = nodes.get(parent);
+            if (!folder) throw Error('invalid-tree');
+            path.unshift(folder.title);
+            parent = folder.parentId;
+          }
+          return {
+            hit: {
+              id: node.ref.nativeId,
+              title: node.title,
+              url: node.url!,
+              path: path.join(' / '),
+              ...(node.dateAdded === undefined ? {} : { dateAdded: node.dateAdded }),
+            },
+            keywords: keywords.get(node.ref.nativeId),
+          };
+        }),
+    );
   }
 }

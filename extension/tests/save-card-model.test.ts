@@ -44,7 +44,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
-async function harness(deferred = false, bodyEnabled = false, trial = false, localized = false) {
+async function harness(deferred = false, bodyEnabled = false, assignedModels = false, localized = false) {
   const listeners = new Set<() => void>();
   const event = {
     addListener: (listener: () => void) => listeners.add(listener),
@@ -75,17 +75,17 @@ async function harness(deferred = false, bodyEnabled = false, trial = false, loc
     false,
   );
   const rules = new SiteRulesStore(storage, run => run());
-  const services = trial ? new AiServicesStore(storage, run => run()) : undefined;
+  const services = assignedModels ? new AiServicesStore(storage, run => run()) : undefined;
   if (services) {
     await services.load();
     await services.upsertService(
       {
-        id: 'trial',
+        id: 'connected',
         name: 'Synthetic',
         serviceType: 'API',
         kind: 'api',
         detail: '',
-        baseUrl: 'https://trial.test',
+        baseUrl: 'https://connected.test',
         mode: 'openai',
         status: 'ok',
         letter: 'T',
@@ -94,13 +94,13 @@ async function harness(deferred = false, bodyEnabled = false, trial = false, loc
         enabled: ['save-model', 'classify-model'],
         streaming: false,
       },
-      'trial-key',
+      'connected-key',
       false,
     );
     await services.saveFeatures(
       services
         .snapshotServices()
-        .features.map(feature => ({ ...feature, connId: 'trial', modelId: `${feature.id}-model` })),
+        .features.map(feature => ({ ...feature, connId: 'connected', modelId: `${feature.id}-model` })),
     );
     const context = await settings.snapshot();
     await settings.save(context.config!, { ...context.privacy, fullUrl: false }, context.key, false);
@@ -128,7 +128,6 @@ async function harness(deferred = false, bodyEnabled = false, trial = false, loc
     settings,
     rulesStore: rules,
     aiServices: services,
-    readOnlyTrial: trial,
     send,
     extractBody,
     onClose: vi.fn(),
@@ -181,43 +180,6 @@ it('language changes retain the save draft, explicit consent and in-flight reque
   h.view.unmount();
   h.settings.dispose();
 });
-it('English trial switches language during generation and keeps the preview read-only', async () => {
-  localStorage.setItem(LANGUAGE_KEY, 'en');
-  const h = await harness(false, true, true, true);
-  expect(h.fetcher).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole('button', { name: 'Send and try classification' }));
-  await waitFor(() => expect(h.fetcher).toHaveBeenCalledOnce());
-  fireEvent.change(screen.getByLabelText('Language'), { target: { value: 'zh-CN' } });
-  expect(screen.getByRole('button', { name: '正在试分类…' })).toBeDisabled();
-  expect(h.fetcher.mock.calls[0]![1]!.signal?.aborted).toBe(false);
-  fireEvent.change(screen.getByLabelText('语言'), { target: { value: 'en' } });
-  const wire = JSON.parse(String(h.fetcher.mock.calls[0]![1]!.body));
-  const itemId = JSON.parse(wire.messages[1].content).items[0].id;
-  h.respond(
-    new Response(
-      JSON.stringify({
-        choices: [
-          {
-            message: {
-              content: JSON.stringify({
-                assignments: [{ itemId, folderId: 'f' }],
-                newFolders: [],
-              }),
-            },
-          },
-        ],
-      }),
-    ),
-  );
-  await screen.findByText('Suggested folder: Folder');
-  expect(screen.queryByRole('button', { name: 'Confirm bookmark save' })).not.toBeInTheDocument();
-  expect(h.fetcher).toHaveBeenCalledOnce();
-  expect(h.send).not.toHaveBeenCalled();
-  expect(h.extractBody).not.toHaveBeenCalled();
-  h.view.unmount();
-  h.settings.dispose();
-  h.services?.dispose();
-});
 async function acceptSuggestion(h: Awaited<ReturnType<typeof harness>>, keywords?: string[]) {
   await waitFor(() => expect(h.fetcher).toHaveBeenCalledOnce());
   const wire = JSON.parse(String(h.fetcher.mock.calls[0]![1]!.body));
@@ -240,49 +202,6 @@ async function acceptSuggestion(h: Awaited<ReturnType<typeof harness>>, keywords
   );
   await waitFor(() => expect(screen.getByLabelText('收藏目标目录')).toHaveValue('f'));
 }
-it('read-only trial waits for a click, uses the save route and privacy projection, and never exposes a write', async () => {
-  const h = await harness(false, true, true);
-  expect(screen.getByRole('heading', { name: '当前网页试分类' })).toBeVisible();
-  expect(h.fetcher).not.toHaveBeenCalled();
-  expect(screen.queryByRole('button', { name: '确认收藏保存' })).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: '发送并试分类' }));
-  await waitFor(() => expect(h.fetcher).toHaveBeenCalledOnce());
-  const [url, init] = h.fetcher.mock.calls[0]!;
-  const wire = JSON.parse(String(init!.body));
-  expect(url).toBe('https://trial.test/v1/chat/completions');
-  expect(wire.model).toBe('save-model');
-  expect(init!.headers).toMatchObject({ Authorization: 'Bearer trial-key' });
-  const payload = JSON.parse(wire.messages[1].content);
-  expect(payload.items[0].url).toBe('https://page.test/private');
-  expect(JSON.stringify(payload)).not.toMatch(/secret|ephemeral-body/);
-  expect(h.extractBody).not.toHaveBeenCalled();
-  h.respond(
-    new Response(
-      JSON.stringify({
-        choices: [
-          {
-            message: {
-              content: JSON.stringify({
-                assignments: [{ itemId: payload.items[0].id, folderId: 'f' }],
-                newFolders: [],
-              }),
-            },
-          },
-        ],
-      }),
-    ),
-  );
-  await waitFor(() => expect(screen.getByText('建议目录：Folder')).toBeVisible());
-  expect(h.send).not.toHaveBeenCalled();
-  expect(JSON.stringify(h.data)).not.toContain('trial-key');
-  h.revoke();
-  await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('建议已失效'));
-  expect(screen.queryByText('建议目录：Folder')).not.toBeInTheDocument();
-  h.view.unmount();
-  h.settings.dispose();
-  h.services?.dispose();
-});
-
 it.each(['completed', 'unknown', 'edited-title'] as const)(
   'attaches keywords only to proven unchanged completed saves: %s',
   async outcome => {
@@ -336,31 +255,6 @@ it.each(['completed', 'unknown', 'edited-title'] as const)(
   },
 );
 
-it('cancelled trial ignores a late successful response and cannot write', async () => {
-  const h = await harness(false, true, true);
-  fireEvent.click(screen.getByRole('button', { name: '发送并试分类' }));
-  await waitFor(() => expect(h.fetcher).toHaveBeenCalledOnce());
-  const init = h.fetcher.mock.calls[0]![1]!;
-  const itemId = JSON.parse(JSON.parse(String(init.body)).messages[1].content).items[0].id;
-  fireEvent.click(screen.getByRole('button', { name: '取消试分类' }));
-  expect(init.signal?.aborted).toBe(true);
-  h.respond(
-    new Response(
-      JSON.stringify({
-        choices: [
-          { message: { content: JSON.stringify({ assignments: [{ itemId, folderId: 'f' }], newFolders: [] }) } },
-        ],
-      }),
-    ),
-  );
-  await waitFor(() => expect(screen.getByRole('button', { name: '发送并试分类' })).toBeEnabled());
-  expect(screen.queryByText('建议目录：Folder')).not.toBeInTheDocument();
-  expect(screen.getByText('已取消试分类。')).toBeVisible();
-  expect(h.send).not.toHaveBeenCalled();
-  h.view.unmount();
-  h.settings.dispose();
-  h.services?.dispose();
-});
 it('an accepted AI destination survives unrelated tree changes and is revoked only when its folder changes', async () => {
   const h = await harness();
   await acceptSuggestion(h);
@@ -418,7 +312,7 @@ it('configured automatic initialization reaches actual ModelTransport with prove
   expect(payload.snippet).toBeUndefined();
   expect(wire.messages).toHaveLength(2);
   expect(wire.messages[0].content).toMatch(
-    /single best destination folder[\s\S]*at most 3 levels below the target root[\s\S]*rewriting existing titles is not allowed/,
+    /single best destination folder[\s\S]*at most 3 levels below the target root[\s\S]*suggestedTitle[\s\S]*later human confirmation/,
   );
   expect(options.headers).toMatchObject({ Authorization: 'Bearer session-key' });
   fireEvent.click(screen.getByRole('button', { name: '取消AI请求' }));
@@ -510,4 +404,22 @@ it('accepted body-assisted suggestion becomes invalid when local body consent is
   expect(JSON.stringify(h.data)).not.toContain('ephemeral-body');
   h.view.unmount();
   h.settings.dispose();
+});
+
+it('ordinary captured saves use the classify route and privacy projection without sending body by default', async () => {
+  const h = await harness(false, true, true);
+  await waitFor(() => expect(h.fetcher).toHaveBeenCalledOnce());
+  const [url, init] = h.fetcher.mock.calls[0]!;
+  const wire = JSON.parse(String(init!.body));
+  expect(url).toBe('https://connected.test/v1/chat/completions');
+  expect(wire.model).toBe('classify-model');
+  expect(init!.headers).toMatchObject({ Authorization: 'Bearer connected-key' });
+  expect(JSON.parse(wire.messages[1].content).items[0].url).toBe('https://page.test/private');
+  expect(String(init!.body)).not.toMatch(/secret|ephemeral-body/);
+  expect(h.extractBody).not.toHaveBeenCalled();
+  expect(h.send).not.toHaveBeenCalled();
+  expect(screen.getByRole('button', { name: '确认收藏保存' })).toBeVisible();
+  h.view.unmount();
+  h.settings.dispose();
+  h.services?.dispose();
 });

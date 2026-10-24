@@ -17,6 +17,7 @@ sys.stdout.reconfigure(encoding='utf-8')
 parser = argparse.ArgumentParser()
 parser.add_argument('--run', action='store_true')
 parser.add_argument('--advanced', action='store_true')
+parser.add_argument('--switch-model', action='store_true')
 parser.add_argument('--browser', default='C:/Users/PC/AppData/Local/ms-playwright/chromium-1208/chrome-win64/chrome.exe')
 args = parser.parse_args()
 if not args.run:
@@ -104,7 +105,7 @@ with sync_playwright() as playwright:
         capture('connect')
         page.get_by_role('button', name='Connect', exact=True).click()
         expect(page.get_by_label('Model to use', exact=True)).to_have_value('')
-        expect(page.get_by_role('button', name='Save and continue', exact=True)).to_be_disabled()
+        expect(page.get_by_role('button', name='Save and finish', exact=True)).to_be_disabled()
         page.get_by_role('radio', name=model, exact=True).check()
         expect(page.get_by_role('heading', name='Set up 已连接', exact=True)).to_be_visible()
         capture('quick-setup')
@@ -121,10 +122,8 @@ with sync_playwright() as playwright:
             capture('advanced-assignments')
             page.get_by_role('button', name='Done', exact=True).click()
         else:
-            page.get_by_role('button', name='Save and continue', exact=True).click()
-        expect(page.get_by_role('heading', name='Try it in the webpage sidebar', exact=True)).to_be_visible()
-        capture('trial-instructions')
-        page.get_by_role('button', name='Done, try later', exact=True).click()
+            page.get_by_role('button', name='Save and finish', exact=True).click()
+        expect(page.get_by_role('dialog')).to_have_count(0)
         page.get_by_role('button', name='Connected', exact=True).click()
         page.get_by_role('button', name='Edit', exact=True).click()
         expect(page.get_by_label('Name', exact=True)).to_have_value('已连接')
@@ -154,12 +153,32 @@ with sync_playwright() as playwright:
         assert services['services'][0]['name'] == '已连接'
         assert services['services'][0]['maxOutputTokens'] == 64000
         assert services['services'][0]['timeoutMs'] == 45000
+        if args.switch_model:
+            # Saving a new enabled model must prompt, preserve existing routes, then apply only explicit changes.
+            page.get_by_role('button', name='Connected', exact=True).click()
+            page.get_by_role('button', name='Edit', exact=True).click()
+            page.get_by_label('Maximum output tokens', exact=True).fill('')
+            page.get_by_placeholder('Model ID, e.g. my-model-v2').fill('new-selected-model')
+            page.get_by_role('button', name='+ Add custom model', exact=True).click()
+            page.get_by_role('button', name='Save service', exact=True).click()
+            expect(page.get_by_label('Model for Smart organization', exact=True)).to_have_value('__keep__')
+            expect(page.get_by_label('Model for all features', exact=True)).to_have_value('')
+            unchanged = worker.evaluate("async () => (await chrome.storage.local.get('aiServices')).aiServices")
+            assert all(f['modelId'] == model for f in unchanged['features'])
+            assert 'maxOutputTokens' not in unchanged['services'][0]
+            capture('switch-confirmation')
+            page.get_by_label('Model for Smart organization', exact=True).select_option('new-selected-model')
+            page.get_by_role('button', name='Done', exact=True).click()
+            expect(page.get_by_role('dialog')).to_have_count(0)
+            changed = worker.evaluate("async () => (await chrome.storage.local.get('aiServices')).aiServices")
+            assert next(f for f in changed['features'] if f['id'] == 'organize')['modelId'] == 'new-selected-model'
+            assert all(f['modelId'] == model for f in changed['features'] if f['id'] != 'organize')
         assert worker.evaluate('()=>chrome.bookmarks.getTree()') == before
         assert events == [{'method': 'GET', 'path': '/v1/models'}], events
-        result = {'status': 'PASS', 'browser': context.browser.version, 'evidence': str(root), 'geometry': geometry, 'advanced': args.advanced,
+        result = {'status': 'PASS', 'browser': context.browser.version, 'evidence': str(root), 'geometry': geometry, 'advanced': args.advanced, 'switchModel': args.switch_model,
                   'nativeBookmarksUnchanged': True, 'requests': events, 'rawNamesAndModelIdsPreserved': True,
                   'workerSHA256': hashlib.sha256((extension / 'service-worker.js').read_bytes()).hexdigest(),
-                  'scope': 'Unmodified production scripts; copied manifest grants loopback. English connect, quick setup, trial instructions, edit, feature picker and service export; cross-document draft retention. No live provider or native writes.'}
+                  'scope': 'Unmodified production scripts; copied manifest grants loopback. English connect, quick setup completion, edit, feature picker and service export; cross-document draft retention. No live provider or native writes.'}
         (root / 'results.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
         print(json.dumps(result), flush=True)
     except Exception:

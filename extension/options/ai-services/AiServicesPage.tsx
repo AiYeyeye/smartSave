@@ -181,6 +181,8 @@ function AiServicesPageInner({
           onClose={() => setEditingId(null)}
           onSave={async (next, key, remember) => {
             await controller.persistService(next, key, remember);
+            if (next.enabled.some(id => !editing.enabled.includes(id)))
+              setWizard({ serviceId: next.id, key, remember, step: 'features' });
           }}
           onChangeService={() => {
             setEditingId(null);

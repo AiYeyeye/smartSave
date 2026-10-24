@@ -36,6 +36,20 @@ type Prepared = {
 export class OrganizeTaskAuthority {
   private version = 0;
   private prepared = new Map<string, Prepared>();
+  /**
+   * Rebuilding a large plan (thousands of bookmarks, hundreds of actions) takes seconds, and one confirmation validates
+   * several times. A rebuild proven for the exact same checkpoint, scope, settings and memory is not repeated.
+   */
+  private rebuilt = new Map<string, string>();
+  private async rebuildKey(
+    requestId: string,
+    checkpoint: OrganizeCheckpoint,
+    tree: Parameters<typeof dependencyDigest>[0],
+    settingsDigest: string,
+    memory: unknown,
+  ) {
+    return hash([requestId, checkpoint.revision, scope(tree, checkpoint.root.nativeId), settingsDigest, memory]);
+  }
   constructor(
     private settings: ModelSettingsReader,
     private projection: Pick<TreeProjection, 'fresh' | 'state'>,
@@ -48,6 +62,7 @@ export class OrganizeTaskAuthority {
     settings.subscribe(() => {
       this.version++;
       this.prepared.clear();
+      this.rebuilt.clear();
     });
   }
   sharesPersistence(journal: OperationJournal) {
@@ -57,6 +72,7 @@ export class OrganizeTaskAuthority {
     if ([...this.prepared.values()].some(value => value.original.installationId === installationId)) {
       this.version++;
       this.prepared.clear();
+      this.rebuilt.clear();
     }
   }
   private submitted(value: Prepared): OrganizeCheckpoint {
@@ -93,8 +109,10 @@ export class OrganizeTaskAuthority {
     );
     if (!state.proposal || state.invalid) throw Error('stale-organize-authority');
     if (!state.selected.length) return undefined;
+    let memorySnapshot: unknown;
     if (this.memory) {
       const memory = await this.memory.load(tree.installationId);
+      memorySnapshot = memory;
       state.proposal.protectedFolderIds = [
         ...new Set([...(state.proposal.protectedFolderIds ?? []), ...memory.protectedFolderIds]),
       ];
@@ -120,12 +138,26 @@ export class OrganizeTaskAuthority {
     });
     if (version !== this.version) throw Error('stale-organize-authority');
     this.prepared.clear();
+    this.rebuilt.clear();
     this.prepared.set(request.requestId, {
       original: checkpoint,
       request,
       scope: scope(tree, checkpoint.root.nativeId),
       version,
     });
+    // This request was just compiled from this exact checkpoint, tree, settings and memory: validate need not redo it.
+    if (this.memory)
+      this.rebuilt.set(
+        request.requestId,
+        await this.rebuildKey(
+          request.requestId,
+          checkpoint,
+          tree,
+          (await organizeCheckpointContext({ ...settings, tree }, checkpoint.root.nativeId, checkpoint.bookmarkIds))
+            .settingsDigest,
+          memorySnapshot,
+        ),
+      );
     if (!(await this.validate(request, sender)) || !this.current(request)) throw Error('stale-organize-authority');
     return request;
   }
@@ -164,6 +196,9 @@ export class OrganizeTaskAuthority {
       if (this.memory) {
         // Any memory edit invalidates this registered selection, even if its storage event is still in flight.
         const memory = await this.memory.load(tree.installationId);
+        const key = await this.rebuildKey(request.requestId, prepared.original, tree, digests.settingsDigest, memory);
+        if (this.rebuilt.get(request.requestId) === key)
+          return equal(await this.store.get(prepared.original.id), checkpoint) && this.current(request);
         const baseline = await restoreOrganizeGeneration(
           prepared.original,
           { ...settings, tree },
@@ -190,6 +225,7 @@ export class OrganizeTaskAuthority {
           )
         )
           return false;
+        this.rebuilt.set(request.requestId, key);
       }
       return equal(await this.store.get(prepared.original.id), checkpoint) && this.current(request);
     } catch {

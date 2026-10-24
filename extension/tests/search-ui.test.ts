@@ -8,7 +8,8 @@ import { App } from '../ui/App';
 import { searchTree } from './fixtures/search-tree';
 import type { TreeState } from '../domain/node-reference';
 import { APPEARANCES } from './appearance';
-import { LANGUAGE_KEY } from '../ui/i18n';
+import { LANGUAGE_KEY, LocaleProvider } from '../ui/i18n';
+import { searchFolders } from './fixtures/search-folders';
 let snapshot = searchTree();
 const listeners = new Set<(state: TreeState) => void>();
 vi.mock('../panel/tree-client', () => ({
@@ -40,6 +41,89 @@ function chromeStub() {
     },
   });
 }
+it.each(['panel', 'options'] as const)(
+  'recent bookmarks in %s retain search/filter/menu state across language changes',
+  async page => {
+    chromeStub();
+    location.hash = '#browse';
+    const now = Date.now();
+    snapshot.nodes[1]!.dateAdded = now - 20 * 86400000;
+    snapshot.nodes[2]!.dateAdded = now - 86400000;
+    const fetcher = vi.spyOn(globalThis, 'fetch');
+    render(createElement(App, { page }));
+    const tabs = within(screen.getByRole('group', { name: '搜索范围' }));
+    expect(tabs.getAllByRole('button').map(button => button.textContent)).toEqual(['目录', '最近收藏', '历史']);
+    expect(tabs.getByRole('button', { name: '目录' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(screen.getByRole('button', { name: '最近收藏' }));
+    expect(tabs.getByRole('button', { name: '目录' })).toHaveAttribute('aria-pressed', 'false');
+    expect(tabs.getByRole('button', { name: '最近收藏' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByText(/收藏范围：|默认查找近 90 天/)).toBeNull();
+    const region = screen.getByRole('region', { name: '最近收藏' });
+    expect(
+      within(region)
+        .getAllByRole('button')
+        .filter(button => button.classList.contains('search-hit-open'))
+        .map(button => button.textContent),
+    ).toEqual(['Bookmark 1', '重庆大学']);
+    expect(screen.getByRole('combobox', { name: '收藏时间' })).toHaveValue('auto');
+    fireEvent.change(screen.getByRole('combobox', { name: '收藏时间' }), { target: { value: '7' } });
+    expect(screen.queryByRole('button', { name: '重庆大学' })).toBeNull();
+    const input = screen.getByRole('searchbox');
+    fireEvent.change(input, { target: { value: 'Bookmark' } });
+    fireEvent.contextMenu(screen.getByRole('button', { name: 'Bookmark 1' }));
+    expect(screen.getByRole('menu')).toBeVisible();
+    act(() => window.dispatchEvent(new StorageEvent('storage', { key: LANGUAGE_KEY, newValue: 'en' })));
+    expect(screen.getByRole('combobox', { name: 'Date saved' })).toHaveValue('7');
+    expect(screen.getByRole('searchbox')).toBe(input);
+    expect(input).toHaveValue('Bookmark');
+    expect(screen.getByRole('menuitem', { name: 'Edit' })).toBeVisible();
+    expect(fetcher).not.toHaveBeenCalled();
+    act(() => window.dispatchEvent(new StorageEvent('storage', { key: LANGUAGE_KEY, newValue: 'zh-CN' })));
+  },
+);
+it('brief recent-list refreshes keep rows mounted without flashing notices; errors remain actionable', () => {
+  vi.useFakeTimers();
+  chromeStub();
+  snapshot.nodes[1]!.dateAdded = Date.now() - 86400000;
+  const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+  const view = render(createElement(SearchResults, { query: '', recentView: true }));
+  const row = screen.getByRole('button', { name: '重庆大学' });
+  try {
+    for (let i = 0; i < 3; i++) {
+      act(() => listeners.forEach(listener => listener({ status: 'loading' })));
+      expect(row).toBeDisabled();
+      fireEvent.click(row);
+      expect(open).not.toHaveBeenCalled();
+      act(() => vi.advanceTimersByTime(1200));
+      expect(screen.queryByRole('status')).toBeNull();
+      expect(screen.queryByRole('button', { name: '重试读取' })).toBeNull();
+      act(() => listeners.forEach(listener => listener({ status: 'ready', snapshot })));
+      expect(screen.getByRole('button', { name: '重庆大学' })).toBe(row);
+      expect(row).toBeEnabled();
+    }
+    act(() => listeners.forEach(listener => listener({ status: 'loading' })));
+    act(() => vi.advanceTimersByTime(1500));
+    expect(screen.getByRole('status')).toHaveTextContent('正在更新书签');
+    act(() => listeners.forEach(listener => listener({ status: 'error', message: '合成断线' })));
+    expect(screen.getByRole('alert')).toHaveTextContent('合成断线');
+    expect(screen.getByRole('button', { name: '重试读取' })).toBeVisible();
+    expect(screen.getByRole('button', { name: '重庆大学' })).toBe(row);
+  } finally {
+    view.unmount();
+    vi.useRealTimers();
+  }
+});
+it('recent all-time view shows legacy bookmarks and directory switching restores the native tree', () => {
+  chromeStub();
+  render(createElement(App, { page: 'panel' }));
+  fireEvent.click(screen.getByRole('button', { name: '最近收藏' }));
+  expect(screen.getByText('所选时间内没有记录收藏时间的书签，可切换到全部时间。')).toBeVisible();
+  fireEvent.change(screen.getByRole('combobox', { name: '收藏时间' }), { target: { value: 'all' } });
+  expect(screen.getByRole('button', { name: '重庆大学' })).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: '目录' }));
+  expect(screen.getByRole('region', { name: '书签目录' })).toBeVisible();
+  expect(screen.queryByRole('region', { name: '最近收藏' })).toBeNull();
+});
 it('production App input reaches search without model calls or writes', () => {
   chromeStub();
   const fetcher = vi.spyOn(globalThis, 'fetch');
@@ -129,7 +213,7 @@ it('filtered results edit/delete the clicked ID and reorder within its original 
   await user.click(screen.getByRole('button', { name: '取消' }));
   fireEvent.contextMenu(result);
   await user.click(screen.getByRole('menuitem', { name: '删除' }));
-  expect(screen.getByRole('dialog', { name: '删除影响确认' })).toHaveTextContent('Bookmark 1');
+  expect(screen.getByRole('dialog', { name: '是否确认删除？' })).toHaveTextContent(/^是否确认删除？取消确认删除$/);
   expect(send).not.toHaveBeenCalled();
   await user.click(screen.getByRole('button', { name: '取消' }));
   fireEvent.contextMenu(result);
@@ -237,7 +321,7 @@ it('four themes preserve results, query draft and keyboard/click safe activation
   view.rerender(createElement(SearchResults, { query: 'nonexistent' }));
   expect(screen.getByText(/没有匹配/)).toBeVisible();
   view.rerender(createElement(SearchResults, { query: '整理学习资料' }));
-  expect(screen.getByRole('note')).toHaveTextContent('整理工作台');
+  expect(screen.queryByRole('note')).toBeNull();
   expect(open).toHaveBeenCalledTimes(2);
 });
 it('measures synthetic input-to-render with all1000 returned candidates, excluding index build', () => {
@@ -316,10 +400,17 @@ it('explicit UI rerank uses shared settings and actual browser authority; accept
   });
   expect(screen.getByRole('region', { name: '搜索结果' })).toHaveAttribute('aria-busy', 'true');
   await act(async () => {
-    finish(new Response(JSON.stringify({ choices: [{ message: { content: '{"rankedIds":["2"]}' } }] })));
+    finish(
+      new Response(
+        JSON.stringify({
+          choices: [{ message: { content: '{"matchedIds":["2"],"unmatchedIds":["1","3"],"uncertainIds":[]}' } }],
+        }),
+      ),
+    );
   });
   expect(view.container.querySelector('.search-hit-list .search-hit-open')).toHaveTextContent('Bookmark 1');
-  expect(view.container.querySelectorAll('.search-hit-list li')).toHaveLength(4);
+  expect(view.container.querySelectorAll('.search-hit-list li')).toHaveLength(1);
+  expect(screen.getByText('书签已变化，当前结果尚未覆盖最新书签，请重新搜索。')).toBeVisible();
   expect(fetcher).toHaveBeenCalledOnce();
   await act(async () => {
     invalidations.forEach(listener => listener());
@@ -330,6 +421,151 @@ it('explicit UI rerank uses shared settings and actual browser authority; accept
   settings.dispose();
   expect(invalidations.size).toBe(0);
 });
+it('shows bilingual paused coverage and resumes only remaining bookmarks through the real controller', async () => {
+  const { SettingsStore } = await import('../persistence/settings');
+  snapshot = searchFolders();
+  chromeStub();
+  const event = { addListener: () => {}, removeListener: () => {} };
+  Object.assign(chrome, {
+    storage: { onChanged: event },
+    permissions: { onRemoved: event, contains: async () => true },
+  });
+  const data: Record<string, unknown> = {};
+  const settings = new SettingsStore(
+    {
+      get: async key => ({ [key]: data[key] }),
+      set: async value => {
+        Object.assign(data, value);
+      },
+      remove: async key => {
+        delete data[key];
+      },
+      setAccessLevel: async () => {},
+    },
+    operation => operation(),
+  );
+  await settings.load();
+  await settings.save(
+    { adapter: 'openai-compatible', baseUrl: 'https://model.test', model: 'synthetic', timeoutMs: 1000 },
+    {
+      fullUrl: false,
+      bodyEnabled: false,
+      excludedFolders: [snapshot.nodes.find(node => node.ref.nativeId === 'private')!.ref],
+    },
+    '',
+    false,
+  );
+  const requests: { task: string; items: { id: string }[] }[] = [];
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (_url, init) => {
+      const input: { task: string; items: { id: string }[] } = JSON.parse(
+        JSON.parse(String(init?.body)).messages[1].content,
+      );
+      requests.push(input);
+      const ids = input.items.map(item => item.id);
+      const output =
+        input.task === 'search-plan'
+          ? { folderIds: ['useful', 'early', 'misc'], terms: [] }
+          : {
+              matchedIds: ids.filter(id => id === '81'),
+              unmatchedIds: ids.filter(id => id !== '81'),
+              uncertainIds: [],
+            };
+      return new Response(
+        JSON.stringify({ choices: [{ message: { content: JSON.stringify(output) }, finish_reason: 'stop' }] }),
+      );
+    }),
+  );
+  const view = render(
+    createElement(LocaleProvider, null, createElement(SearchResults, { query: '找个画图工具', settings })),
+  );
+  await act(async () => {});
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'AI 帮我找' }));
+  });
+  expect(screen.getByRole('button', { name: '继续搜索剩余书签' })).toBeVisible();
+  expect(screen.getByText('已检查 100 / 240 条 · 匹配 1 条 · 无法确定 0 条')).toBeVisible();
+  expect(requests).toHaveLength(2);
+  act(() => window.dispatchEvent(new StorageEvent('storage', { key: LANGUAGE_KEY, newValue: 'en' })));
+  expect(screen.getByRole('button', { name: 'Search remaining bookmarks' })).toBeVisible();
+  expect(screen.getByText('Checked 100 / 240 · Matches 1 · Uncertain 0')).toBeVisible();
+  expect(requests).toHaveLength(2);
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Search remaining bookmarks' }));
+  });
+  expect(screen.queryByRole('button', { name: 'Search remaining bookmarks' })).toBeNull();
+  expect(screen.getByText('Checked 240 / 240 · Matches 1 · Uncertain 0')).toBeVisible();
+  const ids = requests.flatMap(input => input.items.map(item => item.id));
+  expect(ids).toHaveLength(240);
+  expect(new Set(ids).size).toBe(240);
+  const selected = snapshot.nodes.find(node => node.ref.nativeId === 'useful')!.ref;
+  fireEvent.change(screen.getByRole('combobox', { name: 'Search folder' }), {
+    target: { value: JSON.stringify(selected) },
+  });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Find with AI' }));
+  });
+  expect(requests).toHaveLength(5);
+  expect(requests.at(-1)!.items.map(item => item.id)).toEqual(Array.from({ length: 80 }, (_, i) => String(i + 81)));
+  expect(screen.getByText('Checked 80 / 80 · Matches 1 · Uncertain 0')).toBeVisible();
+  view.unmount();
+  settings.dispose();
+});
+
+it.each(['panel', 'options'] as const)(
+  'keeps folder/time selection and result hierarchy through locale changes in %s',
+  page => {
+    chromeStub();
+    snapshot = searchFolders();
+    snapshot.nodes.find(node => node.ref.nativeId === '81')!.dateAdded = Date.now() - 86400000;
+    snapshot.nodes.find(node => node.ref.nativeId === '82')!.dateAdded = Date.now() - 20 * 86400000;
+    location.hash = '#browse';
+    const fetcher = vi.spyOn(globalThis, 'fetch');
+    render(createElement(App, { page }));
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'example' } });
+    const folder = screen.getByRole('combobox', { name: '搜索文件夹' });
+    const region = screen.getByRole('region', { name: '搜索结果' });
+    const heading = within(region).getByRole('heading', { name: '搜索结果' });
+    expect(folder).toHaveValue('');
+    expect(folder.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    const selected = snapshot.nodes.find(node => node.ref.nativeId === 'useful')!.ref;
+    fireEvent.change(folder, { target: { value: JSON.stringify(selected) } });
+    expect(region.querySelectorAll('.search-hit-open')).toHaveLength(80);
+    fireEvent.change(screen.getByRole('combobox', { name: '收藏时间' }), { target: { value: '7' } });
+    expect(region.querySelectorAll('.search-hit-open')).toHaveLength(1);
+    expect(within(region).getByRole('button', { name: 'Bookmark 80' })).toBeVisible();
+    act(() => window.dispatchEvent(new StorageEvent('storage', { key: LANGUAGE_KEY, newValue: 'en' })));
+    expect(screen.getByRole('combobox', { name: 'Search folder' })).toBe(folder);
+    expect(folder).toHaveValue(JSON.stringify(selected));
+    expect(screen.getByRole('combobox', { name: 'Date saved' })).toHaveValue('7');
+    expect(screen.getByRole('searchbox')).toHaveValue('example');
+    expect(fetcher).not.toHaveBeenCalled();
+  },
+);
+
+it('keeps a deleted folder visibly unavailable until the user chooses a new scope', () => {
+  chromeStub();
+  snapshot = searchFolders();
+  render(createElement(SearchResults, { query: 'example' }));
+  const folder = screen.getByRole('combobox', { name: '搜索文件夹' });
+  const selected = snapshot.nodes.find(node => node.ref.nativeId === 'useful')!.ref;
+  fireEvent.change(folder, { target: { value: JSON.stringify(selected) } });
+  const deleted = structuredClone(snapshot);
+  const ids = new Set(['useful', ...Array.from({ length: 80 }, (_, i) => String(i + 81))]);
+  deleted.nodes = deleted.nodes.filter(node => !ids.has(node.ref.nativeId));
+  deleted.nodes.forEach(node => {
+    node.childrenIds = node.childrenIds.filter(id => !ids.has(id));
+  });
+  act(() => listeners.forEach(listener => listener({ status: 'ready', snapshot: deleted })));
+  expect(folder).toHaveValue(JSON.stringify(selected));
+  expect(screen.getByRole('alert')).toHaveTextContent('所选文件夹已不可用');
+  expect(screen.queryByRole('button', { name: 'Bookmark 80' })).toBeNull();
+  fireEvent.change(folder, { target: { value: '' } });
+  expect(screen.queryByRole('alert')).toBeNull();
+  expect(screen.getByRole('button', { name: '重庆大学' })).toBeVisible();
+});
+
 it('actual options App side nav and write-intent search route to the retained organizer without model or write effects', () => {
   chromeStub();
   const fetcher = vi.spyOn(globalThis, 'fetch');

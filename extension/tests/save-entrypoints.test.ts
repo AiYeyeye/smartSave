@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { SAVE_BADGE, SAVE_PORT, openSaveUi, startSaveEntrypoints } from '../background/save-entrypoints';
+import { SAVE_PORT, startSaveEntrypoints } from '../background/save-entrypoints';
 function event<T extends (...args: never[]) => unknown>() {
   const listeners: T[] = [];
   return {
@@ -129,36 +129,6 @@ it('shortcut while a popup already owns the tab delivers the page in place witho
   expect(popup.messages.at(-1)).toMatchObject({ type: 'page', page: { tabId: 4 } });
   h.save(page(4, 1, 'chrome://extensions/'));
   expect(popup.messages.at(-1)).toMatchObject({ type: 'error', reason: expect.stringContaining('http(s)') });
-});
-it('default open prefers action.openPopup and falls back to a per-tab badge when it is missing or rejects', async () => {
-  vi.stubGlobal('chrome', {
-    action: { setBadgeText: vi.fn(async () => {}), setBadgeBackgroundColor: vi.fn(async () => {}) },
-  });
-  await openSaveUi(4);
-  expect(chrome.action.setBadgeText).toHaveBeenCalledWith({ tabId: 4, text: SAVE_BADGE });
-  expect(chrome.action.setBadgeBackgroundColor).toHaveBeenCalledWith(expect.objectContaining({ tabId: 4 }));
-  const openPopup = vi.fn(async () => {});
-  const setBadgeText = vi.fn(async () => {});
-  vi.stubGlobal('chrome', { action: { openPopup, setBadgeText } });
-  await openSaveUi(4);
-  expect(openPopup).toHaveBeenCalledOnce();
-  expect(setBadgeText).not.toHaveBeenCalled();
-  openPopup.mockRejectedValueOnce(Error('no active browser window'));
-  await openSaveUi(4);
-  expect(setBadgeText).toHaveBeenCalledWith({ tabId: 4, text: SAVE_BADGE });
-  vi.stubGlobal('chrome', { action: { setBadgeText: vi.fn(async () => Promise.reject(Error('gone'))) } });
-  await expect(openSaveUi(4)).resolves.toBeUndefined();
-});
-it('default open prefers the side panel for the captured tab, then popup, then badge', async () => {
-  const open = vi.fn(async () => {});
-  const setBadgeText = vi.fn(async () => {});
-  vi.stubGlobal('chrome', { sidePanel: { open }, action: { setBadgeText } });
-  await openSaveUi(7);
-  expect(open).toHaveBeenCalledWith({ tabId: 7 });
-  expect(setBadgeText).not.toHaveBeenCalled();
-  open.mockRejectedValueOnce(Error('may only be called in response to a user gesture'));
-  await openSaveUi(7);
-  expect(setBadgeText).toHaveBeenCalledWith({ tabId: 7, text: SAVE_BADGE });
 });
 it('capture message captures the active tab of the popup window and reports unusable tabs', async () => {
   const h = harness();

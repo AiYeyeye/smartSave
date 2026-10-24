@@ -41,8 +41,8 @@ export const preferencesEnglish = {
   '流式响应（关闭后使用 JSON）': 'Streaming responses (uses JSON when off)',
   '优先快速响应（对已支持的模型降低思考量）': 'Prefer fast responses (reduces reasoning for supported models)',
   '高级：协议、地址与超时': 'Advanced: protocol, endpoint and timeout',
-  '默认 128,000，包含推理和正文。请填写所选模型支持的输出额度。':
-    'Default: 128,000, including reasoning and answer text. Enter an output limit supported by the selected model.',
+  '留空使用服务默认上限；Anthropic 使用兼容上限。自定义值须在模型支持范围内，思考可能占用输出额度。':
+    'Leave blank for the service default; Anthropic uses a compatible limit. A custom value must fit the model. Thinking may consume the output budget.',
   '输出上限请输入大于或等于 1 的有效整数。': 'Enter a valid integer of at least 1 for the output limit.',
   接口协议: 'API protocol',
   服务基础地址: 'Service base URL',
@@ -92,6 +92,8 @@ export const preferencesEnglish = {
     'After saving with the browser star or Ctrl+D, Zhilan’s results appear here. Up to 30 records are kept on this device.',
   '还没有记录。收藏一个网页试试。': 'No records yet. Try saving a webpage.',
   'Debug 日志': 'Debug logs',
+  '提醒：日志可能包含书签标题和网址，分享前请检查。':
+    'Note: logs may contain bookmark titles and URLs. Review before sharing.',
   '开启后记录 AI 请求、脱敏后的请求与响应正文、状态码和解析过程。仅保存在本机，不记录密钥；正文可能包含书签标题和网址，分享前请检查。单份正文最多 65536 字符，日志总量最多 1 MiB。':
     'When enabled, logs record AI requests, redacted request and response bodies, status codes and parsing steps. Stored only on this device; keys are excluded. Bodies may contain bookmark titles and URLs, so review before sharing. Each body is limited to 65,536 characters and the whole log to 1 MiB.',
   已开启: 'On',

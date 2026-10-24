@@ -74,7 +74,7 @@ with sync_playwright() as playwright:
         tree.get_by_role('button', name='Actions for 删除 <&>', exact=True).click()
         page.get_by_role('menuitem', name='Delete', exact=True).click()
         preferences.get_by_label('Language', exact=True).select_option('zh-CN')
-        expect(page.get_by_role('dialog', name='删除影响确认')).to_contain_text('删除 <&>')
+        expect(page.get_by_role('dialog', name='是否确认删除？')).to_have_text('是否确认删除？取消确认删除')
         preferences.get_by_label('语言', exact=True).select_option('en')
         capture('delete-review')
         page.get_by_role('dialog').get_by_role('button', name='Cancel', exact=True).click()
@@ -83,6 +83,8 @@ with sync_playwright() as playwright:
         page.get_by_role('menuitem', name='Delete', exact=True).click()
         page.get_by_role('button', name='Confirm delete', exact=True).click()
         expect(tree.get_by_role('button', name='删除 <&>', exact=True)).to_have_count(0)
+        expect(page.locator('.mutation-feedback')).to_have_count(0)
+        capture('delete-complete')
         assert worker.evaluate('async id=>(await chrome.bookmarks.getChildren(id)).length', fixture['folder']) == 0
         tree.get_by_role('button', name='Actions for 目标目录', exact=True).click()
         page.get_by_role('menuitem', name='New folder', exact=True).click()

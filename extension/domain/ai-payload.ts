@@ -1,5 +1,10 @@
 import type { NodeRef, TreeSnapshot } from './node-reference';
+import { inCollectionRange, type CollectionRange } from './bookmark-recency';
+import { serializeHistory, type HistoryAiRequest } from './history-search';
 import { organizePreference, type OrganizePreference } from './organize-preferences';
+import type { PreferenceUpdate } from './preference-update';
+import { SEARCH_FOLDER_SAMPLES, SEARCH_FOLDER_SAMPLE_CHARS } from './search-limits';
+import { searchScope } from './search-scope';
 export interface AiPrivacy {
   fullUrl: boolean;
   bodyEnabled: boolean;
@@ -7,7 +12,7 @@ export interface AiPrivacy {
 }
 export type AiItem =
   | { source: 'bookmark'; id: string }
-  | { source: 'new-import' | 'current-page'; id: string; title: string; url: string };
+  | { source: 'new-import' | 'current-page' | 'history'; id: string; title: string; url: string };
 export type AiSample =
   | { source: 'bookmark'; contextId: string; field: 'title' | 'url' }
   | { source: 'new-import'; value: string; kind: 'url' | 'text' };
@@ -85,6 +90,25 @@ export function serializedItemRequestSize(payload: string, emptyRequestBytes: nu
   };
 }
 export type AiRequest =
+  | { task: 'rename'; itemIds: string[]; folderIds: string[] }
+  | { task: 'preference-summary'; examples: { id: string; text: string }[]; update?: PreferenceUpdate }
+  | HistoryAiRequest
+  | {
+      task: 'search-batch';
+      query: string;
+      itemIds: string[];
+      folderIds: string[];
+      collectionRange?: CollectionRange;
+      folderScope?: NodeRef;
+    }
+  | {
+      task: 'search-plan';
+      query: string;
+      itemIds: string[];
+      folderIds: string[];
+      collectionRange?: CollectionRange;
+      folderScope?: NodeRef;
+    }
   | { task: 'search'; query: string; itemIds: string[]; folderIds: string[] }
   | { task: 'search-expand'; query: string; itemIds: []; folderIds: [] }
   | {
@@ -93,7 +117,12 @@ export type AiRequest =
       itemIds: string[];
       folderIds: string[];
       preference?: OrganizePreference;
-      stage?: 'folders' | 'bookmarks';
+      stage?: 'analysis' | 'folders' | 'bookmarks';
+      contentFirst?: boolean;
+      userFeedback?: string;
+      preserveExistingFolders?: boolean;
+      topicEvidence?: { title: string; count: number; reason?: string }[];
+      revisionEvidence?: { title: string; count: number; reason?: string }[];
       destinations?: OrganizeDestination[];
       placements?: Record<string, string>;
       sampleLimit?: number;
@@ -109,9 +138,16 @@ export type AiRequest =
       proposedFolders?: { id: string; parentId: string; title: string }[];
     };
 export function serializeAiPayload(tree: TreeSnapshot, privacy: AiPrivacy, request: AiRequest): string {
+  if (request.task === 'preference-summary')
+    return JSON.stringify({ task: request.task, examples: request.examples, folders: [], items: [] });
+  if (request.task === 'history-query' || request.task === 'history-rank') return serializeHistory(request);
   if (request.task === 'search-expand')
     return JSON.stringify({ task: request.task, query: request.query, folders: [], items: [] });
   const nodes = new Map(tree.nodes.map(n => [n.ref.nativeId, n]));
+  if ((request.task === 'search-plan' || request.task === 'search-batch') && request.folderScope) {
+    const { ids } = searchScope(tree, request.folderScope);
+    if ([...request.itemIds, ...request.folderIds].some(id => !ids.has(id))) throw Error('outside-scope');
+  }
   const excluded = new Set(
     privacy.excludedFolders.filter(r => r.installationId === tree.installationId).map(r => r.nativeId),
   );
@@ -137,12 +173,54 @@ export function serializeAiPayload(tree: TreeSnapshot, privacy: AiPrivacy, reque
     if (chain[0]?.ref.kind !== 'folder') throw Error('invalid-folder');
     return { id, ancestorIds: chain.slice(1).map(n => n.ref.nativeId), path: chain.reverse().map(n => n.title) };
   });
-  if (request.task === 'search' || request.task === 'organize') {
+  if (request.task === 'search-plan') {
+    const profiles = new Map(
+      folders.map(folder => [
+        folder.id,
+        {
+          id: folder.id,
+          path: folder.path,
+          count: 0,
+          sampleTitles: [] as string[],
+        },
+      ]),
+    );
+    for (const id of new Set(request.itemIds)) {
+      if (!allowed(id)) continue;
+      const node = nodes.get(id)!;
+      if (node.ref.kind !== 'bookmark' || node.url === undefined) throw Error('invalid-reference');
+      if (!inCollectionRange(node, request.collectionRange)) throw Error('stale-context');
+      const profile = node.parentId === undefined ? undefined : profiles.get(node.parentId);
+      if (!profile) throw Error('invalid-folder');
+      profile.count++;
+      if (profile.sampleTitles.length < SEARCH_FOLDER_SAMPLES)
+        profile.sampleTitles.push(node.title.slice(0, SEARCH_FOLDER_SAMPLE_CHARS));
+    }
+    const folderProfiles = [...profiles.values()].filter(profile => profile.count > 0);
+    const offered = new Set(folderProfiles.map(profile => profile.id));
+    return JSON.stringify({
+      task: request.task,
+      query: request.query,
+      collectionRange: request.collectionRange,
+      items: [],
+      folders: folders.filter(folder => offered.has(folder.id)),
+      folderProfiles,
+    });
+  }
+  if (
+    request.task === 'rename' ||
+    request.task === 'search' ||
+    request.task === 'search-batch' ||
+    request.task === 'organize'
+  ) {
     if (request.task === 'organize' && !allowed(request.rootId)) throw Error('privacy-excluded');
     const ids = request.itemIds.filter(allowed);
     const items = ids.map(id => {
       const chain = ancestors(id);
       const node = chain[0]!;
+      if (request.task === 'rename' && node.ref.kind !== 'bookmark') throw Error('invalid-rename-item');
+      if (request.task === 'search-batch' && !inCollectionRange(node, request.collectionRange))
+        throw Error('stale-context');
       if (
         request.task === 'organize' &&
         request.stage &&
@@ -154,6 +232,7 @@ export function serializeAiPayload(tree: TreeSnapshot, privacy: AiPrivacy, reque
       return {
         id,
         title: node.title,
+        ...(request.task === 'search-batch' && node.dateAdded !== undefined ? { dateAdded: node.dateAdded } : {}),
         ...(node.url === undefined ? {} : { url: urlCopy(node.url) }),
         path: chain
           .slice(1)
@@ -169,7 +248,7 @@ export function serializeAiPayload(tree: TreeSnapshot, privacy: AiPrivacy, reque
       const summaries = new Map(
         folders.map(f => [f.id, { folderId: f.id, bookmarkCount: 0, sampleTitles: [] as string[] }]),
       );
-      const limit = Math.min(2, Math.max(0, request.sampleLimit ?? 2));
+      const limit = request.contentFirst ? 0 : Math.min(2, Math.max(0, request.sampleLimit ?? 2));
       for (const node of tree.nodes) {
         if (node.ref.kind !== 'bookmark' || !allowed(node.ref.nativeId)) continue;
         const summary = summaries.get(node.parentId ?? '');
@@ -213,11 +292,29 @@ export function serializeAiPayload(tree: TreeSnapshot, privacy: AiPrivacy, reque
     }
     return JSON.stringify({
       task: request.task,
+      ...(request.task === 'organize'
+        ? {
+            rootId: request.rootId,
+            protectedSourceIds: [
+              request.rootId,
+              ...destinations
+                .filter(f => f.id !== request.rootId && (nodes.get(f.id)?.readOnly || request.preserveExistingFolders))
+                .map(f => f.id),
+            ],
+          }
+        : {}),
       ...(request.task === 'organize' && request.stage ? { stage: request.stage, folderSummaries } : {}),
+      ...(request.task === 'organize' && request.userFeedback ? { userFeedback: request.userFeedback } : {}),
+      ...(request.task === 'organize' && request.contentFirst
+        ? { contentFirst: true, topicEvidence: request.topicEvidence, revisionEvidence: request.revisionEvidence }
+        : {}),
       ...(request.task === 'organize' && request.stage === 'bookmarks' && request.omittedItemsUnchanged
         ? { omittedItemsUnchanged: true }
         : {}),
-      ...(request.task === 'search' ? { query: request.query } : {}),
+      ...(request.task === 'search' || request.task === 'search-batch' ? { query: request.query } : {}),
+      ...(request.task === 'search-batch' && request.collectionRange
+        ? { collectionRange: request.collectionRange }
+        : {}),
       ...(request.task === 'organize' && request.preference
         ? { preference: organizePreference(request.preference) }
         : {}),
@@ -286,9 +383,17 @@ export function serializeAiPayload(tree: TreeSnapshot, privacy: AiPrivacy, reque
       if (node.url === undefined) throw Error('invalid-reference');
       return [{ id: item.id, title: node.title, url: urlCopy(node.url) }];
     }
-    if (item.source !== 'new-import' && item.source !== 'current-page') throw Error('invalid-provenance');
+    if (item.source !== 'new-import' && item.source !== 'current-page' && item.source !== 'history')
+      throw Error('invalid-provenance');
+    if (item.source === 'history' && request.task !== 'save') throw Error('invalid-provenance');
     if (nodes.has(item.id)) throw Error('ambiguous-provenance');
-    return [{ id: item.id, title: item.title, url: urlCopy(item.url) }];
+    return [
+      {
+        id: item.id,
+        title: item.title,
+        url: item.source === 'history' ? item.url.split(/[?#]/, 1)[0]! : urlCopy(item.url),
+      },
+    ];
   };
   return JSON.stringify({
     task: request.task,

@@ -50,6 +50,12 @@ const counts: { pattern: RegExp; key: MessageKey; names: string[] }[] = [
 ];
 export function organizeStatusText(language: Language, text: string): string {
   if (language === 'zh-CN') return text;
+  // Legacy notices combine owned prose and arbitrary native titles. Use a localized summary
+  // instead of parsing/re-translating those titles or exposing Chinese UI fragments in English.
+  if (
+    /^(当前方案|这项整理任务)已失效，因为[\s\S]+。请重新生成(?:方案)?；未修改书签。$/.test(text) ||
+    /^整理期间[\s\S]+，本次结果已失效。请重新生成方案；未修改书签。$/.test(text)
+  ) return translate(language, '书签或设置已变化，当前方案已失效。请重新生成；未修改书签。');
   for (const { pattern, key, names } of counts) {
     const match = pattern.exec(text);
     if (match) return translate(language, key, Object.fromEntries(names.map((name, i) => [name, match[i + 1]!])));
@@ -65,6 +71,11 @@ export function organizeStatusText(language: Language, text: string): string {
       next: translateKnown(language, complete[3]!),
     });
   const retained = /^(.*) 已保留 (\d+) 批结果，可继续未完成批次。未修改书签。$/.exec(text);
+  const contentRetained = /^(.*) 已完成的分析已保留，可继续未完成批次。未修改书签。$/.exec(text);
+  if (contentRetained)
+    return translate(language, '{reason} 已完成的分析已保留，可继续未完成批次。未修改书签。', {
+      reason: translateKnown(language, contentRetained[1]!),
+    });
   if (retained)
     return translate(language, '{reason} 已保留 {count} 批结果，可继续未完成批次。未修改书签。', {
       reason: translateKnown(language, retained[1]!),

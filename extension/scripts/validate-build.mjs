@@ -19,7 +19,7 @@ const manifestSchema = z.object({
     z.literal('sidePanel'),
   ]),
   // identity is optional and requested only when the user starts an OAuth sign-in (e.g. OpenRouter).
-  optional_permissions: z.tuple([z.literal('identity')]),
+  optional_permissions: z.tuple([z.literal('identity'), z.literal('history')]),
   background: z.object({ service_worker: z.string(), type: z.literal('module') }),
   // The bookmark UI is the browser side panel (full height); the toolbar button opens it.
   side_panel: z.object({ default_path: z.literal('panel/index.html') }),
@@ -138,6 +138,7 @@ export async function validateBuild(directory) {
     manifest.background.service_worker,
     manifest.options_ui.page,
     manifest.side_panel.default_path,
+    'save/index.html',
   ]) {
     await check(resolve(root, entry));
   }

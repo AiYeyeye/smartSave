@@ -134,7 +134,7 @@ def main():
         'files': {path.relative_to(MEDIA).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
                   for path in sorted(MEDIA.rglob('*')) if path.is_file() and path.suffix in {'.png', '.mp4', '.webm'}},
     }
-    (MEDIA / 'capture-evidence.json').write_text(json.dumps(result, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
+    (work / 'capture-evidence.json').write_text(json.dumps(result, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
     print(json.dumps(result, indent=2, ensure_ascii=False))
     if errors or network:
         raise SystemExit('Unexpected page errors or external requests; inspect local capture evidence')

@@ -70,7 +70,6 @@ export function SiteRulesSettings({
   return (
     <section className="surface" aria-label={t('网站目录规则')}>
       <h2>{t('网站目录规则')}</h2>
-      <p>{t('仅明确确认收藏时创建规则；重命名和移动跟随原目录身份，删除后必须重新选择。')}</p>
       {!rules.length && <p>{t('暂无规则。')}</p>}
       {rules.map(rule => {
         const folder = tree.status === 'ready' ? ruleFolder(rule, tree.snapshot) : undefined;

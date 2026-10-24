@@ -1,25 +1,27 @@
-import { browserMessage } from '../domain/browser-message';
+import { browserMessage, onBrowserLanguageChange } from '../domain/browser-message';
 export type NativeBadgeState = 'working' | 'done' | 'attention' | 'clear';
 export type BadgeStyle = { text: string; color: string; title: string };
 export const SAVE_BADGE = '●';
-const empty: BadgeStyle = { text: '', color: '#6155A6', title: browserMessage('brand') };
-const nativeStyles: Record<Exclude<NativeBadgeState, 'clear'>, BadgeStyle> = {
+const empty = (): BadgeStyle => ({ text: '', color: '#6155A6', title: browserMessage('brand') });
+const nativeStyles = (): Record<Exclude<NativeBadgeState, 'clear'>, BadgeStyle> => ({
   working: { text: '…', color: '#6366F1', title: browserMessage('nativeWorking') },
   done: { text: '✓', color: '#16A34A', title: browserMessage('nativeDone') },
   attention: { text: '!', color: '#D97706', title: browserMessage('nativeAttention') },
-};
-const pending: BadgeStyle = { text: SAVE_BADGE, color: '#6155A6', title: browserMessage('savePending') };
+});
+const pending = (): BadgeStyle => ({ text: SAVE_BADGE, color: '#6155A6', title: browserMessage('savePending') });
 
 /** Sole action API writer. Timers withdraw their own source; they never clear another feature's badge. */
 export class ActionBadgeOwner {
-  private native?: BadgeStyle;
+  private native?: Exclude<NativeBadgeState, 'clear'>;
   private organizer?: BadgeStyle;
   private tabs = new Map<number, boolean>();
   private applied = new Map<number | 'global', string>();
   private queue: Promise<void> = Promise.resolve();
   private timer?: ReturnType<typeof setTimeout>;
   private sequence = 0;
-  constructor(private action: Pick<typeof chrome.action, 'setBadgeText'> & Partial<typeof chrome.action>) {}
+  constructor(private action: Pick<typeof chrome.action, 'setBadgeText'> & Partial<typeof chrome.action>) {
+    onBrowserLanguageChange(() => { void this.render(); });
+  }
   /** Old per-tab overrides outlive a worker. Captures do not, so clear them without restoring capture authority. */
   async initialize(tabs: Pick<typeof chrome.tabs, 'query' | 'onRemoved'>) {
     tabs.onRemoved.addListener(id => {
@@ -42,7 +44,7 @@ export class ActionBadgeOwner {
     const sequence = ++this.sequence;
     clearTimeout(this.timer);
     this.timer = undefined;
-    this.native = state === 'clear' ? undefined : nativeStyles[state];
+    this.native = state === 'clear' ? undefined : state;
     if (state === 'done' || state === 'attention')
       this.timer = setTimeout(
         () => {
@@ -63,10 +65,10 @@ export class ActionBadgeOwner {
     this.queue = this.queue
       .catch(() => {})
       .then(async () => {
-        const fallback = this.native ?? this.organizer ?? empty;
+        const fallback = (this.native ? nativeStyles()[this.native] : undefined) ?? this.organizer ?? empty();
         const entries: [number | 'global', BadgeStyle][] = [
           ['global', fallback],
-          ...[...this.tabs].map(([id, on]) => [id, on ? pending : fallback] as [number, BadgeStyle]),
+          ...[...this.tabs].map(([id, on]) => [id, on ? pending() : fallback] as [number, BadgeStyle]),
         ];
         for (const [id, style] of entries) {
           // null restores global text inheritance; colors/titles are explicitly projected for previously touched tabs.

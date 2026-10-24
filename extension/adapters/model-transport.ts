@@ -17,15 +17,30 @@ import {
   type ModelOutputContext,
 } from '../schemas/model-output';
 import { modelBodyDiagnostics, modelDiagnosticLog } from './model-diagnostics';
-import { completedReplyText, ModelParseError, replyShape } from './model-replies';
+import { completedReplyText, isJsonModeInputError, ModelParseError, replyShape } from './model-replies';
 import { readWireReply, type ModelStreamProgress } from './model-stream';
 import type { ModelTiming } from '../domain/save-performance';
 import { modelThinkingPlan, rejectsThinkingParameter } from '../domain/model-thinking';
+import {
+  chatOutputTokenField,
+  officialModelProvider,
+  supportsApiJsonMode,
+  supportsStreamUsage,
+} from '../domain/model-provider';
 import { abortableDelay } from '../domain/cancellable';
 import { anthropicPromptContent } from '../domain/model-cache';
 import { analyzeOrganizeRepair, type OrganizeRepair } from '../domain/organize-partial-repair';
 import { tokenUsageAccumulator, type TokenUsageRecord, type TokenPurpose } from '../domain/token-usage';
 import { recordTokenUsage } from '../persistence/token-usage';
+import { browserPersonalizationStore } from '../persistence/personalization';
+import { preferenceUpdatePlan } from '../domain/preference-update';
+import { searchScope } from '../domain/search-scope';
+import {
+  emptyPersonalization,
+  preferenceHints,
+  preferenceUsable,
+  type PreferenceScope,
+} from '../domain/personalization';
 export type ModelProgress = ModelStreamProgress & {
   phase: 'waiting' | 'receiving' | 'validating';
   retry?: { attempt: number; delaySeconds: number; httpStatus: number };
@@ -77,6 +92,7 @@ export function modelRequestBody(
   includeUsage = true,
 ): string {
   payload = compactAiPayload(payload);
+  jsonMode = jsonMode && supportsApiJsonMode(config);
   const thinking = modelThinkingPlan(config);
   const schema = modelOutputJsonSchema(task);
   const system = `${modelSystemPrompt(task, classificationPolicySchema.parse(policy))} Output schema: ${JSON.stringify(schema)}`;
@@ -96,8 +112,13 @@ export function modelRequestBody(
       model: config.model,
       stream: modelStreaming(config),
       instructions: system,
-      input: payload,
-      // Reasoning models spend output tokens on thinking first; a small proxy default ends them before the JSON.
+      // Some compatible services check input messages only, excluding instructions,
+      // for JSON mode. Keep the trusted format instruction separate from user data.
+      input: [
+        { role: 'developer', content: 'Return only one JSON object matching the output schema in the instructions.' },
+        { role: 'user', content: payload },
+      ],
+      // An explicit ceiling includes reasoning tokens; otherwise use the selected service's default.
       max_output_tokens: modelOutputTokenLimit(config),
       ...thinking?.top,
       ...(jsonMode ? { text: { format: { type: 'json_object' } } } : {}),
@@ -118,10 +139,15 @@ export function modelRequestBody(
   return JSON.stringify({
     model: config.model,
     stream: modelStreaming(config),
-    ...(includeUsage && ['openai-compatible', 'lm-studio'].includes(config.adapter) && modelStreaming(config)
+    ...(includeUsage &&
+    supportsStreamUsage(config) &&
+    ['openai-compatible', 'lm-studio'].includes(config.adapter) &&
+    modelStreaming(config)
       ? { stream_options: { include_usage: true } }
       : {}),
-    ...(config.adapter === 'openai-compatible' ? { max_completion_tokens: modelOutputTokenLimit(config) } : {}),
+    ...(config.adapter === 'openai-compatible'
+      ? { [chatOutputTokenField(config)]: modelOutputTokenLimit(config) }
+      : {}),
     ...thinking?.top,
     messages: [
       { role: 'system', content: system },
@@ -171,7 +197,17 @@ export function extractJsonObject(text: string): unknown {
 }
 
 const ID_KEYS = new Set(['id', 'parentId', 'itemId', 'folderId', 'sourceId', 'targetId']);
-const ID_ARRAYS = new Set(['rankedIds', 'unchangedIds', 'urlPath', 'titlePath']);
+const ID_ARRAYS = new Set([
+  'folderIds',
+  'rankedIds',
+  'matchedIds',
+  'unmatchedIds',
+  'unchangedIds',
+  'uncertainIds',
+  'itemIds',
+  'urlPath',
+  'titlePath',
+]);
 /** Commentary keys models add despite instructions; harmless, so dropped before the strict schema check. */
 const COMMENTARY_KEYS = new Set(['reason', 'reasoning', 'rationale', 'confidence', 'explanation', 'note', 'notes']);
 
@@ -181,12 +217,34 @@ const COMMENTARY_KEYS = new Set(['reason', 'reasoning', 'rationale', 'confidence
  * filled in. Anything else unexpected (e.g. a url key) still fails the strict schema.
  */
 export function normalizeModelJson(value: unknown, task: string): unknown {
+  // Some models put answer values inside the JSON Schema's properties wrapper.
+  // Accept only this exact envelope with actual action arrays, never a schema
+  // definition, mixed root fields or an arbitrary nested object. The unwrapped
+  // answer still passes every strict schema, ID, conflict and authority check.
+  if (task === 'organize' && value && typeof value === 'object' && !Array.isArray(value)) {
+    const envelope = value as Record<string, unknown>;
+    const answer = envelope.properties;
+    if (
+      Object.keys(envelope).length === 3 &&
+      envelope.$schema === 'https://json-schema.org/draft/2020-12/schema' &&
+      envelope.type === 'object' &&
+      answer &&
+      typeof answer === 'object' &&
+      !Array.isArray(answer) &&
+      ['moves', 'newFolders', 'merges'].every(key => Array.isArray((answer as Record<string, unknown>)[key]))
+    )
+      value = answer;
+  }
   const visit = (node: unknown): unknown => {
     if (Array.isArray(node)) return node.map(visit);
     if (!node || typeof node !== 'object') return node;
     const out: Record<string, unknown> = {};
     for (const [key, child] of Object.entries(node)) {
-      if (COMMENTARY_KEYS.has(key) && !(task === 'organize' && key === 'reason' && node !== value)) continue;
+      if (
+        COMMENTARY_KEYS.has(key) &&
+        !(['organize', 'rename'].includes(task ?? '') && key === 'reason' && node !== value)
+      )
+        continue;
       if (ID_KEYS.has(key) && typeof child === 'number') out[key] = String(child);
       else if (ID_ARRAYS.has(key) && Array.isArray(child))
         out[key] = child.map(item => (typeof item === 'number' ? String(item) : item));
@@ -209,7 +267,9 @@ function parseReason(error: ModelParseError): string {
   return ['empty', 'refused', 'incomplete'].includes(error.stage)
     ? error.stage
     : error.stage === 'provider'
-      ? 'provider-error'
+      ? error.issue === 'finish=json-mode-input-required'
+        ? 'json-mode-input-required'
+        : 'provider-error'
       : 'schema';
 }
 
@@ -283,6 +343,9 @@ export class ModelTransport {
     organizeRepair?: { knownIds: string[] };
   }): Promise<ModelResult> {
     this.cancel('superseded');
+    const privateHistory =
+      input.request.task.startsWith('history-') ||
+      (input.request.task === 'save' && input.request.item.source === 'history');
     const generation = this.generation;
     const controller = new AbortController();
     this.active = controller;
@@ -436,8 +499,13 @@ export class ModelTransport {
       arm();
       const dependencies = dependencyDigest(frozen.tree, frozen.request);
       const identity = settingsIdentity(frozen);
+      let preferencePlan: ReturnType<typeof preferenceUpdatePlan> | undefined;
       const fresh = async () => {
         check();
+        if (frozen.request.task === 'history-query' || frozen.request.task === 'history-rank') {
+          if (!this.authority.validateHistory) throw Error('history-authority');
+          await checked(this.authority.validateHistory(frozen.request));
+        }
         const current = await checked(this.authority.read());
         if (
           current.tree.installationId !== frozen.tree.installationId ||
@@ -446,17 +514,103 @@ export class ModelTransport {
           current.key !== frozen.key
         )
           throw Error('stale-context');
+        if (folderScope) {
+          const currentScope = searchScope(current.tree, folderScope);
+          const currentHints = preferenceHints(
+            memory,
+            current.tree,
+            current.privacy,
+            'search',
+            new Set([...currentScope.ids, ...currentScope.ancestorIds]),
+          );
+          if (JSON.stringify(currentHints) !== JSON.stringify(hints)) throw Error('stale-context');
+        }
+        if (frozen.request.task === 'preference-summary' && frozen.request.update) {
+          const latestMemory = await checked(memoryStore.load(frozen.tree.installationId));
+          preferenceUpdatePlan(latestMemory, frozen.request.update, current.tree, current.privacy);
+          if (preferencePlan?.sources.some(entry => !preferenceUsable(entry, current.tree, current.privacy)))
+            throw Error('stale-context');
+        }
       };
       const permission = async () => {
         check();
         if (!(await checked(this.boundary.contains({ origins: [route.permission] })))) throw Error('permission');
       };
-      const payload = serializeAiPayload(frozen.tree, frozen.privacy, frozen.request);
+      const memoryStore = browserPersonalizationStore();
+      const memory =
+        privateHistory || frozen.usagePurpose === 'connection-test'
+          ? emptyPersonalization()
+          : await checked(memoryStore.load(frozen.tree.installationId));
+      if (frozen.request.task === 'preference-summary') {
+        if (frozen.request.update) {
+          preferencePlan = preferenceUpdatePlan(memory, frozen.request.update, frozen.tree, frozen.privacy);
+          if (JSON.stringify(preferencePlan.examples) !== JSON.stringify(frozen.request.examples))
+            throw Error('stale-context');
+        } else {
+          // Manual summaries may only use currently active, privacy-allowed local examples.
+          const examples = frozen.request.examples;
+          if (
+            !memory.enabled ||
+            !examples.length ||
+            examples.length > 20 ||
+            examples.some(
+              example =>
+                !memory.entries.some(
+                  entry =>
+                    entry.id === example.id &&
+                    entry.text === example.text &&
+                    entry.status === 'active' &&
+                    entry.enabled &&
+                    preferenceUsable(entry, frozen.tree, frozen.privacy),
+                ),
+            )
+          )
+            throw Error('stale-context');
+        }
+      }
+      const scope: PreferenceScope | undefined =
+        frozen.request.task === 'rename'
+          ? 'rename'
+          : frozen.request.task.startsWith('search')
+            ? 'search'
+            : frozen.request.task === 'organize'
+              ? 'organize'
+              : frozen.request.task === 'save'
+                ? 'save'
+                : frozen.request.task === 'import-classify'
+                  ? 'import'
+                  : undefined;
+      const folderScope =
+        frozen.request.task === 'search-plan' || frozen.request.task === 'search-batch'
+          ? frozen.request.folderScope
+          : undefined;
+      const scopedEvidence = folderScope ? searchScope(frozen.tree, folderScope) : undefined;
+      const hints = scope
+        ? preferenceHints(
+            memory,
+            frozen.tree,
+            frozen.privacy,
+            scope,
+            scopedEvidence ? new Set([...scopedEvidence.ids, ...scopedEvidence.ancestorIds]) : undefined,
+          )
+        : [];
+      const serialized = serializeAiPayload(frozen.tree, frozen.privacy, frozen.request);
+      const payload = JSON.stringify({
+        ...JSON.parse(serialized),
+        ...(hints.length ? { personalPreferences: hints } : {}),
+        ...(preferencePlan
+          ? {
+              characterLimit: preferencePlan.characterLimit,
+              ruleLimit: preferencePlan.ruleLimit,
+              latestExampleIds: preferencePlan.latestExampleIds,
+            }
+          : {}),
+      });
       const policy = frozen.policy ?? DEFAULT_CLASSIFICATION_POLICY;
       const context: ModelOutputContext = {
         ...JSON.parse(payload),
         policy,
-        ...(['search', 'search-expand'].includes(frozen.request.task)
+        ...(['search', 'search-batch', 'search-plan', 'search-expand'].includes(frozen.request.task)
           ? {}
           : {
               rootId:
@@ -469,14 +623,16 @@ export class ModelTransport {
       };
       await fresh();
       result = { status: 'failed', reason: 'empty' };
-      let jsonMode = true;
+      let jsonMode = supportsApiJsonMode(frozen.config);
       let recoveries = 0;
       const thinkingPlan = modelThinkingPlan(frozen.config);
       const thinkingKey = JSON.stringify([route.identity, frozen.config.model, thinkingPlan?.key]);
       let useThinking = Boolean(thinkingPlan) && (unsupportedThinking.get(thinkingKey) ?? 0) <= Date.now();
       let thinkingFallback = false;
       let includeUsage =
-        ['openai-compatible', 'lm-studio'].includes(frozen.config.adapter) && modelStreaming(frozen.config);
+        officialModelProvider(frozen.config.baseUrl) !== 'glm' &&
+        ['openai-compatible', 'lm-studio'].includes(frozen.config.adapter) &&
+        modelStreaming(frozen.config);
       for (;;) {
         check();
         timeoutPhase = 'request';
@@ -486,7 +642,7 @@ export class ModelTransport {
         await permission();
         await fresh();
         const body = modelRequestBody(
-          useThinking ? frozen.config : { ...frozen.config, fastMode: false },
+          useThinking ? frozen.config : { ...frozen.config, reasoningEffort: 'default' as const },
           frozen.request.task,
           payload,
           policy,
@@ -505,7 +661,7 @@ export class ModelTransport {
           requestBytes,
           headers: JSON.stringify(headers),
         });
-        attemptLog('request-body', () => modelBodyDiagnostics(body, frozen.key));
+        if (!privateHistory) attemptLog('request-body', () => modelBodyDiagnostics(body, frozen.key));
         check();
         const usage = tokenUsageAccumulator(frozen.config.adapter);
         const attemptAt = Date.now();
@@ -533,9 +689,11 @@ export class ModelTransport {
           httpStatus = response.status;
           attemptLog('response-headers', {
             httpStatus,
-            contentType: response.headers.get('content-type'),
+            contentType: privateHistory ? undefined : response.headers.get('content-type'),
             contentLength: response.headers.get('content-length'),
-            serverRequestId: response.headers.get('x-request-id') ?? response.headers.get('request-id'),
+            serverRequestId: privateHistory
+              ? undefined
+              : (response.headers.get('x-request-id') ?? response.headers.get('request-id')),
             redirected: response.redirected,
           });
           if (response.redirected || (response.url && response.url !== route.url)) {
@@ -543,7 +701,12 @@ export class ModelTransport {
             throw Error('redirect');
           }
           const onBody: ModelBodyObserver = (text, receivedBytes, complete) => {
-            attemptLog('response-body', () => ({ receivedBytes, complete, ...modelBodyDiagnostics(text, frozen.key) }));
+            if (!privateHistory)
+              attemptLog('response-body', () => ({
+                receivedBytes,
+                complete,
+                ...modelBodyDiagnostics(text, frozen.key),
+              }));
             if (complete && !response.ok) {
               try {
                 usage.push(JSON.parse(text));
@@ -555,7 +718,26 @@ export class ModelTransport {
           if (!response.ok) {
             const message = await checked(errorMessage(response, onBody, controller.signal, this.limits.responseBytes));
             responseComplete = true;
-            attemptLog('http-error', { status: response.status, message });
+            attemptLog('http-error', {
+              status: response.status,
+              message: privateHistory ? 'history-provider-error' : message,
+            });
+            if ([400, 422].includes(response.status) && isJsonModeInputError(message)) {
+              result = { status: 'failed', reason: 'json-mode-input-required' };
+              break;
+            }
+            // MiniMax 1026 is an input-content rejection, including when its Responses API
+            // labels it image_content_policy_violation for a text-only request. Never replay it.
+            if (
+              officialModelProvider(frozen.config.baseUrl) === 'minimax' &&
+              [400, 422].includes(response.status) &&
+              /\[1026\]|\b(?:input\s+)?new_sensitive\s*\(1026\)|\b1026\b.*(?:sensitive|涉敏)|(?:sensitive|涉敏).*\b1026\b/i.test(
+                message,
+              )
+            ) {
+              result = { status: 'failed', reason: 'refused' };
+              break;
+            }
             if (
               includeUsage &&
               rejectsThinkingParameter(response.status, message, ['stream_options', 'include_usage'])
@@ -591,7 +773,7 @@ export class ModelTransport {
             }
             result = {
               status: 'failed',
-              reason: [401, 403, 429].includes(response.status) ? `http-${response.status}` : 'http-error',
+              reason: [400, 401, 403, 422, 429].includes(response.status) ? `http-${response.status}` : 'http-error',
             };
             break;
           }
@@ -628,8 +810,8 @@ export class ModelTransport {
               idleMs: lastActivityAt === undefined ? undefined : Date.now() - lastActivityAt,
               aborted: controller.signal.aborted,
               stage: error instanceof ModelResponseReadError ? 'body-read' : 'decode-or-protocol',
-              error: readError instanceof Error ? readError.name : 'unknown',
-              message: readError instanceof Error ? readError.message : undefined,
+              error: privateHistory ? 'history-read-error' : readError instanceof Error ? readError.name : 'unknown',
+              message: !privateHistory && readError instanceof Error ? readError.message : undefined,
             });
             throw error instanceof ModelParseError ||
               error instanceof ModelResponseReadError ||
@@ -651,17 +833,17 @@ export class ModelTransport {
           });
           attemptLog('reply-extracted', {
             chars: reply.text.length,
-            finish: reply.finish,
+            finish: privateHistory ? undefined : reply.finish,
             truncated: reply.truncated,
             refused: Boolean(reply.refused),
-            failed: reply.failed,
+            failed: privateHistory ? Boolean(reply.failed) : reply.failed,
             events: wire.events,
           });
           try {
             const text = completedReplyText(reply);
             // SSE body prefixes can consist entirely of thinking. Capture the completed answer
             // independently so long reasoning streams cannot hide a rejected proposal.
-            attemptLog('answer-body', () => modelBodyDiagnostics(text, frozen.key));
+            if (!privateHistory) attemptLog('answer-body', () => modelBodyDiagnostics(text, frozen.key));
             const value = normalizeModelJson(extractJsonObject(text), frozen.request.task);
             try {
               const output = parseModelOutput(value, context);
@@ -693,13 +875,13 @@ export class ModelTransport {
               jsonMode,
               stage: parse.stage,
               detail: parse.detail,
-              issue: parse.issue,
+              issue: privateHistory ? undefined : parse.issue,
               organizeStage: context.stage,
               inputItems: context.items.length,
               inputFolders: context.folders.length,
               maxNewDepth: context.policy?.maxNewDepth,
               chars: reply.text.length,
-              shape: wire.raw === undefined ? 'SSE' : replyShape(wire.raw),
+              shape: privateHistory ? undefined : wire.raw === undefined ? 'SSE' : replyShape(wire.raw),
             });
             result = {
               status: 'failed',
@@ -731,7 +913,11 @@ export class ModelTransport {
                     ? frozen.config.model.split(frozen.key).join('[redacted]')
                     : frozen.config.model
                   ).slice(0, 512),
-                  purpose: frozen.usagePurpose ?? frozen.request.task,
+                  purpose:
+                    frozen.usagePurpose ??
+                    (frozen.request.task === 'search-batch' || frozen.request.task === 'search-plan'
+                      ? 'search'
+                      : frozen.request.task),
                   counts: usage.snapshot(),
                   complete: responseComplete,
                 }),
@@ -745,8 +931,8 @@ export class ModelTransport {
     } catch (error) {
       const message = error instanceof Error ? error.message : '';
       log('request-failed', {
-        error: error instanceof Error ? error.name : 'unknown',
-        message,
+        error: privateHistory ? 'history-request-error' : error instanceof Error ? error.name : 'unknown',
+        message: privateHistory ? undefined : message,
         timedOut,
         aborted: controller.signal.aborted,
       });
@@ -826,7 +1012,11 @@ export async function errorMessage(
   try {
     const body = (await readModelText(response, limit, signal, onBody)).slice(0, 2000);
     try {
-      const parsed = JSON.parse(body) as { error?: { message?: unknown; param?: unknown } | string; message?: unknown };
+      const parsed = JSON.parse(body) as {
+        error?: { message?: unknown; param?: unknown; code?: unknown } | string;
+        message?: unknown;
+        base_resp?: { status_code?: unknown; status_msg?: unknown };
+      };
       const message =
         typeof parsed.error === 'string'
           ? parsed.error
@@ -834,10 +1024,14 @@ export async function errorMessage(
             ? parsed.error.message
             : typeof parsed.message === 'string'
               ? parsed.message
-              : body;
+              : typeof parsed.base_resp?.status_msg === 'string'
+                ? parsed.base_resp.status_msg
+                : body;
+      const code = typeof parsed.error === 'object' ? parsed.error?.code : parsed.base_resp?.status_code;
+      const codePrefix = typeof code === 'string' || typeof code === 'number' ? `[${String(code).slice(0, 80)}] ` : '';
       const param =
         typeof parsed.error === 'object' && typeof parsed.error?.param === 'string' ? `${parsed.error.param}: ` : '';
-      return `${param}${message}`.slice(0, 300);
+      return `${codePrefix}${param}${message}`.slice(0, 300);
     } catch {
       return body.slice(0, 300);
     }

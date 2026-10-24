@@ -107,8 +107,8 @@ it('uses the explicit model and restored JSON mode, and saves the transport choi
   const user = userEvent.setup();
   const streaming = screen.getByRole('switch', { name: /流式响应/ });
   const outputLimit = screen.getByLabelText('最大输出 tokens');
-  expect(outputLimit).toHaveValue(128000);
-  for (const value of ['', '0', '-1', '1.5']) {
+  expect(outputLimit).toHaveValue(null);
+  for (const value of ['0', '-1', '1.5']) {
     fireEvent.change(outputLimit, { target: { value } });
     expect(screen.getByRole('button', { name: '测试连接' })).toBeDisabled();
     expect(screen.getByRole('button', { name: '保存服务' })).toBeDisabled();
@@ -144,6 +144,32 @@ it('draft edits while permission dialog is pending prevent any request or old to
   expect(fetcher).not.toHaveBeenCalled();
   expect(toast).not.toHaveBeenCalled();
   expect(screen.getByRole('button', { name: '测试连接' })).toBeEnabled();
+});
+
+it('clears a saved explicit output limit for both the draft request and persistence', async () => {
+  const save = vi.fn();
+  const fetcher = vi.fn<typeof fetch>(async () => answer());
+  vi.stubGlobal('fetch', fetcher);
+  render(
+    createElement(EditServiceOverlay, {
+      service: { ...service, maxOutputTokens: 128000 },
+      initialKey: 'key',
+      onClose: vi.fn(),
+      onSave: save,
+      onChangeService: vi.fn(),
+    }),
+  );
+  const input = screen.getByLabelText('最大输出 tokens');
+  expect(input).toHaveValue(128000);
+  fireEvent.change(input, { target: { value: '' } });
+  fireEvent.click(screen.getByRole('button', { name: '测试连接' }));
+  await waitFor(() => expect(fetcher).toHaveBeenCalledOnce());
+  expect(JSON.parse(String(fetcher.mock.calls[0]![1]?.body))).not.toHaveProperty('max_output_tokens');
+  await waitFor(() => expect(screen.getByRole('button', { name: '保存服务' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: '保存服务' }));
+  await waitFor(() =>
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({ maxOutputTokens: undefined }), 'key', true),
+  );
 });
 
 it('late completion of a superseded request cannot clear the next busy state', async () => {

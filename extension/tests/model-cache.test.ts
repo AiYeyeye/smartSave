@@ -36,7 +36,7 @@ it('marks only the stable directory prefix and reconstructs the exact compact in
   expect(blocks[0].text).not.toContain('items');
   expect(blocks[1].cache_control).toBeUndefined();
   expect(blocks.map((block: { text: string }) => block.text).join('')).toBe(compactAiPayload(payload(['a'])));
-  expect(one.max_tokens).toBe(128000);
+  expect(one.max_tokens).toBe(64000);
 });
 
 it('keeps exact additive batch sizing with the official two-block envelope', () => {

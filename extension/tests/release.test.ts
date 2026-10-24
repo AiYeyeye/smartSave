@@ -25,6 +25,7 @@ async function fixture() {
     'dist/content-script.js': '(()=>{})();',
     'dist/panel/index.html': '<html></html>',
     'dist/options/index.html': '<html></html>',
+    'dist/save/index.html': '<html></html>',
     'dist/assets/parse-worker-fixture.js': 'const fixture = true;',
     'dist/assets/import-client-fixture.js': 'export {};',
   };
@@ -146,7 +147,7 @@ it('accepts the approved minimum and keeps a lower manifest floor plus every mis
   const lowered = await checkRelease(root);
   expect(lowered.compatibilityBlockers).toHaveLength(1);
   expect(lowered.compatibilityBlockers[0]).toContain('110');
-  expect(lowered.compatibilityBlockers[0]).toContain('116');
+  expect(lowered.compatibilityBlockers[0]).toContain('127');
   const blockers = releaseGate(lowered);
   expect(blockers).toContain(lowered.compatibilityBlockers[0]);
   for (const id of ['chrome-restart-reliability', 'edge-no-page-restart', 'p2-models', 'p3-recovery', 'p4-privacy'])

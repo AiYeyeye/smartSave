@@ -20,11 +20,13 @@ export function SearchBox({
   onChange,
   autoFocus,
   focusRequest = 0,
+  source = 'bookmarks',
 }: {
   value: string;
   onChange: (value: string) => void;
   autoFocus?: boolean;
   focusRequest?: number;
+  source?: 'bookmarks' | 'history';
 }) {
   const { t } = useI18n();
   const input = useRef<HTMLInputElement>(null);
@@ -37,8 +39,8 @@ export function SearchBox({
       <input
         ref={input}
         type="search"
-        aria-label={t('搜索书签')}
-        placeholder={t('搜索书签，或描述你要找的网站')}
+        aria-label={t(source === 'history' ? '搜索历史' : '搜索书签')}
+        placeholder={t(source === 'history' ? '搜索历史，或描述你浏览过的网页' : '搜索书签，或描述你要找的网站')}
         value={value}
         onChange={event => onChange(event.target.value)}
         onKeyDown={event => {
@@ -66,6 +68,7 @@ export function PanelChrome({
   onBack,
   onClose,
   focusRequest,
+  searchSource,
 }: {
   view: PopupView;
   query: string;
@@ -75,6 +78,7 @@ export function PanelChrome({
   /** Overlay sidebar only: slide the sidebar away. */
   onClose?: () => void;
   focusRequest?: number;
+  searchSource?: 'bookmarks' | 'history';
 }) {
   const { t } = useI18n();
   const browse = view === 'browse';
@@ -112,7 +116,9 @@ export function PanelChrome({
           </button>
         ) : null}
       </header>
-      {browse && <SearchBox value={query} onChange={onQuery} autoFocus focusRequest={focusRequest} />}
+      {browse && (
+        <SearchBox value={query} onChange={onQuery} autoFocus focusRequest={focusRequest} source={searchSource} />
+      )}
     </>
   );
 }

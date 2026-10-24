@@ -5,6 +5,7 @@ import type { OrganizeCheckpointMetadata } from '../persistence/organize-checkpo
 import { nodeSchema, treeStateSchema } from './node-reference';
 import { mutationResultSchema } from '../schemas/messages';
 import { ORGANIZE_REPAIR_LIMIT } from './organize-partial-repair';
+import { organizeInteractionSchema } from './organize-interaction';
 
 export const ORGANIZE_TASK_PORT = 'zhilan.organize-task.v1';
 const id = z.string().min(1).max(256);
@@ -31,6 +32,7 @@ export const organizeTaskMessageSchema = z.discriminatedUnion('action', [
   }),
   task.extend({ action: z.literal('select'), ids: z.array(id), selected: z.boolean() }),
   task.extend({ action: z.literal('target'), actionId: id, targetId: id }),
+  task.extend({ action: z.literal('reviewContent'), edit: organizeInteractionSchema }),
 ]);
 const subscription = z.strictObject({
   version: z.literal(1),
@@ -47,7 +49,7 @@ export type OrganizeTaskMessage = z.infer<typeof organizeTaskMessageSchema>;
 export type OrganizeTaskReply =
   | { ok: true; task: OrganizeTaskView }
   | { ok: true; tasks: OrganizeCheckpointMetadata[] }
-  | { ok: false; reason: string };
+  | { ok: false; reason: string; detail?: string };
 
 const strings = z.array(z.string());
 const count = z.number().int().nonnegative();
@@ -95,6 +97,16 @@ export const organizeTaskViewSchema = z.strictObject({
     pipeline: z
       .strictObject({
         stage: z.enum(['folders', 'bookmarks', 'complete']),
+        contentPhase: z.enum(['analysis', 'planning', 'assignment', 'revision', 'complete']).optional(),
+        topicCompleted: count.optional(),
+        taxonomyRevision: z.literal([0, 1]).optional(),
+        completedIds: strings.optional(),
+        bookmarkTargets: z.record(z.string(), z.string()).optional(),
+        reviewedIds: strings.optional(),
+        reclassifyingIds: strings.optional(),
+        preferenceSaveFailed: z.boolean().optional(),
+        uncertainIds: strings.optional(),
+        unchangedIds: strings.optional(),
         status: z.enum(['review', 'running', 'paused', 'failed', 'invalid']),
         total: count,
         batchSize: count,
@@ -143,7 +155,7 @@ export const organizeTaskMetadataSchema = z.object({
 export const organizeTaskReplySchema = z.union([
   z.strictObject({ ok: z.literal(true), task: organizeTaskViewSchema }),
   z.strictObject({ ok: z.literal(true), tasks: z.array(organizeTaskMetadataSchema) }),
-  z.strictObject({ ok: z.literal(false), reason: z.string() }),
+  z.strictObject({ ok: z.literal(false), reason: z.string(), detail: z.string().max(500).optional() }),
 ]);
 
 const reasons = new Set([
@@ -157,6 +169,11 @@ const reasons = new Set([
   'stale-context',
   'model-unconfigured',
 ]);
+/** User-facing explanation attached to an error (e.g. what changed for stale-context); never provider text. */
+export function organizeTaskErrorDetail(error: unknown): { detail?: string } {
+  const detail = error instanceof Error ? (error as Error & { detail?: unknown }).detail : undefined;
+  return typeof detail === 'string' && detail ? { detail: detail.slice(0, 500) } : {};
+}
 export function organizeTaskError(error: unknown) {
   return error instanceof Error && reasons.has(error.message) ? error.message : 'organize-task-unavailable';
 }

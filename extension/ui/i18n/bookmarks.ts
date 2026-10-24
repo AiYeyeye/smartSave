@@ -67,10 +67,8 @@ export const bookmarksEnglish = {
   请选择目录: 'Choose a folder',
   '选择目标目录后立即移动到末尾。': 'Choosing a destination moves the bookmark to the end of that folder.',
   确认保存: 'Confirm save',
-  '删除“{title}”及 {count} 个子项。中途变化会停止，已完成部分不会自动回滚。':
-    'Delete “{title}” and its descendants ({count}). If bookmarks change, further operations stop; completed changes are not automatically rolled back.',
   '正在提交，请勿重复操作。': 'Submitting. Please do not repeat the operation.',
-  删除影响确认: 'Review deletion',
+  '是否确认删除？': 'Confirm deletion?',
   确认删除: 'Confirm delete',
   '此协议不支持打开。': 'This URL protocol cannot be opened.',
   '无法打开无痕窗口，请检查浏览器的无痕设置或管理策略。':

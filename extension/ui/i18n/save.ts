@@ -1,6 +1,5 @@
 export const saveEnglish = {
   '正在读取规则；不会自动保存。': 'Loading rules. Nothing will be saved automatically.',
-  '准备好后点击试分类；不会创建或移动书签。': 'Start the trial when ready. No bookmarks will be created or moved.',
   '已检查网站规则；仍需确认。': 'Website rules checked. Your confirmation is still required.',
   '可请求AI建议，或直接手动选择目录。': 'Ask AI for a suggestion or choose a folder yourself.',
   '规则读取失败；可手动收藏，不会覆盖规则。':
@@ -9,14 +8,12 @@ export const saveEnglish = {
   '智能收藏模型尚不可用，请先在 AI 服务中完成配置。':
     'Configure a Smart save model in AI services before trying classification.',
   '模型未配置；请手动选择目录。': 'No model configured. Choose a folder manually.',
-  '正在试分类，仅生成目录建议。': 'Classifying for preview only.',
   '正在请求建议；可继续编辑，迟到建议不会覆盖手改目录。':
     'Requesting a suggestion. You can keep editing; your folder choice will be preserved.',
   '正文获取失败，降级为标题与网址；仍可手动收藏。':
     'Could not read page text. Using the title and URL; manual saving is still available.',
   'AI未完成：{reason}；可检查配置后重试。': 'AI did not complete: {reason}. Check your settings and try again.',
   'AI未完成：{reason}；可手动收藏。': 'AI did not complete: {reason}. You can save manually.',
-  '试分类完成；未创建或移动任何书签。': 'Trial complete. No bookmarks were created or moved.',
   'AI建议仅供确认；不会自动保存。': 'Review the AI suggestion before saving. Nothing is saved automatically.',
   '模型或建议不可用，请检查智能收藏的服务、密钥和模型配置。':
     'Could not get a suggestion. Check the Smart save service, key and model.',
@@ -27,25 +24,19 @@ export const saveEnglish = {
   '目录或树已变化，请取消后重新确认；未提交。': 'Folders have changed. Cancel and review again; nothing was submitted.',
   '书签已完成；新目录身份无法可靠核实，未建立规则。请在规则设置中检查。':
     'Bookmark saved, but the new folder could not be verified. No rule was created; check your rules.',
-  当前网页试分类: 'Try classifying this page',
   '使用「智能收藏」的模型。仅发送标题、按隐私设置处理的网址和目录结构，不读取正文。':
     'Uses the Smart save model. Sends only the title, URL allowed by your privacy settings and folder structure, without reading page text.',
   '结果只作预览，不会创建目录、收藏或移动书签。': 'Preview only. No folders or bookmarks will be created or moved.',
   '正在恢复目录连接，请稍候。': 'Reconnecting to your folders. Please wait.',
   '建议目录：{folder}': 'Suggested folder: {folder}',
   ' / {path}（新目录建议）': ' / {path} (suggested new folders)',
-  '建议已失效，请重新试分类。': 'This suggestion is out of date. Run the trial again.',
-  '正在试分类…': 'Classifying…',
-  发送并试分类: 'Send and try classification',
-  '已取消试分类。': 'Trial cancelled.',
-  取消试分类: 'Cancel trial',
-  关闭试分类: 'Close trial',
   收藏确认卡: 'Review bookmark save',
   '连接恢复中，草稿已保留；暂不能请求建议或确认保存。':
     'Reconnecting. Your draft is retained; suggestions and saving will be available after reconnection.',
   收藏当前页面: 'Save this page',
   '模型配置已变化，请重新请求建议或明确选择目录。':
     'Model settings changed. Request a new suggestion or choose a folder.',
+  '提醒：此网址已经收藏过。': 'Note: this URL is already bookmarked.',
   '此网址已有书签；请选择打开或编辑，不会重复新增。':
     'This URL is already bookmarked. Open or edit the existing bookmark; no duplicate will be added.',
   '{title} · 目录 {folder} · 编号 {id}': '{title} · Folder {folder} · ID {id}',
@@ -79,9 +70,7 @@ export const saveEnglish = {
   '目标目录已不可用，请重新选择': 'The destination folder is unavailable. Choose another folder.',
   '页面已切换或导航；请重新收藏当前页面。': 'The page changed. Capture the current page again to save it.',
   '收藏入口连接已关闭；请重新打开智栏。': 'The save connection closed. Reopen Zhilan.',
-  '请先关闭当前卡片，再开始新的试分类。': 'Close the current card before starting another trial.',
   '正在获取当前网页…': 'Getting the current page…',
-  '无法连接当前网页，请重新打开智栏后试分类。': 'Could not connect to this page. Reopen Zhilan and try again.',
   已完成: 'Completed',
   '未执行操作，请检查连接或重新操作': 'Nothing was changed. Check the connection and try again.',
   '失败，未完成': 'Failed to complete',

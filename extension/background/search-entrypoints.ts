@@ -1,4 +1,4 @@
-import { browserMessage } from '../domain/browser-message';
+import { browserMessage, onBrowserLanguageChange } from '../domain/browser-message';
 import { SearchIndex, type SearchHit } from '../domain/search-index';
 import { canOpenUrl } from '../domain/open-url';
 import { extensionDocumentKind } from '../domain/trusted-sender';
@@ -61,7 +61,9 @@ export function startSearchEntrypoints(
   };
   browser.omnibox.onInputStarted.addListener(reset);
   browser.omnibox.onInputCancelled.addListener(reset);
-  browser.omnibox.setDefaultSuggestion({ description: browserMessage('searchSuggestion') });
+  const refreshLanguage = () => browser.omnibox!.setDefaultSuggestion({ description: browserMessage('searchSuggestion') });
+  refreshLanguage();
+  onBrowserLanguageChange(refreshLanguage);
   browser.omnibox.onInputChanged.addListener((text, suggest) => {
     const current = ++generation;
     query = text;

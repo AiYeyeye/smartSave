@@ -24,6 +24,7 @@ export default defineConfig({
         'import-client': resolve('import/worker-client.ts'),
         panel: resolve('panel/index.html'),
         options: resolve('options/index.html'),
+        save: resolve('save/index.html'),
         'service-worker': resolve('background/service-worker.ts'),
       },
       preserveEntrySignatures: 'strict',

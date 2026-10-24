@@ -12,7 +12,7 @@ export async function featureModelContext<T extends Awaited<ReturnType<SettingsS
   featureId: AiFeature,
 ): Promise<T> {
   const snapshot = await services.load();
-  if (!snapshot.services.length && !snapshot.revision) return context;
+  // Models come only from AI services; the old single-connection setting no longer routes any feature.
   const feature = snapshot.features.find(entry => entry.id === featureId);
   const service = snapshot.services.find(entry => entry.id === feature?.connId);
   if (!service?.baseUrl.trim() || !feature?.modelId)
@@ -27,6 +27,7 @@ export async function featureModelContext<T extends Awaited<ReturnType<SettingsS
       timeoutMs: service.timeoutMs ?? 60_000,
       ...(service.streaming === undefined ? {} : { streaming: service.streaming }),
       ...(service.fastMode === undefined ? {} : { fastMode: service.fastMode }),
+      ...(service.reasoningEffort === undefined ? {} : { reasoningEffort: service.reasoningEffort }),
       ...(service.maxOutputTokens === undefined ? {} : { maxOutputTokens: service.maxOutputTokens }),
     },
     key: services.credential(service.id),

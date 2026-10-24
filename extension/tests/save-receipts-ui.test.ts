@@ -5,6 +5,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { ReceiptView, SaveReceiptCard } from '../panel/SaveReceiptCard';
 import { LANGUAGE_KEY, LanguagePicker, LocaleProvider } from '../ui/i18n';
 import { DebugLogPanel } from '../options/DebugLogPanel';
+import { syntheticConnectionTree } from '../adapters/ai-connection';
 import { SaveReceiptLog, SAVE_RECEIPTS_KEY, type SaveReceipt } from '../persistence/save-receipts';
 import {
   createDebugLog,
@@ -53,6 +54,48 @@ const base: SaveReceipt = {
 afterEach(() => {
   vi.unstubAllGlobals();
   resetDebugLogForTests();
+});
+
+it('keeps an actively edited name draft when another native-save suggestion arrives', async () => {
+  const tree = syntheticConnectionTree();
+  const source = tree.nodes.find(node => node.ref.kind === 'bookmark')!;
+  const first: SaveReceipt = {
+    ...base,
+    bookmarkId: source.ref.nativeId,
+    title: source.title,
+    status: 'moved',
+    reason: undefined,
+    suggestedTitle: 'Suggested name',
+  };
+  const send = vi.fn((message, callback) =>
+    callback(
+      message.action === 'begin'
+        ? {
+            status: 'ready',
+            token: 'first',
+            tree,
+            bookmarkId: source.ref.nativeId,
+            suggestedTitle: first.suggestedTitle,
+          }
+        : { status: 'closed' },
+    ),
+  );
+  stubStorage({ [SAVE_RECEIPTS_KEY]: [first] }, send);
+  render(createElement(SaveReceiptCard, { onOpen: vi.fn() }));
+  const input = await screen.findByLabelText('书签名称');
+  fireEvent.focus(input);
+  fireEvent.change(input, { target: { value: 'My unsaved wording' } });
+  await act(async () =>
+    chrome.storage.local.set({
+      [SAVE_RECEIPTS_KEY]: [
+        { ...first, id: 'r2', bookmarkId: 'other', title: 'Another page', suggestedTitle: 'Other suggestion' },
+        first,
+      ],
+    }),
+  );
+  expect(screen.getByLabelText('书签名称')).toBe(input);
+  expect(input).toHaveValue('My unsaved wording');
+  expect(send.mock.calls.filter(([message]) => message.action === 'begin')).toHaveLength(1);
 });
 
 it.each([

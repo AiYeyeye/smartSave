@@ -63,6 +63,17 @@ export const durableMutationRequestSchema = z.object({
   scope: ref,
   before: z.array(nodeSchema.strict()),
   command: commandSchema,
+  // Explicit correction baselines. AI adoption supplies its proposed value, never the native old value.
+  learning: z
+    .array(
+      z.strictObject({
+        id: z.string().min(1),
+        title: z.string(),
+        parentId: z.string().optional(),
+      }),
+    )
+    .max(1000)
+    .optional(),
   importBinding: importBindingSchema.optional(),
   organizerBinding: organizerBindingSchema.optional(),
   recovery: z

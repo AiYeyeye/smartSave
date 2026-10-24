@@ -1,8 +1,7 @@
 /**
  * Sender authority for extension-owned documents.
  *
- * The side panel (`panel/index.html`) and the options page (`options/index.html`) are the only trusted UI
- * documents. Trust is decided from exact facts Chrome attaches to the sender (extension id, exact document URL,
+ * The panel, options and standalone save documents are the trusted UI documents. Trust is decided from exact facts Chrome attaches to the sender (extension id, exact document URL,
  * origin and the hosting tab) — never from a nonce, a registry or any state the page could forge.
  */
 export type SenderLite = {
@@ -13,11 +12,12 @@ export type SenderLite = {
   frameId?: number;
   documentId?: string;
 };
-export type ExtensionDocumentKind = 'panel' | 'options';
+export type ExtensionDocumentKind = 'panel' | 'options' | 'save';
 
 const DOCUMENTS: Record<string, ExtensionDocumentKind> = {
   'panel/index.html': 'panel',
   'options/index.html': 'options',
+  'save/index.html': 'save',
 };
 
 function extensionOrigin(url: string, extensionId: string): URL | undefined {
@@ -95,6 +95,7 @@ export function extensionDocumentKind(sender: SenderLite, extensionId: string): 
   if (!extensionId || sender.id !== extensionId || !sender.url) return;
   const parsed = extensionOrigin(sender.url, extensionId);
   if (!parsed || parsed.search) return;
+  if (parsed.pathname === '/save/index.html' && (sender.frameId ?? 0) !== 0) return;
   if (sender.origin && sender.origin !== `chrome-extension://${extensionId}`) return;
   if (hostedOutsideExtension(sender, extensionId)) return;
   return DOCUMENTS[parsed.pathname.replace(/^\//, '')];

@@ -1,5 +1,6 @@
 /** Types + vendor catalog for AI Services UI. Vendors come from domain/ai-providers (real catalog). */
 
+import type { ReasoningEffort } from '../../domain/model-route';
 import {
   KEY_VENDORS as DOMAIN_KEY_VENDORS,
   SUB_VENDORS as DOMAIN_SUB_VENDORS,
@@ -32,6 +33,7 @@ export type ConnectedService = {
   timeoutMs?: number;
   streaming?: boolean;
   fastMode?: boolean;
+  reasoningEffort?: ReasoningEffort;
   maxOutputTokens?: number;
 };
 

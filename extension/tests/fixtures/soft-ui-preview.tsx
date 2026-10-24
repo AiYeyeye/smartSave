@@ -7,7 +7,9 @@ import { ImportCheckpointStore } from '../../persistence/import-checkpoints';
 import { parseImport } from '../../import/parsers';
 import { SettingsStore } from '../../persistence/settings';
 import { AiServicesStore } from '../../persistence/ai-services';
+import { featureModelSettings } from '../../adapters/feature-model-settings';
 import type { ConfirmMutation } from '../../schemas/messages';
+import type { OrganizeOutput } from '../../schemas/model-output';
 import { OrganizeTaskOwner } from '../../background/organize-task-owner';
 import { startOrganizeTaskService } from '../../background/organize-task-service';
 import { OrganizeCheckpointStore } from '../../persistence/organize-checkpoints';
@@ -115,6 +117,25 @@ Object.assign(globalThis, {
   __visualRestoreTree: () => publishTree({ status: 'ready', snapshot }),
 });
 if (semanticPreview) {
+  if (location.search.includes('folder-scope')) {
+    const outside = {
+      ...snapshot.nodes[1]!,
+      ref: { ...snapshot.nodes[1]!.ref, nativeId: 'outside' },
+      title: 'Outside folder',
+      childrenIds: ['outside-hit'],
+    };
+    snapshot.nodes[0]!.childrenIds.push('outside');
+    snapshot.nodes.push(outside, {
+      ...snapshot.nodes.find(node => node.ref.nativeId === 'figma')!,
+      ref: { installationId: 'visual', nativeId: 'outside-hit', kind: 'bookmark' },
+      parentId: 'outside',
+      title: 'OUTSIDE_DRAWING_BOOKMARK',
+      url: 'https://outside.example.test/',
+    });
+    snapshot.nodes.find(node => node.ref.nativeId === 'dev')!.title = '开发手册与长期学习参考资料';
+  }
+  const pendingSearch: (() => void)[] = [];
+  Object.assign(globalThis, { __visualFinishSearch: () => pendingSearch.shift()?.() });
   const bookmark = snapshot.nodes.find(node => node.ref.nativeId === 'figma')!;
   bookmark.title = 'diagrams.net';
   bookmark.url = 'https://app.diagrams.net/';
@@ -126,22 +147,44 @@ if (semanticPreview) {
         ...bookmark,
         ref: { ...bookmark.ref, nativeId: id },
         parentId: 'dev',
-        title: `Archive reference ${i}`,
+        title:
+          i === 105
+            ? 'Flowchart reference second batch'
+            : i === 199
+              ? 'Flowchart reference final batch'
+              : `Archive reference ${i}`,
         url: `https://catalog.example.test/${i}`,
         index: parent.childrenIds.length,
       });
       parent.childrenIds.push(id);
     }
   }
+  let assessedBatches = 0;
   globalThis.fetch = async (_url, init) => {
     const body = JSON.parse(String(init?.body));
     requests.push(body);
-    const input = JSON.parse(body.input) as { task: string; items: { id: string }[] };
-    await new Promise(resolve => setTimeout(resolve, 300));
-    const output =
-      input.task === 'search-expand'
-        ? { terms: ['diagrams.net', '流程图', 'flowchart'] }
-        : { rankedIds: input.items.some(item => item.id === 'figma') ? ['figma'] : [] };
+    const input = JSON.parse(body.input[1].content) as { task: string; items: { id: string }[] };
+    if (input.task === 'search-plan') {
+      await new Promise(resolve => setTimeout(resolve, 300));
+      return new Response(
+        JSON.stringify({
+          status: 'completed',
+          output_text: JSON.stringify({ folderIds: ['design', 'dev'], terms: [] }),
+        }),
+      );
+    }
+    assessedBatches++;
+    if (location.search.includes('semantic-large') && assessedBatches > 1)
+      await new Promise<void>(resolve => pendingSearch.push(resolve));
+    else await new Promise(resolve => setTimeout(resolve, 300));
+    const ids = input.items.map(item => item.id);
+    const matchedIds = ids.filter(id => ['figma', 'semantic-105', 'semantic-199'].includes(id));
+    const uncertainIds: string[] = ids.filter(id => id === 'semantic-5');
+    const output = {
+      matchedIds,
+      uncertainIds,
+      unmatchedIds: ids.filter(id => !matchedIds.includes(id) && !uncertainIds.includes(id)),
+    };
     return new Response(JSON.stringify({ status: 'completed', output_text: JSON.stringify(output) }));
   };
 }
@@ -182,12 +225,16 @@ if (organizeStreamPreview) {
     const body = JSON.parse(String(init?.body));
     requests.push(body);
     const requestIndex = requests.length - 1;
-    const input = JSON.parse(body.input) as {
+    const input = JSON.parse(body.input[1].content) as {
       stage?: string;
+      contentFirst?: boolean;
+      protectedSourceIds?: string[];
+      revisionEvidence?: unknown[];
+      folderTree?: string;
       omittedItemsUnchanged?: boolean;
       items: { id: string }[];
     };
-    const folderOutput = taxonomyPreview
+    const folderOutput: OrganizeOutput = taxonomyPreview
       ? {
           newFolders: [
             { id: 'writing', parentId: 'root', title: '写作工具', reason: '集中写作用途' },
@@ -198,26 +245,65 @@ if (organizeStreamPreview) {
           renames: [{ folderId: 'dev', title: '开发参考', reason: '统一分类名称' }],
         }
       : { newFolders: [{ id: 'tools', parentId: 'root', title: '工具', reason: '按用途整理' }], moves: [], merges: [] };
+    if (input.protectedSourceIds?.includes('dev') && 'renames' in folderOutput) folderOutput.renames = [];
+    if (input.revisionEvidence?.length)
+      folderOutput.newFolders.push({ id: 'testing', parentId: 'root', title: '性能测试', reason: '补充后续主题' });
+    const revise = location.search.includes('organize-revision');
+    const missingCategory = revise && !input.folderTree?.includes('"testing"');
+    const uncertain =
+      input.contentFirst && revise
+        ? input.items
+            .filter(item => item.id === 'docs' || (missingCategory && item.id === 'sample-19'))
+            .map(item => item.id)
+        : [];
     const moves = input.items
       .filter(item => (taxonomyPreview ? item.id !== 'docs' : item.id === 'figma'))
+      .filter(item => !uncertain.includes(item.id))
       .map(item => ({
         itemId: item.id,
-        folderId: taxonomyPreview ? (item.id === 'figma-copy' ? 'drawing' : 'writing') : 'dev',
+        folderId:
+          revise && item.id === 'sample-19'
+            ? 'testing'
+            : taxonomyPreview
+              ? item.id === 'figma-copy'
+                ? 'drawing'
+                : 'writing'
+              : 'dev',
         reason: '按已确认的用途分类',
       }));
     const answer = JSON.stringify(
-      input.stage === 'folders'
-        ? folderOutput
-        : {
+      input.stage === 'analysis'
+        ? {
             newFolders: [],
+            moves: [],
             merges: [],
-            moves,
-            ...(input.omittedItemsUnchanged
-              ? {}
-              : {
-                  unchangedIds: input.items.filter(item => !moves.some(m => m.itemId === item.id)).map(item => item.id),
-                }),
-          },
+            topics: input.items.map(item => ({
+              title: item.id === 'sample-19' ? '性能测试' : '写作与绘图',
+              itemIds: [item.id],
+            })),
+          }
+        : input.stage === 'folders'
+          ? folderOutput
+          : {
+              newFolders: [],
+              merges: [],
+              moves,
+              ...(input.contentFirst
+                ? {
+                    uncertainIds: uncertain,
+                    categorySuggestions: uncertain.includes('sample-19')
+                      ? [{ title: '性能测试', itemIds: ['sample-19'] }]
+                      : [],
+                  }
+                : {}),
+              ...(input.omittedItemsUnchanged
+                ? {}
+                : {
+                    unchangedIds: input.items
+                      .filter(item => !moves.some(m => m.itemId === item.id) && !uncertain.includes(item.id))
+                      .map(item => item.id),
+                  }),
+            },
     );
     const split = answer.indexOf('],') + 2;
     const encoder = new TextEncoder();
@@ -443,6 +529,36 @@ async function start() {
       'synthetic-test-key',
       true,
     );
+    const services = new AiServicesStore(chrome.storage.local, run => run());
+    await services.load();
+    await services.upsertService(
+      {
+        id: 'visual-model',
+        name: 'Synthetic model',
+        serviceType: 'Custom',
+        kind: 'api',
+        detail: '',
+        baseUrl: 'https://synthetic.invalid/v1',
+        mode: 'openai-responses',
+        status: 'ok',
+        letter: 'S',
+        avatarClass: 'c-openai',
+        catalog: [{ id: 'visual', ctx: '' }],
+        enabled: ['visual'],
+      },
+      'synthetic-test-key',
+      true,
+    );
+    await services.saveFeatures(
+      services
+        .snapshotServices()
+        .features.map(feature =>
+          ['search', 'organize'].includes(feature.id)
+            ? { ...feature, connId: 'visual-model', modelId: 'visual' }
+            : feature,
+        ),
+    );
+    services.dispose();
   }
   if (location.search.includes('import-preview')) {
     const store = new ImportCheckpointStore();
@@ -475,7 +591,7 @@ async function start() {
   const taskSettings = new SettingsStore(chrome.storage.local, run => run());
   startOrganizeTaskService(
     new OrganizeTaskOwner({
-      settings: taskSettings,
+      settings: featureModelSettings(taskSettings, new AiServicesStore(chrome.storage.local, run => run()), 'organize'),
       projection: {
         get state() {
           return taskTree;
@@ -497,7 +613,7 @@ async function start() {
     }),
   );
   createRoot(document.getElementById('root')!).render(
-    <App page={location.search.includes('options') ? 'options' : 'panel'} />,
+    <App page={location.search.includes('options') ? 'options' : location.search.includes('save-dialog') ? 'save' : 'panel'} />,
   );
 }
 void start();

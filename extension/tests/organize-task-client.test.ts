@@ -361,3 +361,59 @@ it('lets the worker sleep while the organize view is hidden and reconnects when 
   page.client.dispose();
   h.dispose();
 });
+
+it('tells the user what changed when a saved task can no longer be restored', async () => {
+  const h = organizeClientRuntime(),
+    page = observer(h);
+  h.run.mockResolvedValueOnce(folders);
+  await page.client.generate(undefined, { staged: true, batchSize: 1, cleanupEmpty: false });
+  await vi.waitFor(() => expect(page.state().pipeline).toMatchObject({ stage: 'folders', status: 'review' }));
+  await vi.waitFor(() => expect(page.state().busy).toBe(false));
+  const id = page.state().task!.id!;
+  page.client.dispose();
+  h.tree.nodes.find(n => n.ref.nativeId === 'right')!.title = '学习';
+  h.restart();
+  const next = observer(h);
+  await next.client.restoreTask(id);
+  expect(next.state().message).toContain('目录「right」被改名为「学习」');
+  next.client.dispose();
+  h.dispose();
+});
+
+it('ends the same page restore after a model change and lets stop return to a usable scope', async () => {
+  const h = organizeClientRuntime(),
+    page = observer(h);
+  h.run.mockResolvedValueOnce({ status: 'failed', reason: 'refused' });
+  await page.client.generate(undefined, { staged: true, batchSize: 1, cleanupEmpty: false });
+  await vi.waitFor(() => expect(page.state().busy).toBe(false));
+  const id = page.state().task!.id!;
+  expect(await h.journal.organizeCheckpoints.get(id)).toBeTruthy();
+  page.client.setVisible(false);
+  h.changeModel('new-selected-model');
+  h.restart();
+  h.ports.at(-1)!.disconnect();
+  page.client.setVisible(true);
+  await vi.waitFor(() => expect(page.state().message).toContain('已失效'));
+  expect(page.state()).toMatchObject({ busy: false, invalid: true, scopeId: 'bar', task: { id } });
+  expect(h.run).toHaveBeenCalledTimes(1);
+  expect(h.move).not.toHaveBeenCalled();
+  await page.client.cancel();
+  expect(page.state().busy).toBe(false);
+  expect(page.state().task?.id).toBeUndefined();
+  expect(page.state().message).not.toContain('执行前的核对没有完成');
+  expect(await h.journal.organizeCheckpoints.get(id)).toBeTruthy();
+  h.run.mockResolvedValueOnce(folders);
+  await page.client.generate(undefined, { staged: true, batchSize: 1, cleanupEmpty: false });
+  await vi.waitFor(() =>
+    expect(page.state()).toMatchObject({
+      busy: false,
+      invalid: false,
+      pipeline: { stage: 'folders', status: 'review' },
+    }),
+  );
+  expect(h.run).toHaveBeenCalledTimes(2);
+  expect(h.run.mock.calls.at(-1)![0].config.model).toBe('new-selected-model');
+  expect(h.move).not.toHaveBeenCalled();
+  page.client.dispose();
+  h.dispose();
+});

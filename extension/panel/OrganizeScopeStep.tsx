@@ -124,7 +124,6 @@ export function OrganizeScopeStep({
           />
           <span>
             <strong>{t('AI 整理目录')}</strong>
-            <small>{t('根据内容建议分类、移动和合并；由你决定采用哪些。')}</small>
           </span>
         </label>
         <label className="workflow-choice">
@@ -137,7 +136,6 @@ export function OrganizeScopeStep({
           />
           <span>
             <strong>{t('清理重复书签')}</strong>
-            <small>{t('本地查找精确重复和疑似重复，逐条选择保留或删除。')}</small>
           </span>
         </label>
       </div>
@@ -154,11 +152,6 @@ export function OrganizeScopeStep({
           />
           {t('只整理未分类的书签')}
         </label>
-      )}
-      {method === 'ai' && unfiledOnly && (
-        <p className="hint">
-          {t('只处理当前目录直接收藏的书签，沿用现有分类；子目录内容、目录名称和空目录保持不动。')}
-        </p>
       )}
       {method === 'ai' && (
         <details className="workflow-help organize-advanced">
@@ -183,19 +176,19 @@ export function OrganizeScopeStep({
               </Select>
             </label>
             <label>
-              {t('目录层级')}
+              {t('最少层级')}
               <Select
-                aria-label={t('目录层级')}
+                aria-label={t('最少层级')}
                 value={String(levels)}
-                disabled={state.busy || unfiledOnly}
+                disabled={state.busy}
                 onChange={e => {
                   cancel();
                   setLevels(Number(e.target.value) as OrganizeLevels);
                 }}
               >
-                <option value="1">{t('一级（平铺）')}</option>
-                <option value="2">{t('两级：大类 / 小类（推荐）')}</option>
-                <option value="3">{t('三级')}</option>
+                <option value="1">{t('不限，由 AI 决定')}</option>
+                <option value="2">{t('至少两级：大类 / 小类（推荐）')}</option>
+                <option value="3">{t('至少三级')}</option>
               </Select>
             </label>
             {levels > 1 && !['custom', 'existing', 'numbered'].includes(style) && (
@@ -204,7 +197,7 @@ export function OrganizeScopeStep({
                 <Select
                   aria-label={t('小类按')}
                   value={subStyle}
-                  disabled={state.busy || unfiledOnly}
+                  disabled={state.busy}
                   onChange={e => {
                     cancel();
                     setSubStyle(e.target.value as OrganizeSubStyle | '');
@@ -237,7 +230,7 @@ export function OrganizeScopeStep({
               />
             </label>
             <p className="hint">
-              {t('仅用于本次整理；要求会与所选范围的书签信息一起发送给 AI。{count}/{limit}', {
+              {t('{count}/{limit}', {
                 count: instructions.length,
                 limit: ORGANIZE_INSTRUCTIONS_LIMIT,
               })}
@@ -292,7 +285,6 @@ export function OrganizeScopeStep({
           </label>
           <details className="workflow-help">
             <summary>{t('保护分类与已拒绝建议')}</summary>
-            <p>{t('勾选的分类及其内容保持不动；保存在本机，后续整理继续遵守。')}</p>
             {scopedFolders.map(folder => (
               <label className="organize-option" key={folder.ref.nativeId}>
                 <input
@@ -316,7 +308,7 @@ export function OrganizeScopeStep({
                 {currentPaths.get(folder.ref.nativeId)}
               </label>
             ))}
-            <p>{t('已记住 {count} 条拒绝建议；普通取消勾选只影响本次。', { count: memory.rejected.length })}</p>
+            <p>{t('已记住 {count} 条“不再建议”', { count: memory.rejected.length })}</p>
             {memory.rejected.map(record => (
               <div key={record.signature}>
                 <span>{organizePreviewText(language, record.label)}</span>

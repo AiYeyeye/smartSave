@@ -40,9 +40,6 @@ export function SaveHistory({ onOpen }: { onOpen: (route: string) => void }) {
   return (
     <section className="surface" aria-label={t('收藏记录')}>
       <h2>{t('最近的原生收藏')}</h2>
-      <p className="hint">
-        {t('在浏览器里点星标或 Ctrl+D 收藏后，智栏的处理结果会记录在这里（最多 30 条，仅保存在本机）。')}
-      </p>
       {receipts.length === 0 ? (
         <p className="hint" style={{ marginTop: 12 }}>
           {t('还没有记录。收藏一个网页试试。')}
@@ -108,11 +105,7 @@ export function DebugLogPanel() {
       <div className="debug-head">
         <div>
           <h2>{t('Debug 日志')}</h2>
-          <p>
-            {t(
-              '开启后记录 AI 请求、脱敏后的请求与响应正文、状态码和解析过程。仅保存在本机，不记录密钥；正文可能包含书签标题和网址，分享前请检查。单份正文最多 65536 字符，日志总量最多 1 MiB。',
-            )}
-          </p>
+          <p className="organize-notice">{t('提醒：日志可能包含书签标题和网址，分享前请检查。')}</p>
         </div>
         <label className="switch" title={enabled ? t('已开启') : t('已关闭')}>
           <input
@@ -130,11 +123,6 @@ export function DebugLogPanel() {
       </div>
       <section aria-label={t('收藏耗时统计')}>
         <h3>{t('收藏耗时统计')}</h3>
-        <p className="hint">
-          {t(
-            '最近 30 条本机记录，按连接和模型统计成功收藏；失败单独计数。总耗时包含收藏后的等待。非流式响应无法拆分首字与生成耗时。',
-          )}
-        </p>
         {timings.length === 0 && <p className="hint">{t('收藏网页后会显示耗时，不需要开启 Debug 日志。')}</p>}
         {timings.map(row => (
           <div key={row.model}>

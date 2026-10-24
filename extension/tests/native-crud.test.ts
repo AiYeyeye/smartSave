@@ -82,7 +82,7 @@ it('cancelled destructive confirmation sends nothing; confirmed deletion sends o
   const user = userEvent.setup();
   render(createElement(BookmarkActions, { snapshot: tree, selectedId: 'f', send }));
   await user.click(screen.getByRole('button', { name: '删除' }));
-  expect(screen.getByRole('dialog')).toHaveTextContent('1 个子项');
+  expect(screen.getByRole('dialog', { name: '是否确认删除？' })).toHaveTextContent(/^是否确认删除？取消确认删除$/);
   await user.click(screen.getByRole('button', { name: '取消' }));
   expect(send).not.toHaveBeenCalled();
   await user.click(screen.getByRole('button', { name: '删除' }));
@@ -364,7 +364,8 @@ it.each(['新建目录', '新建书签'])(
     expect(send.mock.calls[0]![0].command.type).toBe('create');
     expect(screen.getByRole('button', { name: '确认保存' })).toBeDisabled();
     resolve(undefined);
-    expect(await screen.findByText(/请求编号/)).toBeVisible();
+    await waitFor(() => expect(screen.queryByRole('button', { name: '确认保存' })).toBeNull());
+    expect(screen.queryByText(/请求编号|已完成 ·/)).toBeNull();
   },
 );
 it('form draft and drag confirmation are mutually exclusive panel interactions', async () => {

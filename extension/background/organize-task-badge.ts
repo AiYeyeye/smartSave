@@ -1,4 +1,4 @@
-import { browserMessage } from '../domain/browser-message';
+import { browserMessage, onBrowserLanguageChange } from '../domain/browser-message';
 import { z } from 'zod';
 import type { OrganizeTaskView } from './organize-task-owner';
 import type { OrganizeCheckpointStore } from '../persistence/organize-checkpoints';
@@ -34,7 +34,9 @@ export class OrganizeTaskBadge {
   constructor(
     private badges: Pick<ActionBadgeOwner, 'organize'>,
     private session?: Session,
-  ) {}
+  ) {
+    onBrowserLanguageChange(() => this.render());
+  }
   async restore(store: Pick<OrganizeCheckpointStore, 'get' | 'list'>) {
     const version = this.version;
     try {
@@ -47,12 +49,15 @@ export class OrganizeTaskBadge {
       this.update({
         id: checkpoint.id,
         revision: checkpoint.revision,
-        stage: checkpoint.stage,
+        stage: checkpoint.content?.phase ?? checkpoint.stage,
         status: checkpoint.status === 'running' ? 'paused' : checkpoint.status,
         total: checkpoint.bookmarkIds.length,
-        analyzed: checkpoint.batches
-          .filter(batch => batch.status !== 'pending')
-          .reduce((sum, batch) => sum + batch.itemIds.length, 0),
+        analyzed:
+          checkpoint.content && checkpoint.stage === 'folders'
+            ? checkpoint.content.analysis.reduce((sum, batch) => sum + (batch.output ? batch.itemIds.length : 0), 0)
+            : checkpoint.batches
+                .filter(batch => batch.status !== 'pending')
+                .reduce((sum, batch) => sum + batch.itemIds.length, 0),
         needsCredential: checkpoint.requiresCredential,
         selected: checkpoint.selection.selected.length,
         submitted: !!checkpoint.submission,
@@ -93,10 +98,13 @@ export class OrganizeTaskBadge {
     return {
       id: view.id,
       revision: view.revision,
-      stage: pipeline?.stage ?? 'folders',
+      stage: pipeline?.contentPhase ?? pipeline?.stage ?? 'folders',
       status: view.state.invalid ? 'invalid' : (pipeline?.status ?? (view.state.busy ? 'running' : 'failed')),
       total: pipeline?.total ?? 0,
-      analyzed: pipeline?.analyzed ?? pipeline?.completed ?? 0,
+      analyzed:
+        pipeline?.contentPhase && pipeline.stage === 'folders'
+          ? (pipeline.topicCompleted ?? 0)
+          : (pipeline?.analyzed ?? pipeline?.completed ?? 0),
       needsCredential: view.needsCredential,
       selected: view.state.selected.length,
       submitted: !!view.submission,
@@ -130,7 +138,7 @@ export class OrganizeTaskBadge {
       const progress = [String(analyzed), String(task.total)];
       if (task.status === 'running')
         style =
-          task.stage === 'bookmarks' && task.total > 0
+          ['bookmarks', 'analysis', 'assignment'].includes(task.stage) && task.total > 0
             ? {
                 text: `${Math.floor((analyzed / task.total) * 100)}%`,
                 color: '#6366F1',

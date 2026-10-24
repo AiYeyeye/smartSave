@@ -247,7 +247,8 @@ button {
     box-shadow var(--fast) var(--ease),
     scale var(--fast) var(--ease);
 }
-button:hover:not(:disabled) {
+/* Base hover must not override a component's selected/primary background alone. */
+button:where(:hover:not(:disabled)) {
   background: var(--hover-solid);
   border-color: var(--border-strong);
 }
@@ -1071,6 +1072,22 @@ dialog::backdrop {
   padding-top: 12px;
   overflow-wrap: anywhere;
 }
+.save-correction-group {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.save-correction .field,
+.save-correction .actions {
+  margin: 0;
+}
+.save-correction .actions {
+  align-items: center;
+}
+.save-correction input[readonly] {
+  background: var(--surface-2);
+  color: var(--muted);
+}
 .duplicate-review article {
   display: grid;
   gap: 12px;
@@ -1775,6 +1792,7 @@ body.sidepanel .theme-root {
   max-width: 1080px;
 }
 .page-head {
+  flex-wrap: wrap;
   width: 100%;
   max-width: 880px;
   margin: 0 auto;
@@ -1787,8 +1805,22 @@ body.sidepanel .theme-root {
   max-width: 1080px;
 }
 .page-head > div {
-  flex: 1;
+  flex: 1 1 180px;
   min-width: 0;
+}
+.page-head .language-picker {
+  flex: 0 0 auto;
+  margin: 0;
+}
+.language-picker {
+  min-width: 0;
+}
+.language-picker legend {
+  font-weight: 650;
+}
+.language-picker select {
+  min-width: 132px;
+  min-height: 34px;
 }
 .page-head h1 {
   font-size: 22px;

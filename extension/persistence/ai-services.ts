@@ -1,5 +1,10 @@
 import { z } from 'zod';
-import { maxOutputTokensSchema, parseModelEndpoint, type ModelAdapter } from '../domain/model-route';
+import {
+  maxOutputTokensSchema,
+  parseModelEndpoint,
+  reasoningEffortSchema,
+  type ModelAdapter,
+} from '../domain/model-route';
 import { apiModeToAdapter, type ApiMode } from '../domain/ai-providers';
 import type { IdentityStorage } from '../background/installation-identity';
 import type { SettingsStore } from './settings';
@@ -26,6 +31,7 @@ const connectedServiceSchema = z.strictObject({
   timeoutMs: z.number().int().positive().max(2147483647).optional(),
   streaming: z.boolean().optional(),
   fastMode: z.boolean().optional(),
+  reasoningEffort: reasoningEffortSchema.optional(),
   maxOutputTokens: maxOutputTokensSchema.optional(),
 });
 
@@ -311,6 +317,7 @@ export class AiServicesStore {
           timeoutMs,
           streaming,
           fastMode,
+          reasoningEffort,
           maxOutputTokens,
           letter,
           avatarClass,
@@ -329,6 +336,7 @@ export class AiServicesStore {
           timeoutMs,
           streaming,
           fastMode,
+          reasoningEffort,
           maxOutputTokens,
           letter,
           avatarClass,
@@ -368,6 +376,7 @@ export class AiServicesStore {
       timeoutMs: primary.timeoutMs ?? 60000,
       ...(primary.streaming === undefined ? {} : { streaming: primary.streaming }),
       ...(primary.fastMode === undefined ? {} : { fastMode: primary.fastMode }),
+      ...(primary.reasoningEffort === undefined ? {} : { reasoningEffort: primary.reasoningEffort }),
       ...(primary.maxOutputTokens === undefined ? {} : { maxOutputTokens: primary.maxOutputTokens }),
     };
     const remembered = Boolean(this.value.credentials?.[primary.id]?.key);

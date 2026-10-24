@@ -1,0 +1,10 @@
+.personalization-settings { display: grid; gap: 16px; min-width: 0; }
+.personalization-settings > .personalization-toggle { display: flex; align-items: center; gap: 8px; margin: 0; }
+.personalization-toggle input, .personal-scopes input { flex: 0 0 auto; margin: 0; }
+.personalization-settings .actions { align-items: center; margin: 0; }
+.personalization-toolbar > .hint { white-space: nowrap; font-size: 13px; }
+.personalization-settings h3 { margin: 0; font-size: 14px; }
+.personalization-settings textarea, .organize-interactive textarea { width: 100%; min-height: 72px; resize: vertical; box-sizing: border-box; }
+.personal-preference { display: grid; gap: 12px; padding: 16px; margin-top: 12px; border: 1px solid var(--border); border-radius: 12px; min-width: 0; overflow-wrap: anywhere; }
+.personal-scopes { display: flex; flex-wrap: wrap; gap: 8px 12px; }
+.personal-scopes label { display: inline-flex; align-items: center; gap: 6px; }

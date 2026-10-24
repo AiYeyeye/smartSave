@@ -16,8 +16,12 @@ afterEach(() => {
 it.each([
   [{ ...base }, { reasoning_effort: 'low' }],
   [{ ...base, adapter: 'openai-responses' as const }, { reasoning: { effort: 'low' } }],
-  [{ ...base, model: 'gpt-5' }, { reasoning_effort: 'minimal' }],
-  [{ ...base, model: 'gpt-5.1' }, { reasoning_effort: 'none' }],
+  // Low is the default; "off" maps to each family's lowest supported value.
+  [{ ...base, model: 'gpt-5' }, { reasoning_effort: 'low' }],
+  [{ ...base, model: 'gpt-5', reasoningEffort: 'none' as const }, { reasoning_effort: 'minimal' }],
+  [{ ...base, model: 'gpt-5.1', reasoningEffort: 'none' as const }, { reasoning_effort: 'none' }],
+  [{ ...base, reasoningEffort: 'none' as const }, { reasoning_effort: 'low' }],
+  [{ ...base, model: 'gpt-5.2', reasoningEffort: 'high' as const }, { reasoning_effort: 'high' }],
   // OpenAI reasoning models behind other gateways get a low effort; a rejection replays once without it.
   [
     { ...base, adapter: 'openai-responses' as const, baseUrl: 'https://gateway.test/v1', model: 'gpt-5.6-sol' },
@@ -56,12 +60,21 @@ it.each([
 ] as const)('sets native thinking controls for %j', (config, expected) => {
   const body = JSON.parse(modelRequestBody(config, 'search', '{"items":[],"folders":[]}'));
   expect(body).toMatchObject(expected);
-  const budget = body.max_completion_tokens ?? body.max_output_tokens ?? body.generationConfig?.maxOutputTokens;
-  expect(budget).toBe(128000);
+  const budget =
+    body.max_completion_tokens ?? body.max_tokens ?? body.max_output_tokens ?? body.generationConfig?.maxOutputTokens;
+  expect(budget).toBeUndefined();
 });
 
 it.each([
   { ...base, fastMode: false },
+  { ...base, reasoningEffort: 'default' as const },
+  {
+    ...base,
+    adapter: 'google-generative-ai' as const,
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+    model: 'gemini-2.5-flash',
+    reasoningEffort: 'high' as const,
+  },
   { ...base, model: 'gpt-4.1-mini' },
   { ...base, baseUrl: 'https://unverified-gateway.test/v1', model: 'qwen-max' },
   { ...base, adapter: 'anthropic' as const, baseUrl: 'https://gateway.test/v1', model: 'gpt-5' },

@@ -12,7 +12,7 @@ export type PanelMode = 'overlay' | 'sidepanel';
 export const PANEL_MODE_KEY = 'panelMode';
 export const OVERLAY_WIDTH_KEY = 'overlayWidth';
 export const OVERLAY_SCRIPT = 'overlay-sidebar.js';
-const DEFAULT_WIDTH = 340;
+const DEFAULT_WIDTH = 320;
 
 const tokens = new Map<string, number>(); // token → tabId
 type Claim = { documentId: string; tabId: number; frameId: number };

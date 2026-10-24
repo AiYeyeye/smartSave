@@ -5,6 +5,9 @@ import { OrganizeController } from '../panel/organize-controller';
 import type { GenerationOptions, OrganizeState } from '../domain/organize-state';
 import type { OrganizePreference } from '../domain/organize-preferences';
 import type { OrganizeCheckpoint } from '../domain/organize-checkpoint';
+import type { OrganizeInteraction } from '../domain/organize-interaction';
+import { browserPersonalizationStore } from '../persistence/personalization';
+import type { PersonalPreference } from '../domain/personalization';
 import type { OrganizeCheckpointStore } from '../persistence/organize-checkpoints';
 import type { OrganizeMemoryStore } from '../persistence/organize-memory';
 import { organizeProtectionChanged } from '../domain/organize-memory-context';
@@ -36,11 +39,13 @@ type Task = {
   retired: boolean;
   persistenceFailed: boolean;
   editing: boolean;
+  restoring: boolean;
   memoryRefresh?: Promise<void>;
   notificationKey?: string;
   notificationTimer?: ReturnType<typeof setTimeout>;
 };
 type Options = {
+  learn?: (id: string, installationId: string, examples: PersonalPreference[]) => Promise<void>;
   projection: Pick<TreeProjection, 'fresh' | 'subscribe' | 'state'>;
   settings: ModelSettingsReader;
   store: Pick<OrganizeCheckpointStore, 'get' | 'list' | 'put' | 'remove'>;
@@ -124,13 +129,15 @@ export class OrganizeTaskOwner {
     };
   }
   private publish(task: Task, progressOnly = false) {
-    if (this.closed || task.retired) return;
+    if (this.closed || task.retired || task.restoring) return;
     const pipeline = task.state.pipeline;
     const key = JSON.stringify([
       task.revision,
       task.state.busy,
       task.state.invalid,
       pipeline?.stage,
+      pipeline?.contentPhase,
+      pipeline?.topicCompleted,
       pipeline?.status,
       pipeline?.analyzed,
       pipeline?.completed,
@@ -228,6 +235,8 @@ export class OrganizeTaskOwner {
         const task = slot.value;
         if (!task) return;
         task.state = state;
+        // A restored controller is not observable or persistable until its checkpoint is validated.
+        if (task.restoring) return;
         if (!state.busy && task.operation) return; // Completion is published only after its final checkpoint.
         if (state.invalid && task.checkpoint?.status !== 'invalid' && !task.operation)
           void this.persist(task).then(
@@ -273,6 +282,7 @@ export class OrganizeTaskOwner {
       retired: false,
       persistenceFailed: false,
       editing: true,
+      restoring: !!checkpoint,
     };
     slot.value = task;
     this.tasks.set(id, task);
@@ -441,6 +451,7 @@ export class OrganizeTaskOwner {
         await task.controller.restoreCheckpoint(checkpoint, { allowMissingCredential: true });
         await this.refreshTaskMemory(task);
         await this.persist(task); // A running call becomes a durable paused task after worker replacement.
+        task.restoring = false;
         task.editing = false;
         this.publish(task);
       } catch (error) {
@@ -505,6 +516,7 @@ export class OrganizeTaskOwner {
     } finally {
       task.editing = false;
       editingTask.editing = false;
+      this.publish(task);
     }
   }
   async select(
@@ -525,6 +537,37 @@ export class OrganizeTaskOwner {
       return this.view(task);
     } finally {
       task.editing = false;
+      this.publish(task);
+    }
+  }
+  async reviewContent(id: string, revision: number, edit: OrganizeInteraction) {
+    const task = this.edit(id, revision);
+    try {
+      await this.refreshTaskMemory(task);
+      if (task.revision !== revision) throw Error('organize-task-conflict');
+      if (this.submissions.has(id)) throw Error('organize-task-unavailable');
+      const preferences = task.controller.reviewContent(edit);
+      await this.persist(task);
+      try {
+        const store = browserPersonalizationStore();
+        if (preferences.length)
+          await this.bounded(
+            this.options.learn
+              ? this.options.learn(`review:${task.id}:${task.revision}`, task.installationId, preferences)
+              : store.rememberMany(task.installationId, preferences).then(() => {}),
+          );
+        task.controller.preferenceSaveFailed(false);
+      } catch {
+        task.controller.preferenceSaveFailed(true);
+      }
+      if (edit.kind === 'feedback' && !task.operation && !task.state.busy && !this.view(task).needsCredential)
+        this.launch(task, () => task.controller.resumeBatches());
+      task.editing = false;
+      this.publish(task);
+      return this.view(task);
+    } finally {
+      task.editing = false;
+      this.publish(task);
     }
   }
   dispose() {

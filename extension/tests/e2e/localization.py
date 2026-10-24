@@ -31,16 +31,22 @@ with sync_playwright() as playwright:
         before = worker.evaluate('()=>chrome.bookmarks.getTree()')
         preferences = context.new_page()
         preferences.goto(f'chrome-extension://{extension_id}/options/index.html#appearance')
+        expect(preferences.locator('.page-head').get_by_label('语言', exact=True)).to_have_value('zh-CN')
         preferences.get_by_label('语言', exact=True).select_option('en')
+        preferences.wait_for_function("""async()=> {
+          const title=await chrome.action.getTitle({});
+          return title.includes('Zhilan') && !/[\u4e00-\u9fff]/.test(title);
+        }""")
         expect(preferences.get_by_role('heading', name='Appearance', exact=True)).to_be_visible()
         expect(preferences.locator('html')).to_have_attribute('lang', 'en')
         page = context.new_page()
         page.goto(f'chrome-extension://{extension_id}/options/index.html#browse')
         expect(page.get_by_role('searchbox', name='Search bookmarks')).to_be_visible()
+        expect(page.locator('.page-head').get_by_label('Language', exact=True)).to_have_value('en')
         page.get_by_role('searchbox').fill('搜索书签')
         expect(page.locator('.search-hit-list .search-hit-open')).to_have_text(['搜索书签'])
         page.locator('summary', has_text='Search shortcuts').click()
-        expect(page.get_by_text('Press Alt+Shift+K to open search.', exact=False)).to_contain_text('zl')
+        expect(page.get_by_role('button', name='Configure browser shortcuts', exact=True)).to_be_visible()
         # Exercise the real storage.sync boundary without signing in or sending fixture data to a cloud account.
         preferences.get_by_role('radio', name='Dark', exact=True).check()
         preferences.wait_for_function("async()=> (await chrome.storage.sync.get('zhilan.preference.mode.v1'))['zhilan.preference.mode.v1']?.value==='dark'")

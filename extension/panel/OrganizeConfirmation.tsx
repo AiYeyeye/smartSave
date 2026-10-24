@@ -26,7 +26,6 @@ export function OrganizeConfirmation({
   setStep,
   method,
   memoryBusy,
-  proposalPaths,
   review,
   preferenceReady,
   batchSizeValid,
@@ -37,59 +36,44 @@ export function OrganizeConfirmation({
   const { t, language } = useI18n();
   const statusText = (text: string) => organizeStatusText(language, text);
   const proposal = state.proposal;
-  const folderReview = state.pipeline?.stage === 'folders';
+  const folderReview = state.pipeline?.stage === 'folders' && !state.pipeline.contentPhase;
   const batchIncomplete = !!state.pipeline && state.pipeline.stage !== 'complete';
+  const notice = memoryBusy
+    ? undefined
+    : review?.error
+      ? review.error
+      : state.notice
+        ? state.notice
+        : state.invalid
+          ? state.message
+          : proposal && !folderReview && !state.busy && !proposal.actions.length && !batchIncomplete
+            ? t(
+                state.pipeline?.uncertainIds?.length
+                  ? '暂无可执行的确定建议，请查看待确认书签。'
+                  : '没有需要应用的操作，当前分类已经合适。',
+              )
+            : proposal && !folderReview && proposal.actions.length > 0 && !state.selected.length
+              ? t('请至少勾选一项建议后继续。')
+              : undefined;
   return (
     <>
-      {step === 3 && !state.result && !state.task?.requestId && (
-        <>
-          <p className="workflow-summary">
-            {t('整理目录：{path} · 已选 {count} 项操作', {
-              path: proposalPaths.get(proposal?.scope.nativeId ?? '') ?? '',
-              count: state.selected.length,
-            })}
-          </p>
-          <p>{t('确认后将修改浏览器书签，写入前会自动备份。删除和合并操作也会执行，请确认上一步的选择。')}</p>
-        </>
-      )}
       {state.result && <MutationFeedback result={state.result} />}
       <div
         hidden={!!state.task?.requestId && !state.result}
         className={`workflow-footer${method === 'ai' ? ' organize-footer' : ''}`}
       >
-        {!state.busy && !state.result && !state.failure && (
-          <p
-            className="organize-footer-status"
-            role={state.invalid && !state.failure ? 'alert' : 'status'}
-            aria-live="polite"
-          >
-            {statusText(
-              state.failure && !state.busy
-                ? t('本次未生成完整方案，不能进入确认步骤。书签未修改，请按上方提示调整后重试。')
-                : state.busy && state.pipeline?.stage === 'bookmarks'
-                  ? t('可以查看已完成批次；后台继续生成后续建议，全部完成后才能确认执行。')
-                  : state.busy
-                    ? state.progress
-                      ? t('方案尚未完成，收到完整方案并校验后才能继续。')
-                      : state.message
-                    : memoryBusy
-                      ? t('正在读取或保存整理偏好…')
-                      : review?.error
-                        ? review.error
-                        : proposal &&
-                            !folderReview &&
-                            !state.invalid &&
-                            proposal.actions.length > 0 &&
-                            !state.selected.length
-                          ? t('方案已生成，请至少勾选一项建议后继续。')
-                          : state.message,
-            )}
+        {/* Only what the user must act on, as one 提醒 line; routine progress and summaries are not repeated here. */}
+        {!state.busy && !state.result && !state.failure && notice && (
+          <p className="organize-notice" role="alert" aria-live="polite">
+            <strong>{t('提醒：')}</strong>
+            {statusText(notice)}
           </p>
         )}
-        {state.pipeline?.stage === 'bookmarks' &&
+        {(state.pipeline?.stage === 'bookmarks' ||
+          (!!state.pipeline?.contentPhase && state.pipeline.stage !== 'complete')) &&
           !state.busy &&
           !state.invalid &&
-          ['paused', 'failed'].includes(state.pipeline.status) && (
+          ['paused', 'failed'].includes(state.pipeline!.status) && (
             <>
               {state.repair && (
                 <>
@@ -117,20 +101,23 @@ export function OrganizeConfirmation({
               </button>
             </>
           )}
-        {method === 'ai' && !state.busy && !state.result && (!proposal || state.invalid) && (
-          <button
-            className={state.failure?.code === 'output-limit' ? undefined : 'primary'}
-            disabled={
-              state.tree.status !== 'ready' || !preferenceReady || !batchSizeValid || memoryBusy || scopeProtected
-            }
-            onClick={() => {
-              setStep(2);
-              generate();
-            }}
-          >
-            {t('重新生成方案')}
-          </button>
-        )}
+        {method === 'ai' &&
+          !state.busy &&
+          !state.result &&
+          ((!proposal && !state.pipeline?.contentPhase) || state.invalid) && (
+            <button
+              className={state.failure?.code === 'output-limit' ? undefined : 'primary'}
+              disabled={
+                state.tree.status !== 'ready' || !preferenceReady || !batchSizeValid || memoryBusy || scopeProtected
+              }
+              onClick={() => {
+                setStep(2);
+                generate();
+              }}
+            >
+              {t('重新生成方案')}
+            </button>
+          )}
         <button
           className={state.failure?.code === 'output-limit' ? 'primary' : undefined}
           disabled={state.busy}
@@ -176,6 +163,7 @@ export function OrganizeConfirmation({
                 !proposal
               }
               onClick={() => void commands.apply()}
+              title={t('写入前会自动备份，可在“备份与恢复”中撤销；所选的删除与合并也会执行。')}
             >
               {t('确认并执行 {count} 项操作', { count: state.selected.length })}
             </button>

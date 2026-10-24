@@ -104,6 +104,26 @@ it('asks about rules only after confirmed movement; default excludes subdomains 
   );
   h.view.unmount();
 });
+it('shows one editable name in general correction and labeled comparison only for name advice', async () => {
+  const h = harness();
+  const name = await screen.findByLabelText('书签名称');
+  expect(screen.getAllByRole('textbox')).toHaveLength(1);
+  expect(screen.queryByText((name as HTMLInputElement).value)).not.toBeInTheDocument();
+  h.view.unmount();
+  const tree = syntheticConnectionTree();
+  const source = tree.nodes.find(node => node.ref.kind === 'bookmark')!;
+  const send = vi.fn<typeof import('../panel/SaveCorrection').sendCorrection>(async message =>
+    message.action === 'begin'
+      ? { status: 'ready', token: 'name-token', tree, bookmarkId: source.ref.nativeId, suggestedTitle: 'Specific name' }
+      : { status: 'closed' },
+  );
+  const view = render(<SaveCorrection receiptId="name" nameOnly send={send} onClose={vi.fn()} />);
+  expect(await screen.findByLabelText('原名称')).toHaveValue(source.title);
+  expect(screen.getByLabelText('原名称')).toHaveAttribute('readonly');
+  expect(screen.getByLabelText('书签名称')).toHaveValue('Specific name');
+  expect(screen.queryByLabelText('改到目录')).not.toBeInTheDocument();
+  view.unmount();
+});
 
 it('unknown mutation outcome has no rule prompt or retry-move button', async () => {
   const h = harness();

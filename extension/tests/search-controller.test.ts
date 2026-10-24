@@ -56,8 +56,26 @@ function setup() {
     invalidate: () => {
       for (const listener of listeners) listener();
     },
-    respond: (rankedIds: string[]) =>
-      release(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ rankedIds }) } }] }))),
+    respond: (matchedIds: string[]) => {
+      const ids = Array.from({ length: 12 }, (_, i) => String(i + 1));
+      release(
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    matchedIds,
+                    unmatchedIds: ids.filter(id => !matchedIds.includes(id)),
+                    uncertainIds: [],
+                  }),
+                },
+              },
+            ],
+          }),
+        ),
+      );
+    },
   };
 }
 it('uses actual transport and privacy projection; explicit request only, no automatic opening', async () => {
@@ -72,14 +90,14 @@ it('uses actual transport and privacy projection; explicit request only, no auto
   expect(payload.items).toHaveLength(12);
   expect(payload.folderTree).toBe('');
   expect(body.messages).toHaveLength(2);
-  expect(body.messages[0].content).toContain('rank the given items by relevance to the query');
+  expect(body.messages[0].content).toContain('inspect EVERY supplied bookmark');
   expect(body.messages[0].content).not.toContain('Depth policy');
   expect(JSON.stringify(payload)).not.toContain('secret=');
   expect(JSON.stringify(payload)).not.toContain('#part');
   f.respond(['2', '1']);
   await pending;
   expect(f.state().hits[0]?.id).toBe('2');
-  expect(f.state().hits).toHaveLength(12);
+  expect(f.state().hits).toHaveLength(2);
   f.invalidate();
   expect(f.state().hits[0]?.id).toBe('1');
   f.controller.dispose();
@@ -115,7 +133,7 @@ it.each([['unknown'], ['1', '1']])('retains local results after invalid IDs %j',
   expect(f.state().message).toContain('未完成');
   f.controller.dispose();
 });
-it('a tree change outside the candidates during rerank still delivers the order over the current local results', async () => {
+it('a new bookmark does not cancel accepted judgments but marks coverage incomplete', async () => {
   const f = setup();
   const pending = f.controller.rerank();
   await vi.waitFor(() => expect(f.fetcher).toHaveBeenCalledOnce());
@@ -125,7 +143,7 @@ it('a tree change outside the candidates during rerank still delivers the order 
   f.context.tree = grown;
   f.controller.setTree({ status: 'ready', snapshot: grown });
   expect(f.state().reranking).toBe(true);
-  expect(f.state().hits).toHaveLength(13);
+  expect(f.state().hits).toHaveLength(12);
   f.respond(['2', '1']);
   await pending;
   expect(
@@ -134,9 +152,10 @@ it('a tree change outside the candidates during rerank still delivers the order 
       .hits.map(hit => hit.id)
       .slice(0, 2),
   ).toEqual(['2', '1']);
-  expect(f.state().hits).toHaveLength(13);
+  expect(f.state().hits).toHaveLength(2);
+  expect(f.state().progress).toMatchObject({ complete: false, changed: true });
   expect(f.state().reranking).toBe(false);
-  expect(f.state().message).toContain('AI 找到');
+  expect(f.state().message).toContain('书签已变化');
   f.controller.dispose();
 });
 it('a candidate removed locally before the answer arrives is ignored rather than failing the order', async () => {
@@ -150,7 +169,7 @@ it('a candidate removed locally before the answer arrives is ignored rather than
   f.respond(['3', '2']);
   await pending;
   expect(f.state().hits[0]?.id).toBe('2');
-  expect(f.state().hits).toHaveLength(11);
+  expect(f.state().hits).toHaveLength(1);
   expect(f.state().hits.some(hit => hit.id === '3')).toBe(false);
   f.controller.dispose();
 });
@@ -170,7 +189,7 @@ it('excluded subtrees remain local but never trigger transport when no candidate
   f.context.privacy.excludedFolders = [f.context.tree.nodes[0]!.ref];
   await f.controller.rerank();
   expect(f.fetcher).not.toHaveBeenCalled();
-  expect(f.state().hits).toHaveLength(12);
+  expect(f.state().localOnlyHits).toHaveLength(12);
   f.controller.dispose();
 });
 it('network failure retains local results without retry', async () => {
@@ -364,7 +383,19 @@ it('keeps a live semantic-search stream past the former outer total deadline', a
     expect(f.state().reranking).toBe(true);
   }
   const chunk = {
-    choices: [{ index: 0, delta: { content: JSON.stringify({ rankedIds: ['12'] }) }, finish_reason: 'stop' }],
+    choices: [
+      {
+        index: 0,
+        delta: {
+          content: JSON.stringify({
+            matchedIds: ['12'],
+            unmatchedIds: Array.from({ length: 11 }, (_, i) => String(i + 1)),
+            uncertainIds: [],
+          }),
+        },
+        finish_reason: 'stop',
+      },
+    ],
   };
   source.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(chunk)}\n\ndata: [DONE]\n\n`));
   source.close();

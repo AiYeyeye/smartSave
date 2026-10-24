@@ -22,6 +22,10 @@ export const recoveryEnglish = {
   停止尚未发起步骤: 'Stop remaining steps',
   刷新恢复记录: 'Refresh recovery records',
   撤销最近操作: 'Undo recent operations',
+  '撤销只回退有回执的步骤；之后被改动过的项目会跳过并保留现状。':
+    'Undo only reverts steps with receipts; items changed since are skipped and kept as they are.',
+  '这些操作没有完整回执，请先在书签管理器核对再处理。':
+    'These operations lack complete receipts. Check the bookmark manager before acting.',
   '最近 {count} 次已完成的收藏、编辑、移动、删除与整理批次。撤销只回退有回执的步骤；之后被改动过的项目会被跳过并保留现状。':
     'The latest {count} completed saves, edits, moves, deletions and organization batches. Undo reverses only receipted steps. Items changed afterward are skipped and kept as they are.',
   预览撤销: 'Preview undo',

@@ -655,3 +655,17 @@ it('sends a locally rejected plan back once with the reason and accepts the corr
   expect(h.state().proposal?.actions).toEqual([expect.objectContaining({ kind: 'move', sourceId: 'a' })]);
   h.controller.dispose();
 });
+
+it('says which folder changed when a staged plan is voided during generation', async () => {
+  const h = setup();
+  h.model.run.mockImplementationOnce(async () => {
+    // The user renames a folder in the scope while the model is still thinking.
+    h.context.tree.nodes.find(n => n.ref.nativeId === 'right')!.title = '学习';
+    return { status: 'failed', reason: 'stale-context' };
+  });
+  await h.controller.generate(undefined, { staged: true, batchSize: 100, cleanupEmpty: false });
+  expect(h.state().failure?.code).toBe('stale-context');
+  expect(h.state().message).toContain('目录「right」被改名为「学习」');
+  expect(h.state().message).toContain('请重新生成方案');
+  h.controller.dispose();
+});

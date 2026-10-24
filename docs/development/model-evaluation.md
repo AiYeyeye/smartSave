@@ -1,33 +1,61 @@
-# 真实模型评测
+# 模型评测 / Model evaluation
 
-评测只读取导出的书签副本，不移动或修改浏览器书签。人工标注“应该放哪里”后，才能讨论准确率；现有目录不能自动当成正确答案。
+评测使用导出的书签副本和人工标注的目标目录，不修改浏览器书签。现有目录只提供候选，不能自动作为正确答案。
 
-1. 在智栏导出待评测书签与候选目录为 JSON v1。把私人文件放在仓库根目录的 `.local/private/evaluation/`（已忽略，不提交）。从 `extension/` 运行：
+Evaluation uses exported bookmark copies and manually labeled destination folders without modifying native bookmarks. Existing folders provide candidates, not automatic ground truth.
 
-   ```powershell
-   node checks/model-evaluation.mjs --from-export ../.local/private/evaluation/bookmarks.json --output ../.local/private/evaluation/labeled.json
-   ```
+## 准备数据 / Prepare data
 
-2. 模板包含最多200条 HTTP(S)书签，`cases[].expectedFolderId` 留空。逐条填写你认为正确的目录ID，可在同文件的 `tree.nodes` 中查询目录。删除不适合评测的条目或换成其他书签ID。导出ID只在这个文件内有效。
+在智栏导出 JSON v1，将文件保存为 `.local/work/evaluation/bookmarks.json`。以下命令从 `extension/` 目录执行：
 
-3. 创建模型路线文件 `.local/private/evaluation/models.json`，可放1–20个配置。示例中的地址和模型名需要替换：
+Export JSON v1 from Zhilan to `.local/work/evaluation/bookmarks.json`. Run these commands from `extension/`:
 
-   ```json
-   [{"config":{"adapter":"openai-compatible","baseUrl":"https://YOUR-ENDPOINT/v1","model":"YOUR-MODEL","timeoutMs":60000,"fastMode":true},"keyEnv":"ZHILAN_EVAL_API_KEY"}]
-   ```
+```sh
+node checks/model-evaluation.mjs --from-export ../.local/work/evaluation/bookmarks.json --output ../.local/work/evaluation/labeled.json
+```
 
-   协议可选 `openai-compatible`、`openai-responses`、`anthropic`、`google-generative-ai`、`ollama`、`lm-studio`。不同提供商可指定不同的密钥环境变量名；密钥不放在配置/数据文件里。输出上限保持应用默认128000，也可以显式填写 `maxOutputTokens`。
+模板最多包含 200 条 HTTP(S) 书签。逐条填写 `cases[].expectedFolderId`，目录 ID 可在同文件的 `tree.nodes` 中查询；删除不适合评测的条目。导出 ID 仅在该文件内有效。
 
-4. 先检查标注与候选覆盖，不会发送请求：
+The template contains up to 200 HTTP(S) bookmarks. Fill in each `cases[].expectedFolderId` using folder IDs from `tree.nodes`, and remove unsuitable cases. Export IDs are valid only within that file.
 
-   ```powershell
-   node checks/model-evaluation.mjs --dataset ../.local/private/evaluation/labeled.json --config ../.local/private/evaluation/models.json
-   ```
+## 配置模型 / Configure models
 
-5. 将所需密钥设到对应环境变量后，加 `--run` 才会逐条、逐模型发送书签标题、经过隐私处理的网址及候选目录；会消耗提供商额度。Ctrl+C可取消。429/5xx可能按应用策略重试。
+创建 `.local/work/evaluation/models.json`，支持 1–20 个配置。替换示例地址和模型名，密钥通过指定环境变量提供：
 
-   ```powershell
-   node checks/model-evaluation.mjs --dataset ../.local/private/evaluation/labeled.json --config ../.local/private/evaluation/models.json --run --output ../.local/private/evaluation/report.json
-   ```
+Create `.local/work/evaluation/models.json` with 1–20 configurations. Replace the example endpoint and model, and supply keys through the named environment variables:
 
-报告包括准确率（失败计为不正确）、成功请求准确率、失败率、成功请求耗时中位数/P90、可用的SSE首字耗时和逐条结果。它不保存书签标题、网址、密钥或原始模型响应。所有模型使用同一标注集和生产候选选择；报告会标明正确目录是否被候选选择覆盖，便于区分召回与模型判断问题。此入口比较模型本身，已有本地规则命中率和完整浏览器流程需要另外验收。
+```json
+[{"config":{"adapter":"openai-compatible","baseUrl":"https://YOUR-ENDPOINT/v1","model":"YOUR-MODEL","timeoutMs":60000,"fastMode":true},"keyEnv":"ZHILAN_EVAL_API_KEY"}]
+```
+
+协议可选 `openai-compatible`、`openai-responses`、`anthropic`、`google-generative-ai`、`ollama`、`lm-studio`。未填写 `maxOutputTokens` 时沿用应用的协议默认行为；显式值应符合所选模型的限制，见 [模型设置](../guides/model-setup.md)。
+
+Supported adapters are listed above. Omitting `maxOutputTokens` uses the application's protocol defaults. Explicit values must fit the chosen model's limits; see [model setup](../guides/model-setup.en.md).
+
+## 校验与运行 / Validate and run
+
+默认只检查标注和候选覆盖，不发送请求：
+
+The default command validates labels and candidate coverage without sending requests:
+
+```sh
+node checks/model-evaluation.mjs --dataset ../.local/work/evaluation/labeled.json --config ../.local/work/evaluation/models.json
+```
+
+配置密钥环境变量后，加 `--run` 才会逐条向模型发送标题、经过隐私处理的网址和候选目录，并消耗服务额度。Ctrl+C 可取消；明确的 429/5xx 响应可能按应用策略重试。
+
+After setting the key environment variables, add `--run` to send titles, privacy-filtered URLs and candidate folders to each model. Provider charges apply. Ctrl+C cancels; explicit 429/5xx responses may receive bounded retries.
+
+```sh
+node checks/model-evaluation.mjs --dataset ../.local/work/evaluation/labeled.json --config ../.local/work/evaluation/models.json --run --output ../.local/work/evaluation/report.json
+```
+
+## 结果 / Results
+
+报告包含准确率（失败计为不正确）、成功请求准确率、失败率、耗时中位数/P90、可用的流式首字耗时和逐条结果。各模型使用同一标注集和生产候选选择，并记录正确目录是否被候选覆盖。报告不保存标题、网址、密钥或原始模型回答。
+
+The report includes accuracy with failures counted as incorrect, accuracy among successful requests, failure rate, median/P90 latency, available streaming time to first text, and per-case results. Models share the same labels and production candidate selection. Candidate coverage is reported separately. Reports omit titles, URLs, keys and raw model replies.
+
+本入口比较模型分类结果；本地规则命中和完整浏览器交互通过 [浏览器测试](../../extension/README.md#isolated-browser-acceptance) 检查。
+
+This entrypoint compares model classification. Use the [browser tests](../../extension/README.md#isolated-browser-acceptance) for local-rule behavior and complete browser interactions.

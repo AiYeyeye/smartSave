@@ -76,6 +76,6 @@ describe('AI provider catalog', () => {
 
   it('exposes curated fallbacks for Anthropic and DeepSeek', () => {
     expect(curatedModelsForPreset('claude').length).toBeGreaterThan(0);
-    expect(findVendor('deepseek')?.curatedModels).toContain('deepseek-chat');
+    expect(findVendor('deepseek')?.curatedModels).toContain('deepseek-flash');
   });
 });
