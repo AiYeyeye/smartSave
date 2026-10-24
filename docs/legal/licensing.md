@@ -10,6 +10,6 @@ Copyright © 2026 Astraxine。联系：[mmgnosit@gmail.com](mailto:mmgnosit@gmai
 
 第三方依赖及其素材仍遵循各自许可，本项目不能收回它们原有的商用权。见 [第三方许可说明](third-party-licenses.md)。商标、第三方网站名称和浏览器品牌不因源码许可而获得授权。
 
-贡献默认按本项目同一许可证提供，不要求转让版权。维护者未来如需对第三方贡献另行商业授权，应先取得对应权利人的充分授权；不能仅凭接收 PR 就假定拥有这些权利。
+贡献公开时按本项目同一许可证提供，不要求转让版权。自 2026 年 10 月 23 日起提交的贡献，同时按 [贡献者授权](../../CONTRIBUTING.md#贡献者授权) 授予维护者在商业产品和付费服务中使用、再许可的权利。此前提交的贡献不自动适用；维护者商业使用前应先取得对应权利人的授权。
 
-English: project-owned code and documentation use PolyForm Noncommercial 1.0.0. Commercial use requires a separate written agreement with the relevant rights holders. This is source-available software, not OSI-approved open source. Third-party components retain their own licenses. Contributions use the same project license, without copyright assignment or an automatic grant for commercial relicensing.
+English: project-owned code and documentation use PolyForm Noncommercial 1.0.0. Commercial use requires a separate written agreement with the relevant rights holders. This is source-available software, not OSI-approved open source. Third-party components retain their own licenses. Contributions are available to the public under the same project license, without copyright assignment. Contributions submitted from 23 October 2026 also grant the maintainer the commercial-use and sublicensing rights in the [contributor license grant](../../CONTRIBUTING.md#contributor-license-grant); earlier contributions require separate permission before commercial use.
