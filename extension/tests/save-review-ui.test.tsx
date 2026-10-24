@@ -139,6 +139,114 @@ function harness({
 }
 afterEach(() => vi.unstubAllGlobals());
 
+it('an idle popup renews its session on one click and preserves the edited name and folder', async () => {
+  const h = harness();
+  const close = vi.fn();
+  render(<SaveReviewQueue onOpen={vi.fn()} onClose={close} send={h.send} />);
+  fireEvent.change(await screen.findByRole('textbox', { name: '名称' }), { target: { value: 'Idle draft' } });
+  fireEvent.click(screen.getByRole('button', { name: /^文件夹：/ }));
+  fireEvent.click(screen.getByRole('treeitem', { name: '阅读' }));
+  // The old worker's token is gone. Unrelated edits and a new epoch must not invalidate this user's choice.
+  const freshTree = structuredClone(tree);
+  freshTree.epoch = 'restarted';
+  freshTree.observedRevision++;
+  freshTree.nodes.find(node => node.ref.nativeId === 'back')!.title = 'Unrelated change';
+  h.send.mockImplementation(async message => {
+    if (message.action === 'begin') return { status: 'ready', token: 'fresh', tree: freshTree, bookmarkId: 'mark' };
+    if (message.action === 'review' && message.token !== 'fresh') return { status: 'error', reason: 'session-expired' };
+    return { status: 'closed' };
+  });
+  fireEvent.click(screen.getByRole('button', { name: '保存修改' }));
+  await waitFor(() => expect(close).toHaveBeenCalledOnce());
+  expect(h.reviews()).toEqual([
+    [{ type: 'nativeSaveCorrection', action: 'review', token: 'fresh', title: 'Idle draft', targetId: 'read' }],
+  ]);
+});
+
+it.each(['mark', 'read', 'bar'])(
+  'refreshing detects a changed bookmark or folder path (%s) before writing',
+  async id => {
+    const h = harness();
+    render(<SaveReviewQueue onOpen={vi.fn()} send={h.send} />);
+    fireEvent.change(await screen.findByRole('textbox', { name: '名称' }), { target: { value: 'My draft' } });
+    fireEvent.click(screen.getByRole('button', { name: /^文件夹：/ }));
+    fireEvent.click(screen.getByRole('treeitem', { name: '阅读' }));
+    const freshTree = structuredClone(tree);
+    freshTree.nodes.find(node => node.ref.nativeId === id)!.title = 'Changed elsewhere';
+    h.send.mockImplementationOnce(async () => ({
+      status: 'ready',
+      token: 'fresh',
+      tree: freshTree,
+      bookmarkId: 'mark',
+    }));
+    fireEvent.click(screen.getByRole('button', { name: '保存修改' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('书签或目录有变化，请核对后再确认。');
+    expect(screen.getByRole('textbox', { name: '名称' })).toHaveValue('My draft');
+    expect(screen.getByRole('treeitem', { name: id === 'read' ? 'Changed elsewhere' : '阅读' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    expect(screen.getByRole('button', { name: '保存修改' })).toBeEnabled();
+    expect(h.reviews()).toHaveLength(0);
+  },
+);
+
+it('a deleted draft destination requires a new selection instead of silently choosing another folder', async () => {
+  const h = harness();
+  render(<SaveReviewQueue onOpen={vi.fn()} send={h.send} />);
+  await screen.findByRole('textbox', { name: '名称' });
+  fireEvent.click(screen.getByRole('button', { name: /^文件夹：/ }));
+  fireEvent.click(screen.getByRole('treeitem', { name: '阅读' }));
+  const freshTree = structuredClone(tree);
+  freshTree.nodes = freshTree.nodes.filter(node => node.ref.nativeId !== 'read');
+  h.send.mockImplementationOnce(async () => ({ status: 'ready', token: 'fresh', tree: freshTree, bookmarkId: 'mark' }));
+  fireEvent.click(screen.getByRole('button', { name: '保存修改' }));
+  await screen.findByRole('alert');
+  expect(screen.getByRole('button', { name: '文件夹：请明确选择目录' })).toBeVisible();
+  expect(screen.getByRole('button', { name: '保存修改' })).toBeDisabled();
+  expect(h.reviews()).toHaveLength(0);
+});
+
+it.each(['transport-unavailable', 'correction-unavailable', 'correction-unsettled'])(
+  'an uncertain review (%s) stays locked and offers recovery without resubmitting',
+  async reason => {
+    const h = harness();
+    const open = vi.fn();
+    render(<SaveReviewQueue onOpen={open} send={h.send} />);
+    await screen.findByRole('textbox', { name: '名称' });
+    const original = h.send.getMockImplementation()!;
+    h.send.mockImplementation(async message =>
+      message.action === 'review' ? { status: 'error', reason } : original(message),
+    );
+    fireEvent.click(screen.getByRole('button', { name: '保存修改' }));
+    await screen.findByRole('alert');
+    expect(screen.getByRole('button', { name: '保存修改' })).toBeDisabled();
+    expect(screen.getByRole('textbox', { name: '名称' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: '保存修改' }));
+    expect(h.reviews()).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: '查看恢复记录' }));
+    expect(open).toHaveBeenCalledWith('recovery');
+  },
+);
+
+it('closing while the fresh session loads never submits a write', async () => {
+  const h = harness();
+  const view = render(<SaveReviewQueue onOpen={vi.fn()} send={h.send} />);
+  await screen.findByRole('textbox', { name: '名称' });
+  let answer!: (response: CorrectionResponse) => void;
+  h.send.mockImplementationOnce(
+    () =>
+      new Promise(resolve => {
+        answer = resolve;
+      }),
+  );
+  fireEvent.click(screen.getByRole('button', { name: '保存修改' }));
+  view.unmount();
+  await act(async () => answer({ status: 'ready', token: 'late', tree, bookmarkId: 'mark' }));
+  expect(h.reviews()).toHaveLength(0);
+  expect(h.send).toHaveBeenCalledWith({ type: 'nativeSaveCorrection', action: 'close', token: 'late' });
+});
+
 it('the sidebar launcher contains no receipt editor and only asks the worker to open the popup', async () => {
   const h = harness();
   render(<SaveReviewLauncher />);

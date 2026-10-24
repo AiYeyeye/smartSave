@@ -37,34 +37,51 @@ export function CurrentPageSave({
   }, [page, onActive]);
   useEffect(() => {
     if (typeof chrome === 'undefined' || !chrome.runtime?.connect) return;
-    const connection = chrome.runtime.connect({ name: SAVE_PORT });
-    port.current = connection;
-    connection.onMessage.addListener((raw: unknown) => {
-      if (!raw || typeof raw !== 'object' || !('type' in raw)) return;
-      if (raw.type === 'page' && 'page' in raw) {
-        const parsed = pageSchema.safeParse(raw.page);
-        if (parsed.success) {
-          current.current = parsed.data;
-          setPage(parsed.data);
-          setMessage('');
+    let disposed = false;
+    function register() {
+      if (disposed) return;
+      if (port.current) {
+        try {
+          port.current.postMessage({ type: 'register' });
+        } catch {
+          /* Disconnect invalidates the capture. */
         }
-      } else {
-        current.current = undefined;
-        setPage(undefined);
-        setMessage(
-          raw.type === 'error' && 'reason' in raw && typeof raw.reason === 'string'
-            ? raw.reason
-            : '页面已切换或导航；请重新收藏当前页面。',
-        );
+        return;
       }
-    });
-    connection.onDisconnect.addListener(() => {
-      current.current = undefined;
-      port.current = undefined;
-      setPage(undefined);
-      setMessage('收藏入口连接已关闭；请重新打开智栏。');
-    });
-    connection.postMessage({ type: 'register' });
+      const connection = chrome.runtime.connect({ name: SAVE_PORT });
+      port.current = connection;
+      connection.onMessage.addListener((raw: unknown) => {
+        if (disposed || port.current !== connection) return;
+        if (!raw || typeof raw !== 'object' || !('type' in raw)) return;
+        if (raw.type === 'page' && 'page' in raw) {
+          const parsed = pageSchema.safeParse(raw.page);
+          if (parsed.success) {
+            current.current = parsed.data;
+            setPage(parsed.data);
+            setMessage('');
+          }
+        } else {
+          current.current = undefined;
+          setPage(undefined);
+          setMessage(
+            raw.type === 'error' && 'reason' in raw && typeof raw.reason === 'string'
+              ? raw.reason
+              : '页面已切换或导航；请重新收藏当前页面。',
+          );
+        }
+      });
+      connection.onDisconnect.addListener(() => {
+        if (disposed || port.current !== connection) return;
+        // A native bookmark receipt has no captured page to invalidate when the worker sleeps.
+        const captured = !!current.current;
+        current.current = undefined;
+        port.current = undefined;
+        setPage(undefined);
+        if (captured) setMessage('收藏入口连接已关闭；请重新打开智栏。');
+      });
+      connection.postMessage({ type: 'register' });
+    }
+    register();
     const refresh = (message: unknown) => {
       if (
         dialog &&
@@ -74,7 +91,7 @@ export function CurrentPageSave({
         'type' in message &&
         message.type === 'saveDialogUpdated'
       )
-        connection.postMessage({ type: 'register' });
+        register();
     };
     if (dialog) chrome.runtime.onMessage.addListener(refresh);
     const stop = connectTree(chrome.runtime, next => {
@@ -82,9 +99,11 @@ export function CurrentPageSave({
       setTree(next);
     });
     return () => {
+      disposed = true;
       current.current = undefined;
+      const connection = port.current;
       port.current = undefined;
-      connection.disconnect();
+      connection?.disconnect();
       if (dialog) chrome.runtime.onMessage.removeListener(refresh);
       stop();
     };

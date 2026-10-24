@@ -64,6 +64,8 @@ export function correctionError(reason: string): string {
       return '此网站规则已在别处修改，未覆盖。请到隐私与规则核对。';
     case 'stale-correction':
       return '书签、目录或记录已变化，请关闭后重新核对。';
+    case 'review-changed':
+      return '书签或目录有变化，请核对后再确认。';
     case 'session-expired':
       return '纠正确认已失效，请重新打开。已提交的移动请从恢复记录核对。';
     case 'correction-unsettled':

@@ -89,6 +89,7 @@ with sync_playwright() as playwright:
     errors = []
     try:
         worker = context.service_workers[0] if context.service_workers else context.wait_for_event('serviceworker')
+        reader = worker
         extension_id = worker.url.split('/')[2]
         fixture = worker.evaluate("""async origin => {
           const bar = (await chrome.bookmarks.getTree())[0].children[0].id;
@@ -104,7 +105,7 @@ with sync_playwright() as playwright:
         }""", origin)
 
         def state():
-            return worker.evaluate(STATE)
+            return reader.evaluate(STATE)
 
         def create(title, completed=True):
             bookmark = worker.evaluate("""async data => (await chrome.bookmarks.create({parentId:data.parent,
@@ -116,8 +117,11 @@ with sync_playwright() as playwright:
             return bookmark
 
         def get(bookmark):
-            return worker.evaluate("async id => (await chrome.bookmarks.get(id))[0]", bookmark)
+            return reader.evaluate("async id => (await chrome.bookmarks.get(id))[0]", bookmark)
 
+        # Open the observer before the toolbar popup: opening a new tab afterwards dismisses it by blur.
+        probe = context.new_page()
+        probe.goto(f'chrome-extension://{extension_id}/options/index.html#appearance')
         baseline = state()
         first = create('First synthetic', completed=False)
         wait(lambda: len(events) == 1)
@@ -133,10 +137,9 @@ with sync_playwright() as playwright:
         assert presented['windows'] == baseline['windows'], ('a window or tab was created', baseline, presented)
         assert not any(kind.startswith('popup:') for kind in presented['windows']), presented
         mode = 'toolbar popup shown' if presented['popups'] else 'toolbar popup armed (automation could not show it)'
+        toolbar_compact = None
         if presented['popups']:
             # The real toolbar popup is not a Playwright page; read its DOM from another extension document.
-            probe = context.new_page()
-            probe.goto(f'chrome-extension://{extension_id}/options/index.html#appearance')
             view = wait(lambda: probe.evaluate("""() => {
               const view = chrome.extension.getViews({ type: 'popup' })[0];
               const input = view?.document.querySelector('.save-pop-input');
@@ -145,8 +148,17 @@ with sync_playwright() as playwright:
             }"""))
             assert view['value'] == 'Suggested synthetic name' and view['heading'] == '已收藏 · AI 已归类', view
             assert view['width'] <= 353, view
-            mode += '; its document shows the confirmation form'
-            probe.close()
+            def toolbar_height():
+                return probe.evaluate("chrome.extension.getViews({type:'popup'})[0]?.innerHeight")
+
+            toolbar_compact = toolbar_height()
+            for selector in ['details.save-pop-details > summary', '.save-pop-folder']:
+                probe.evaluate("selector => chrome.extension.getViews({type:'popup'})[0].document.querySelector(selector).click()", selector)
+                wait(lambda: (toolbar_height() or 0) > toolbar_compact + 40)
+                probe.evaluate("selector => chrome.extension.getViews({type:'popup'})[0].document.querySelector(selector).click()", selector)
+                wait(lambda: abs((toolbar_height() or 0) - toolbar_compact) <= 1)
+            mode += '; real toolbar viewport grows and shrinks with details and folder tree'
+        probe.close()
 
         popup = context.new_page()
         popup.on('pageerror', lambda error: errors.append(str(error)))
@@ -160,7 +172,20 @@ with sync_playwright() as playwright:
         width = popup.evaluate('({main: document.querySelector(".save-pop").getBoundingClientRect().width,'
                                ' scroll: document.documentElement.scrollWidth})')
         assert width['main'] <= 353 and width['scroll'] <= 353, width
-        popup.screenshot(path=str(root / 'popup-compact.png'), full_page=True)
+        # Check intrinsic content height, not viewport height: 100dvh on a wrapper makes a toolbar popup grow-only.
+        def height():
+            return popup.evaluate('document.querySelector(".theme-root").getBoundingClientRect().height')
+
+        compact_height = height()
+        main_height = popup.locator('.save-pop').bounding_box()['height']
+        assert abs(compact_height - main_height) <= 1 and compact_height < 350, (compact_height, main_height)
+        for selector in ['details.save-pop-details > summary', '.save-pop-folder']:
+            for _ in range(2):
+                popup.locator(selector).click()
+                wait(lambda: height() > compact_height + 40)
+                popup.locator(selector).click()
+                wait(lambda: abs(height() - compact_height) <= 1)
+        popup.locator('.theme-root').screenshot(path=str(root / 'popup-compact.png'))
         popup.get_by_role('button', name='文件夹：Bookmarks bar / Projects / Web / Source').or_(
             popup.get_by_role('button', name='文件夹：书签栏 / Projects / Web / Source')).click()
         for folder in ['Projects', 'Web']:
@@ -168,7 +193,7 @@ with sync_playwright() as playwright:
         expect(popup.get_by_role('treeitem', name='Source', exact=True)).to_have_attribute('aria-selected', 'true')
         expect(popup.get_by_role('treeitem', name='Mobile', exact=True)).to_be_visible()
         popup.get_by_role('treeitem', name='Target', exact=True).click()
-        popup.screenshot(path=str(root / 'popup-tree.png'), full_page=True)
+        popup.locator('.theme-root').screenshot(path=str(root / 'popup-tree.png'))
         assert get(first)['parentId'] == fixture['source'], 'folder choice must remain a draft until confirmed'
         name.fill('Draft survives new receipts')
         second, third = create('Second synthetic'), create('Third synthetic')
@@ -184,15 +209,40 @@ with sync_playwright() as playwright:
         locale.locator('select[aria-label="语言"],select[aria-label="Language"]').select_option('en')
         expect(popup.get_by_role('textbox', name='Name', exact=True)).to_have_value('Draft survives new receipts')
         assert popup.evaluate('document.documentElement.scrollWidth') <= 353
-        popup.screenshot(path=str(root / 'popup-en.png'), full_page=True)
+        popup.locator('.theme-root').screenshot(path=str(root / 'popup-en.png'))
         locale.get_by_role('radio', name='Dark', exact=True).click()
-        popup.screenshot(path=str(root / 'popup-dark.png'), full_page=True, animations='disabled')
+        popup.locator('.theme-root').screenshot(path=str(root / 'popup-dark.png'), animations='disabled')
         locale.get_by_role('radio', name='Light', exact=True).click()
         locale.locator('select[aria-label="语言"],select[aria-label="Language"]').select_option('zh-CN')
         name = popup.get_by_role('textbox', name='名称', exact=True)
+        # Stop the actual worker while the editor stays open. A new begin on the next click must keep the draft.
+        cdp = context.new_cdp_session(popup)
+        versions = []
+        cdp.on('ServiceWorker.workerVersionUpdated', lambda event: versions.extend(event['versions']))
+        cdp.send('ServiceWorker.enable')
+
+        def lifecycle(check):
+            def pump():
+                popup.wait_for_timeout(20)
+                return check()
+            return wait(pump, timeout=15)
+
+        running = lifecycle(lambda: next((version for version in reversed(versions)
+            if version['scriptURL'] == worker.url and version['runningStatus'] == 'running'), None))
+        mark = len(versions)
+        cdp.send('ServiceWorker.stopWorker', {'versionId': running['versionId']})
+        lifecycle(lambda: any(version['versionId'] == running['versionId'] and version['runningStatus'] == 'stopped'
+                              for version in versions[mark:]))
+        reader = locale  # The old worker handle is gone; read native state through an unchanged extension page.
+        expect(name).to_have_value('Draft survives new receipts')
+        expect(popup.get_by_role('treeitem', name='Target', exact=True)).to_have_attribute('aria-selected', 'true')
+        expect(popup.get_by_text('收藏入口连接已关闭；请重新打开智栏。', exact=True)).to_have_count(0)
         popup.get_by_role('button', name='保存修改', exact=True).click()
+        lifecycle(lambda: any(version['scriptURL'] == running['scriptURL'] and version['runningStatus'] == 'running'
+                              for version in versions[mark:]))
         wait(lambda: get(first)['title'] == 'Draft survives new receipts' and get(first)['parentId'] == fixture['target'])
         expect(name).to_have_value('Second synthetic')
+        cdp.detach()
         popup.get_by_role('button', name='完成', exact=True).click()
         expect(name).to_have_value('Third synthetic')
         popup.get_by_role('button', name='稍后处理', exact=True).click()
@@ -206,7 +256,7 @@ with sync_playwright() as playwright:
         expect(sidebar.get_by_role('button', name='待确认 1 项', exact=True)).to_be_visible()
         expect(sidebar.locator('.save-pop-form,.save-correction,.receipt')).to_have_count(0)
         sidebar.get_by_role('button', name='待确认 1 项', exact=True).click()
-        wait(lambda: state()['queue'] == [worker.evaluate("""async id => (await chrome.storage.local.get(
+        wait(lambda: state()['queue'] == [reader.evaluate("""async id => (await chrome.storage.local.get(
             'nativeSaveReceipts')).nativeSaveReceipts.find(r => r.bookmarkId === id).id""", third)])
         final = state()
         assert not any(kind.startswith('popup:') for kind in final['windows']), final
@@ -215,12 +265,15 @@ with sync_playwright() as playwright:
                   'presentation': mode,
                   'checks': ['nothing presented before AI completed', 'presented after the native event without creating '
                              'a window or tab', 'compact 352px popup document, details collapsed',
+                             'details and folder tree each return to compact height after repeated collapse',
                              'real tree opens on the current folder with every ancestor expanded',
                              'folder choice and name stay drafts until confirmed', 'queued saves show 1/N and keep the draft',
                              'reload restores the session draft', 'bilingual and dark layouts without horizontal scroll',
+                             'real worker stop/restart with editor open; one click saves the retained name/folder draft',
                              'one combined name+folder write', 'no-op confirm and later keep bookmarks',
                              'sidebar has only the launcher, which re-queues pending receipts'],
                   'errors': errors, 'motion': args.motion,
+                  'compact_content_height': compact_height, 'compact_toolbar_height': toolbar_compact,
                   'limits': 'Disposable profile, synthetic bookmarks/local provider; the popup document runs in a tab. '
                             'No physical star/Ctrl+D gesture, toolbar anchoring or branded Chrome/Edge claim.'}
         (root / 'result.json').write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding='utf-8')

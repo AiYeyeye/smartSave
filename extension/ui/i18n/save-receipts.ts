@@ -56,6 +56,7 @@ export const saveReceiptsEnglish = {
   '此网站规则已在别处修改，未覆盖。请到隐私与规则核对。':
     'This website rule changed elsewhere and was not overwritten. Check Privacy & rules.',
   '书签、目录或记录已变化，请关闭后重新核对。': 'The bookmark, folder or record changed. Close and check again.',
+  '书签或目录有变化，请核对后再确认。': 'The bookmark or folder changed. Review it before confirming.',
   '纠正确认已失效，请重新打开。已提交的移动请从恢复记录核对。':
     'This confirmation expired. Reopen it; check recovery records for any submitted move.',
   '上次纠正尚未核实，请到恢复记录核对，暂不重复移动。':

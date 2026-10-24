@@ -24,6 +24,32 @@ import { MutationFeedback } from './BookmarkActions';
 export { pendingSaveReceipts } from '../persistence/save-receipts';
 
 type Ready = Extract<CorrectionResponse, { status: 'ready' }>;
+/** Only the displayed bookmark and folder paths matter; worker epochs and unrelated edits do not. */
+function reviewContext(ready: Ready, folderId: string) {
+  const { tree, bookmarkId } = ready;
+  const nodes = new Map(tree.nodes.map(node => [node.ref.nativeId, node]));
+  const ids = new Set([bookmarkId, folderId, ...folderAncestors(tree, bookmarkId), ...folderAncestors(tree, folderId)]);
+  return JSON.stringify({
+    installationId: tree.installationId,
+    bookmarkId,
+    nodes: [...ids].sort().map(id => {
+      const node = nodes.get(id);
+      return node
+        ? {
+            ref: node.ref,
+            title: node.title,
+            url: node.url,
+            parentId: node.parentId,
+            readOnly: node.readOnly,
+            childrenWritable: node.childrenWritable,
+          }
+        : { missing: id };
+    }),
+  });
+}
+
+// These failures occur before a write. An unavailable/unknown response is never safe to repeat.
+const UNWRITTEN_ERRORS = new Set(['session-expired', 'stale-correction', 'invalid-title']);
 const CONFIG_REASONS = new Set(['save-feature-unconfigured', 'service-missing', 'no-key', 'http-401', 'http-403']);
 
 const sessionArea = () =>
@@ -390,7 +416,7 @@ export function SaveReviewForm({
       entry => entry.ref.nativeId === key && entry.ref.kind === 'folder' && entry.childrenWritable,
     );
   const title = draft?.titleEdited && draft.title !== undefined ? draft.title : baseTitle;
-  const folder = draft?.folderEdited && writable(draft.folderId) ? draft.folderId! : (node?.parentId ?? '');
+  const folder = draft?.folderEdited ? (draft.folderId ?? '') : (node?.parentId ?? '');
   const expandedList = draft?.expanded;
   const expanded = useMemo(
     () => new Set(expandedList ?? (ready && folder ? folderAncestors(ready.tree, folder) : [])),
@@ -399,7 +425,7 @@ export function SaveReviewForm({
   const finalTitle = title === node?.title ? title : title.trim();
   const renamed = !!node && finalTitle !== node.title;
   const moved = !!node && folder !== node.parentId;
-  const invalid = !folder || !finalTitle || (renamed && finalTitle.length > 200);
+  const invalid = !writable(folder) || !finalTitle || (renamed && finalTitle.length > 200);
   const treeOpen = !!draft?.treeOpen;
 
   async function confirm() {
@@ -408,6 +434,31 @@ export function SaveReviewForm({
     setBusy(true);
     setLocked(true);
     setResult(undefined);
+    // Opening the popup is not a lease on the worker's lifetime. Renew on this explicit click before writing.
+    const fresh = await send({ type: 'nativeSaveCorrection', action: 'begin', receiptId: receipt.id });
+    if (!live.current) {
+      if (fresh.status === 'ready') void send({ type: 'nativeSaveCorrection', action: 'close', token: fresh.token });
+      return;
+    }
+    if (fresh.status !== 'ready') {
+      setBusy(false);
+      setResult(fresh);
+      lock.current = false;
+      setLocked(false);
+      return; // begin only reads/reconciles; this click has not submitted a write.
+    }
+    release();
+    token.current = fresh.token;
+    if (reviewContext(ready, folder) !== reviewContext(fresh, folder)) {
+      // Preserve what the user chose, including a deleted destination (which requires another selection).
+      updateDraft({ title, titleEdited: true, folderId: folder, folderEdited: true });
+      setReady(fresh);
+      setBusy(false);
+      lock.current = false;
+      setLocked(false);
+      setResult({ status: 'error', reason: 'review-changed' });
+      return;
+    }
     const response = await send({
       type: 'nativeSaveCorrection',
       action: 'review',
@@ -427,7 +478,7 @@ export function SaveReviewForm({
     }
     // Nothing was written: keep the draft and start a fresh session for another try.
     if (
-      response.status === 'error' ||
+      (response.status === 'error' && UNWRITTEN_ERRORS.has(response.reason)) ||
       (response.status === 'result' && response.result.status === 'rejected' && !response.result.needsReconcile)
     ) {
       lock.current = false;
@@ -529,9 +580,14 @@ export function SaveReviewForm({
         </p>
       )}
       {result?.status === 'error' && (
-        <p className="save-pop-note is-warn" role="alert">
-          {message(correctionError(result.reason))}
-        </p>
+        <div className="save-pop-note is-warn">
+          <p role="alert">{message(correctionError(result.reason))}</p>
+          {locked && !busy && (
+            <button type="button" className="save-pop-link" onClick={() => onOpen('recovery')}>
+              {t('查看恢复记录')}
+            </button>
+          )}
+        </div>
       )}
       {result?.status === 'result' && result.result.status !== 'completed' && (
         <div className="save-pop-note">

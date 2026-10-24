@@ -1,6 +1,8 @@
 /* Toolbar popup for a native save, compact like the browser's own bookmark bubble. Chrome sizes the popup to this content. */
 html:has(.save-pop),
 html:has(.save-pop) body { width: 352px; overflow-x: hidden; }
+/* A viewport-sized minimum would pin Chrome's popup to its largest expanded height. */
+.theme-root:has(.save-pop) { min-height: 0; }
 .save-pop { width: 352px; padding: 10px 12px; display: grid; gap: 8px; background: var(--surface); color: var(--text); overflow-wrap: anywhere; }
 .save-pop-body { display: grid; gap: 8px; min-width: 0; }
 

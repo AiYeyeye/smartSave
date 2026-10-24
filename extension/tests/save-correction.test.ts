@@ -12,6 +12,35 @@ import { correctionExamples } from '../domain/correction-learning';
 
 const sender = { id: 'test', url: 'chrome-extension://test/panel/index.html', documentId: 'page' };
 
+it.each(['timeout', 'restart'])('a fresh begin after %s can confirm the same draft once', async reason => {
+  const h = await harness();
+  const token = await h.begin();
+  const input = {
+    type: 'nativeSaveCorrection' as const,
+    action: 'review' as const,
+    token,
+    title: 'Idle draft',
+    targetId: 'target',
+  };
+  let owner = h.owner;
+  if (reason === 'timeout') {
+    const later = Date.now() + 600_001;
+    vi.spyOn(Date, 'now').mockReturnValue(later);
+  } else owner = new SaveCorrectionOwner(h.projection, h.coordinator, h.receipts, h.rules);
+  await expect(owner.handle(input, sender)).rejects.toThrow('session-expired');
+  expect(h.update).not.toHaveBeenCalled();
+  expect(h.move).not.toHaveBeenCalled();
+  const fresh = await owner.handle({ type: 'nativeSaveCorrection', action: 'begin', receiptId: 'receipt' }, sender);
+  if (fresh.status !== 'ready') throw Error('expected fresh session');
+  expect(await owner.handle({ ...input, token: fresh.token }, sender)).toMatchObject({
+    status: 'result',
+    result: { status: 'completed' },
+  });
+  expect(h.node).toMatchObject({ title: 'Idle draft', parentId: 'target' });
+  expect(h.update).toHaveBeenCalledOnce();
+  expect(h.move).toHaveBeenCalledOnce();
+});
+
 it('reviews the name and folder in one journaled request and does not repeat confirmation', async () => {
   const h = await harness();
   await h.receipts.patch('receipt', { suggestedTitle: 'Readable article' });

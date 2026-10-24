@@ -22,7 +22,7 @@ afterEach(() => {
 });
 
 function harness() {
-  let emit!: (value: unknown) => void, notify!: (value: unknown) => void;
+  let emit!: (value: unknown) => void, notify!: (value: unknown) => void, lose!: () => void;
   const postMessage = vi.fn(),
     disconnect = vi.fn(),
     onActive = vi.fn();
@@ -42,7 +42,11 @@ function harness() {
             emit = listener;
           },
         },
-        onDisconnect: { addListener: () => {} },
+        onDisconnect: {
+          addListener: (fn: () => void) => {
+            lose = fn;
+          },
+        },
       }),
     },
     storage: { local: {} },
@@ -57,6 +61,7 @@ function harness() {
     page,
     emit: (value: unknown) => act(() => emit(value)),
     notify: () => act(() => notify({ type: 'saveDialogUpdated' })),
+    lose: () => act(() => lose()),
   };
 }
 
@@ -72,6 +77,31 @@ it('registers without recapturing; displays the frozen source and removes it on 
   expect(screen.queryByRole('region')).not.toBeInTheDocument();
   expect(h.onActive).toHaveBeenLastCalledWith(false);
   h.view.unmount();
+  expect(h.disconnect).toHaveBeenCalledOnce();
+});
+
+it('an idle receipt popup stays quiet on disconnect and registers a new connection on a later save', () => {
+  const h = harness();
+  h.lose();
+  expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  expect(h.onActive).toHaveBeenLastCalledWith(false);
+  h.notify();
+  expect(h.postMessage.mock.calls).toEqual([[{ type: 'register' }], [{ type: 'register' }]]);
+  h.emit({ type: 'page', page: { ...h.page, token: 'new-explicit-save' } });
+  expect(screen.getByRole('heading', { name: 'Page' })).toBeVisible();
+});
+
+it('a disconnected explicit capture is invalidated and never recaptured automatically', () => {
+  const h = harness();
+  h.emit({ type: 'page', page: h.page });
+  h.lose();
+  expect(screen.queryByRole('heading')).not.toBeInTheDocument();
+  expect(screen.getByRole('status')).toHaveTextContent('收藏入口连接已关闭');
+  h.notify();
+  expect(screen.queryByRole('heading')).not.toBeInTheDocument();
+  expect(h.postMessage.mock.calls.every(([message]) => message.type === 'register')).toBe(true);
+  h.view.unmount();
+  h.lose();
   expect(h.disconnect).toHaveBeenCalledOnce();
 });
 

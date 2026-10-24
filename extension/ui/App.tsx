@@ -229,12 +229,27 @@ function SaveApp() {
     };
     window.addEventListener('keydown', close);
     // Presence only: when this popup goes away the worker returns the toolbar click to the sidebar.
-    const presence =
-      typeof chrome !== 'undefined' && chrome.runtime?.connect
-        ? chrome.runtime.connect({ name: SAVE_CONFIRM_PORT })
-        : undefined;
+    let presence: chrome.runtime.Port | undefined;
+    let disposed = false;
+    const connectPresence = () => {
+      if (disposed || presence || typeof chrome === 'undefined' || !chrome.runtime?.connect) return;
+      const connection = chrome.runtime.connect({ name: SAVE_CONFIRM_PORT });
+      presence = connection;
+      connection.onDisconnect.addListener(() => {
+        if (presence === connection) presence = undefined;
+      });
+    };
+    connectPresence();
+    // Re-establish presence on interaction after worker sleep; no keep-alive timer or captured-page replay.
+    window.addEventListener('pointerdown', connectPresence, true);
+    window.addEventListener('keydown', connectPresence, true);
+    window.addEventListener('focus', connectPresence);
     return () => {
+      disposed = true;
       window.removeEventListener('keydown', close);
+      window.removeEventListener('pointerdown', connectPresence, true);
+      window.removeEventListener('keydown', connectPresence, true);
+      window.removeEventListener('focus', connectPresence);
       presence?.disconnect();
     };
   }, []);

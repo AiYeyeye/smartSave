@@ -75,8 +75,8 @@ export class SaveDialogHost {
     void this.sweep();
   }
   /**
-   * Per-tab popups outlive the worker. A connected popup keeps the worker alive, so a fresh worker only finds arms
-   * whose popup is gone; return those tabs' toolbar click to the sidebar.
+   * Per-tab popup assignments outlive the worker. Return unclaimed toolbar clicks to the sidebar; an open popup
+   * can outlive worker sleep too and reconnect its presence when the user interacts with it.
    */
   private async sweep() {
     const getPopup = this.action.getPopup?.bind(this.action);
