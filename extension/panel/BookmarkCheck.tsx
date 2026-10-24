@@ -36,7 +36,7 @@ const errors: Record<string, MessageKey> = {
   'keep-required': '请先为每组选择至少一项保留。',
   'stale-selection': '书签有变化，请清除选择后重新核对。',
 };
-const resultLabels = { ok: '可访问', broken: '失效', review: '待复查', skipped: '已跳过' } as const;
+const resultLabels = { ok: '可访问', broken: '疑似失效', review: '未能判断', skipped: '已跳过' } as const;
 const reasonLabels = {
   network: '连接失败',
   timeout: '请求超时',
@@ -44,7 +44,16 @@ const reasonLabels = {
   unsupported: '不支持的网址',
   restricted: '本机或内网地址',
   changed: '书签已变化',
+  manual: '已手动确认',
 } as const;
+function resultReason(value: LinkResult): MessageKey {
+  if (value.reason !== 'http') return reasonLabels[value.reason];
+  if (value.code === 401) return '需要登录';
+  if (value.code === 403) return '拒绝检测';
+  if (value.code === 429) return '访问限流';
+  if (value.code && value.code >= 500) return '服务暂不可用';
+  return resultLabels[value.status];
+}
 type Filter = 'issues' | 'all' | LinkResult['status'];
 
 export function BookmarkCheck({
@@ -144,9 +153,7 @@ export function BookmarkCheck({
         .filter(node => {
           const value = checked.get(node.ref.nativeId);
           return (
-            value &&
-            (filter === 'all' ||
-              (filter === 'issues' ? ['broken', 'review'].includes(value.status) : value.status === filter))
+            value && (filter === 'all' || (filter === 'issues' ? value.status === 'broken' : value.status === filter))
           );
         })
         .sort((a, b) => {
@@ -176,6 +183,12 @@ export function BookmarkCheck({
       if (grant && !(await grant)) throw Error('permission-required');
       const next = await client(message);
       accept(next);
+      if (message.action === 'verify')
+        setSelected(old => {
+          const next = new Set(old);
+          next.delete(message.nativeId);
+          return next;
+        });
       if (message.action === 'configure' && scopeId !== message.scopeId) clearSelection();
     } catch (error) {
       if (live.current) setError(errors[error instanceof Error ? error.message : ''] ?? '检查暂不可用，请重试。');
@@ -306,7 +319,8 @@ export function BookmarkCheck({
             <CircleHelp aria-hidden="true" />
           </summary>
           <div>
-            <p>{t('检查只连接书签网站，不读取正文、不调用 AI。受限、超时和跳转的链接列为待复查。')}</p>
+            <p>{t('检查只读响应状态。登录限制、超时和跳转不算失效；404/410 也仅供参考。')}</p>
+            <p>{t('能正常打开的链接可手动确认，后续检查会跳过；可在全部结果中恢复检查。')}</p>
             <p>{t('每周检查所选范围；浏览器重新运行后补查。不会自动删除收藏。')}</p>
             <p>{t('重复收藏在本机比较。疑似重复需核对原始链接，每组至少保留一项。')}</p>
           </div>
@@ -354,13 +368,15 @@ export function BookmarkCheck({
                   setLimit(50);
                 }}
               >
-                <option value="issues">{t('需要处理')}</option>
+                <option value="issues">{t('疑似失效')}</option>
                 <option value="all">{t('全部结果')}</option>
-                {Object.entries(resultLabels).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {t(label)}
-                  </option>
-                ))}
+                {Object.entries(resultLabels)
+                  .filter(([value]) => value !== 'broken')
+                  .map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {t(label)}
+                    </option>
+                  ))}
               </Select>
               {running ? (
                 <button disabled={busy} onClick={() => void command({ type: 'bookmarkCheck', action: 'pause' })}>
@@ -418,9 +434,35 @@ export function BookmarkCheck({
                       <small title={node.url}>{node.url}</small>
                       <small title={paths.get(node.ref.nativeId)}>{paths.get(node.ref.nativeId)}</small>
                     </div>
-                    <span className={`check-status is-${value.status}`} title={`${detail} · ${date(value.at)}`}>
-                      {t(resultLabels[value.status])}
-                    </span>
+                    <div className="check-verdict">
+                      <span className={`check-status is-${value.status}`} title={`${detail} · ${date(value.at)}`}>
+                        {t(
+                          value.status === 'review' || value.reason === 'manual'
+                            ? resultReason(value)
+                            : resultLabels[value.status],
+                        )}
+                        {value.status === 'broken' && <small>HTTP {value.code}</small>}
+                      </span>
+                      {(['broken', 'review'].includes(value.status) || value.reason === 'manual') && (
+                        <button
+                          className="check-verify"
+                          disabled={disabled}
+                          onClick={() => {
+                            if (tree)
+                              void command({
+                                type: 'bookmarkCheck',
+                                action: 'verify',
+                                installationId: tree.installationId,
+                                nativeId: node.ref.nativeId,
+                                url: node.url!,
+                                available: value.reason !== 'manual',
+                              });
+                          }}
+                        >
+                          {t(value.reason === 'manual' ? '恢复检查' : '我能打开')}
+                        </button>
+                      )}
+                    </div>
                     <button
                       className="check-open"
                       aria-label={t('打开 {title}', { title: node.title })}
@@ -439,7 +481,7 @@ export function BookmarkCheck({
             </div>
             {!rows.length && (
               <p className="check-empty">
-                {t(!job ? '尚未检查' : filter === 'issues' ? '暂无需要处理的链接' : '没有匹配的检查结果')}
+                {t(!job ? '尚未检查' : filter === 'issues' ? '暂无疑似失效链接' : '没有匹配的检查结果')}
               </p>
             )}
             {rows.length > limit && <button onClick={() => setLimit(value => value + 50)}>{t('显示更多结果')}</button>}

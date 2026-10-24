@@ -46,6 +46,7 @@ export const english = {
   未归类原因: 'Not sorted because',
   撤销归类: 'Undo sorting',
   移出列表: 'Remove from list',
+  '未能移出，请重试。': 'Could not remove the reminder. Try again.',
   确认本条收藏: 'Review this bookmark',
   '正在读取收藏…': 'Loading bookmark…',
   确认收藏: 'Confirm bookmark',

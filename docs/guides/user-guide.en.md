@@ -19,11 +19,13 @@ Ordinary history search stays local, with no persistent history database. Browse
 
 ## Bookmark check (no AI required)
 
-Choose **Check** at the bottom of the sidebar, or **Bookmark check** in full settings. Select all bookmarks or a folder, then choose **Check now** under **Broken links**. **Duplicates** lists exact and possible matches locally.
+Choose **Bookmark check** below the sidebar search box, or **Bookmark check** in full settings. Select all bookmarks or a folder, then choose **Check now** under **Broken links**. **Duplicates** lists exact and possible matches locally.
 
-The first link check requests website access. Checks read response status without reading page text. Confirmed 404/410 responses are marked broken; restricted, timed-out and redirected links need review. Open the original page to verify it before selecting deletion. Duplicate groups require an explicit item to keep. Deletions need confirmation and support previewed undo under **Export and backup → Backups and recovery records**; follow recovery guidance for identity or identical-URL conflicts. Checking itself never deletes or moves bookmarks.
+The first link check requests website access. Checks read response status without reading page text. Repeated GET responses of 404/410 are marked **Possibly broken**. Login restrictions, blocked requests, timeouts and redirects are **Unverified** and stay out of the default problem list. Background requests can differ from signed-in browser navigation. Choose **Works for me** for a link you can open to skip future weekly checks; choose **Resume checking** under **All results** to clear that confirmation. Open the original page to verify it before selecting deletion. Duplicate groups require an explicit item to keep. Deletions need confirmation and support previewed undo under **Export and backup → Backups and recovery records**; follow recovery guidance for identity or identical-URL conflicts. Checking itself never deletes or moves bookmarks.
 
 Enable **Check weekly** to check the selected scope every seven days. Checks cannot run while the browser is closed; missed checks run after reopening. Progress is saved in the background, supports pause/resume and survives closing settings. Deliberately paused work needs manual resume. Reports stay local and are replaced by the next full check; edited or deleted bookmarks do not inherit old verdicts. A scan supports up to 50,000 bookmarks; choose smaller folders for larger collections.
+
+For a deleted or changed bookmark in save confirmation, **Remove from list** clears the reminder. **Review later** keeps it pending.
 
 ## Bookmarks and other features
 

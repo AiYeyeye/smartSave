@@ -26,6 +26,9 @@
 .check-status { font-size: 11px; white-space: nowrap; border-radius: 5px; padding: 3px 6px; background: var(--surface-2); color: var(--muted); }
 .check-status.is-broken, .check-error { color: var(--danger, #b42318); }
 .check-status.is-review { color: var(--accent-text); }
+.check-verdict { display: grid; justify-items: end; gap: 3px; }
+.check-status small { display: block; text-align: right; font-size: 10px; opacity: .8; }
+.check-verify { padding: 2px 4px; min-height: 24px; background: transparent; border: 0; box-shadow: none; font-size: 11px; color: var(--accent-text); }
 .check-open { padding: 4px; min-width: 28px; border: 0; background: transparent; }
 .check-empty { padding: 40px 8px; text-align: center; font-size: 13px; color: var(--muted); }
 .check-actions:empty { display: none; }

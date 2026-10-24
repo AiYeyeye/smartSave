@@ -16,7 +16,7 @@ import './theme.css';
 import '../panel/save-dialog.css';
 import { SAVE_CONFIRM_PORT } from '../persistence/save-confirm';
 import { BookmarkTree } from '../panel/BookmarkTree';
-import { PanelChrome, PanelFooter, SearchBox, type PopupView } from './PanelChrome';
+import { PanelChrome, PanelFooter, PanelQuickActions, SearchBox, type PopupView } from './PanelChrome';
 import { OptionsNav, parseOptionsHash, ROUTE_META, type OptionsRoute } from './OptionsNav';
 import { PopupSettings } from './PopupSettings';
 import { PanelModePicker } from './PanelModePicker';
@@ -147,9 +147,13 @@ function PopupApp({ overlay = false }: { overlay?: boolean }) {
         onBack={() => setView('browse')}
         onClose={overlay ? closeOverlay : undefined}
       />
+      {view === 'browse' && (
+        <PanelQuickActions onCheck={() => open('check')}>
+          <SaveReviewLauncher />
+        </PanelQuickActions>
+      )}
       <main id="main" tabIndex={-1}>
         <div hidden={view !== 'browse'}>
-          <SaveReviewLauncher />
           {onboarding.visible && !query.trim() && searchSource === 'bookmarks' && !recentBookmarks && (
             <OnboardingSteps
               onConfigure={() => open('ai-services/add')}
@@ -210,7 +214,6 @@ function PopupApp({ overlay = false }: { overlay?: boolean }) {
       {view === 'browse' && (
         <PanelFooter
           onOrganize={() => open('organize')}
-          onCheck={() => open('check')}
           onImport={() => open('import')}
           onExport={() => open('export')}
           onBatch={() => setBatchNonce(value => value + 1)}

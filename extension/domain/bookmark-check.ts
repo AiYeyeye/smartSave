@@ -13,7 +13,7 @@ const id = z.string().min(1).max(256);
 const scope = id.nullable();
 export const linkResultSchema = z.strictObject({
   status: z.enum(['ok', 'broken', 'review', 'skipped']),
-  reason: z.enum(['http', 'network', 'timeout', 'redirect', 'unsupported', 'restricted', 'changed']),
+  reason: z.enum(['http', 'network', 'timeout', 'redirect', 'unsupported', 'restricted', 'changed', 'manual']),
   code: z.number().int().min(100).max(599).optional(),
   at: z.number().finite().nonnegative(),
 });
@@ -25,6 +25,10 @@ export const bookmarkCheckStateSchema = z.strictObject({
   installationId: z.string(),
   scopeId: scope,
   weekly: z.boolean(),
+  verified: z
+    .array(z.strictObject({ installationId: id, nativeId: id, url: z.string(), at: z.number().finite().nonnegative() }))
+    .max(MAX_CHECK_ITEMS)
+    .optional(),
   nextRun: z.number().finite().nonnegative().optional(),
   notice: z.string().optional(),
   job: z
@@ -60,6 +64,14 @@ export const bookmarkCheckMessageSchema = z.discriminatedUnion('action', [
   }),
   z.strictObject({ type: z.literal('bookmarkCheck'), action: z.literal('pause') }),
   z.strictObject({ type: z.literal('bookmarkCheck'), action: z.literal('resume') }),
+  z.strictObject({
+    type: z.literal('bookmarkCheck'),
+    action: z.literal('verify'),
+    installationId: id,
+    nativeId: id,
+    url: z.string(),
+    available: z.boolean(),
+  }),
 ]);
 export type BookmarkCheckMessage = z.infer<typeof bookmarkCheckMessageSchema>;
 export const bookmarkCheckResponseSchema = z.discriminatedUnion('status', [
@@ -89,12 +101,16 @@ export function checkScopeNodes(tree: TreeSnapshot, scopeId: string | null): Tre
 /** Match advisory results to current native identity. Deleted/edited URLs never inherit old verdicts. */
 export function currentCheckResults(tree: TreeSnapshot, state: BookmarkCheckState) {
   const results = new Map<string, LinkResult>();
-  if (state.job?.installationId !== tree.installationId) return results;
   const nodes = new Map(tree.nodes.map(node => [node.ref.nativeId, node]));
-  for (const item of state.job.items) {
+  for (const item of state.job?.installationId === tree.installationId ? state.job.items : []) {
     const node = nodes.get(item.nativeId);
     if (node?.ref.kind === 'bookmark' && node.url === item.url && item.result && item.result.reason !== 'changed')
       results.set(item.nativeId, item.result);
+  }
+  for (const item of state.verified ?? []) {
+    const node = nodes.get(item.nativeId);
+    if (item.installationId === tree.installationId && node?.ref.kind === 'bookmark' && node.url === item.url)
+      results.set(item.nativeId, { status: 'ok', reason: 'manual', at: item.at });
   }
   return results;
 }

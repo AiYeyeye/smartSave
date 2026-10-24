@@ -95,6 +95,8 @@ with sync_playwright() as playwright:
         (root/'native-before.json').write_text(json.dumps(before,indent=2,ensure_ascii=False),encoding='utf-8')
         (root/'native-after.json').write_text(json.dumps(after,indent=2,ensure_ascii=False),encoding='utf-8')
         assert after==before
+        expect(page.get_by_role('checkbox',name='选择收藏：需要登录',exact=True)).to_have_count(0)
+        assert requests.count(('GET','/missing'))==2
         geometry=[]
         for language in ['zh-CN','en']:
             if language=='en': page.get_by_label('语言',exact=True).select_option('en')
@@ -117,6 +119,13 @@ with sync_playwright() as playwright:
         page.screenshot(path=str(root/'links-dark.png'),full_page=True)
         page.get_by_role('radio',name='快速切换为浅色',exact=True).check()
         expect(page.locator('.theme-root')).to_have_attribute('data-mode','light')
+        page.get_by_label('检查结果',exact=True).select_option('all')
+        restricted=page.locator('.check-row').filter(has=page.get_by_text('需要登录',exact=True))
+        expect(restricted.get_by_text('拒绝检测',exact=True)).to_be_visible()
+        restricted.get_by_role('button',name='我能打开',exact=True).click()
+        wait_state(lambda s:any(item['nativeId']==fixture['items'][2]['id'] for item in s.get('verified',[])))
+        expect(restricted.get_by_text('已手动确认',exact=True)).to_be_visible()
+        page.get_by_label('检查结果',exact=True).select_option('issues')
         page.get_by_role('tab',name='重复收藏',exact=False).click()
         expect(page.get_by_role('heading',name='精确重复 · 2 条',exact=True)).to_be_visible()
         page.get_by_label('检查范围',exact=True).select_option(fixture['folder'])
@@ -201,17 +210,40 @@ with sync_playwright() as playwright:
         previous=state()['job']['id']
         page.evaluate("()=>chrome.alarms.create('zhilan.bookmark-check.weekly.v1',{when:Date.now()+1000,periodInMinutes:10080})")
         wait_state(lambda s:s['job']['id']!=previous and s['job']['status']=='completed')
+        assert next(item for item in state()['job']['items'] if item['nativeId']==fixture['items'][2]['id'])['result']['reason']=='manual'
         page.get_by_role('checkbox',name='每周自动检查',exact=True).uncheck()
         wait_state(lambda s:not s['weekly'])
         assert page.evaluate("()=>chrome.alarms.get('zhilan.bookmark-check.weekly.v1')") is None
         sidebar=context.new_page()
         sidebar.goto(f'chrome-extension://{extension_id}/panel/index.html')
+        sidebar.set_viewport_size({'width':320,'height':700})
+        entry=sidebar.get_by_role('button',name='书签检查',exact=True)
+        expect(entry).to_be_visible()
+        assert entry.bounding_box()['y']<130
+        assert sidebar.evaluate('document.documentElement.scrollWidth')<=321
+        sidebar.screenshot(path=str(root/'sidebar-entry.png'),full_page=True)
         with context.expect_page() as opened:
-            sidebar.get_by_role('button',name='检查',exact=True).click()
+            entry.click()
         expect(opened.value).to_have_url(f'chrome-extension://{extension_id}/options/index.html#check')
+        # A deleted bookmark must still allow durable reminder dismissal, without native writes.
+        native_before_dismiss=page.evaluate('()=>chrome.bookmarks.getTree()')
+        page.evaluate('''async () => {
+          await chrome.storage.local.set({nativeSaveReceipts:[{id:'gone-review',bookmarkId:'nonexistent',installationId:'obsolete',title:'已移除的演示书签',url:'https://example.test/gone',at:1,status:'kept',fromParentId:'1',fromIndex:0,fromPath:'Bar',correction:{requestId:'keep-evidence',status:'completed',target:{installationId:'obsolete',nativeId:'2',kind:'folder'}}}]});
+          await chrome.storage.session.set({'saveConfirm.queue.v1':['gone-review']});
+        }''')
+        expect(sidebar.get_by_role('button',name='待确认 1 项',exact=True)).to_be_visible()
+        save=context.new_page()
+        save.goto(f'chrome-extension://{extension_id}/save/index.html')
+        save.get_by_role('button',name='移出列表',exact=True).click()
+        expect(sidebar.get_by_role('button',name='待确认 1 项',exact=True)).to_have_count(0)
+        receipt=page.evaluate("async()=> (await chrome.storage.local.get('nativeSaveReceipts')).nativeSaveReceipts.find(item=>item.id==='gone-review')")
+        assert receipt.get('dismissedAt') and not receipt.get('reviewedAt') and receipt['correction']['requestId']=='keep-evidence'
+        assert page.evaluate('()=>chrome.bookmarks.getTree()')==native_before_dismiss
+        sidebar.reload()
+        expect(sidebar.get_by_role('button',name='待确认 1 项',exact=True)).to_have_count(0)
         result={'status':'PASS','evidence':str(root),'browser':context.browser.version,'geometry':geometry,
                 'manualCheck':True,'weeklyAlarm':True,'pauseReloadResume':True,'viewClosure':True,'workerRestart':True,'crossRootDuplicates':True,
-                'explicitDeletionAndUndo':True,'sidebarEntry':True,'requests':requests,
+                'explicitDeletionAndUndo':True,'sidebarEntry':True,'manualAvailability':True,'durableReminderDismissal':True,'requests':requests,
                 'workerSHA256':hashlib.sha256((production/'service-worker.js').read_bytes()).hexdigest(),
                 'limit':'Production JS/CSS, disposable manifest pregrants optional website access; browser permission prompt and branded-browser release matrix not verified.'}
         (root/'results.json').write_text(json.dumps(result,indent=2,ensure_ascii=False),encoding='utf-8')

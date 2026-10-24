@@ -139,6 +139,34 @@ function harness({
 }
 afterEach(() => vi.unstubAllGlobals());
 
+it('removes a stale reminder only after durable acknowledgement and offers retry on failure', async () => {
+  const h = harness();
+  h.send.mockResolvedValue({ status: 'error', reason: 'stale-correction' });
+  const close = vi.fn();
+  render(<SaveReviewQueue onOpen={vi.fn()} onClose={close} send={h.send} />);
+  const remove = await screen.findByRole('button', { name: '移出列表' });
+  h.sendMessage.mockResolvedValueOnce({ status: 'error' });
+  fireEvent.click(remove);
+  await screen.findByText('未能移出，请重试。');
+  expect(close).not.toHaveBeenCalled();
+  expect(remove).toBeEnabled();
+  let ack!: (value: unknown) => void;
+  h.sendMessage.mockImplementationOnce(
+    () =>
+      new Promise(resolve => {
+        ack = resolve;
+      }),
+  );
+  fireEvent.click(remove);
+  expect(remove).toBeDisabled();
+  expect(close).not.toHaveBeenCalled();
+  await act(async () => ack({ status: 'done' }));
+  await waitFor(() => expect(close).toHaveBeenCalledOnce());
+  expect(h.sendMessage).toHaveBeenCalledWith({ type: 'saveConfirmDismiss', receiptId: 'first' });
+  expect(h.reviews()).toEqual([]);
+  expect(h.done()).toEqual([]);
+});
+
 it('an idle popup renews its session on one click and preserves the edited name and folder', async () => {
   const h = harness();
   const close = vi.fn();
@@ -412,7 +440,14 @@ it('language changes keep the field being edited', async () => {
   render(
     <LocaleProvider>
       <LanguagePicker />
-      <SaveReviewForm receipt={receipt} send={send} onComplete={vi.fn()} onLater={vi.fn()} onOpen={vi.fn()} />
+      <SaveReviewForm
+        receipt={receipt}
+        send={send}
+        onComplete={vi.fn()}
+        onLater={vi.fn()}
+        onDismiss={vi.fn(async () => {})}
+        onOpen={vi.fn()}
+      />
     </LocaleProvider>,
   );
   const input = await screen.findByRole('textbox', { name: '名称' });

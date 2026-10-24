@@ -339,12 +339,14 @@ export function SaveReviewForm({
   receipt,
   onComplete,
   onLater,
+  onDismiss,
   onOpen,
   send = sendCorrection,
 }: {
   receipt: SaveReceipt;
   onComplete: () => void;
   onLater: () => void;
+  onDismiss: () => Promise<void>;
   onOpen: (route: string) => void;
   send?: typeof sendCorrection;
 }) {
@@ -355,6 +357,7 @@ export function SaveReviewForm({
   const [failure, setFailure] = useState<string>();
   const [result, setResult] = useState<CorrectionResponse>();
   const [busy, setBusy] = useState(false);
+  const [dismissError, setDismissError] = useState(false);
   const [locked, setLocked] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const token = useRef<string | undefined>(undefined);
@@ -498,10 +501,33 @@ export function SaveReviewForm({
               {message(correctionError(failure))}
             </p>
             <div className="save-pop-actions">
-              <button type="button" className="primary" onClick={onLater}>
+              <button
+                type="button"
+                className="primary"
+                disabled={busy}
+                onClick={() => {
+                  if (lock.current) return;
+                  lock.current = true;
+                  setBusy(true);
+                  setDismissError(false);
+                  void onDismiss()
+                    .catch(() => {
+                      if (live.current) setDismissError(true);
+                    })
+                    .finally(() => {
+                      lock.current = false;
+                      if (live.current) setBusy(false);
+                    });
+                }}
+              >
                 {t('移出列表')}
               </button>
             </div>
+            {dismissError && (
+              <p className="save-pop-note" role="alert">
+                {t('未能移出，请重试。')}
+              </p>
+            )}
           </>
         ) : (
           <p className="save-pop-note" role="status">
@@ -650,10 +676,10 @@ export function SaveReviewQueue({
   const pending = useMemo(() => new Set(pendingSaveReceipts(receipts).map(receipt => receipt.id)), [receipts]);
   const entries = (queue ?? []).filter(id => !finished.includes(id) && pending.has(id));
   const stale = loaded && queue ? queue.filter(id => !pending.has(id) && !finished.includes(id)) : [];
-  const finish = useCallback((id: string, byUser = true) => {
+  const finish = useCallback((id: string, byUser = true, notify = true) => {
     setFinished(previous => (previous.includes(id) ? previous : [...previous, id]));
     if (byUser) setActed(true);
-    const delivery = notifyDone(id);
+    const delivery = notify ? notifyDone(id) : Promise.resolve();
     deliveries.current.add(delivery);
     void delivery.finally(() => deliveries.current.delete(delivery));
   }, []);
@@ -708,6 +734,15 @@ export function SaveReviewQueue({
           receipt={current}
           onComplete={() => finish(current.id)}
           onLater={() => finish(current.id)}
+          onDismiss={async () => {
+            const response: unknown = await chrome.runtime.sendMessage({
+              type: 'saveConfirmDismiss',
+              receiptId: current.id,
+            });
+            if (!response || typeof response !== 'object' || !('status' in response) || response.status !== 'done')
+              throw Error('dismiss-failed');
+            finish(current.id, true, false);
+          }}
           onOpen={onOpen}
           {...(send ? { send } : {})}
         />

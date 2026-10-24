@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { BookmarkCheck } from '../panel/BookmarkCheck';
-import { PanelFooter } from '../ui/PanelChrome';
+import { PanelQuickActions } from '../ui/PanelChrome';
 import { LocaleProvider, LANGUAGE_KEY } from '../ui/i18n';
 import { organizerTree } from './fixtures/organizer-tree';
 import { emptyBookmarkCheck, type BookmarkCheckState } from '../domain/bookmark-check';
@@ -46,6 +46,59 @@ function fixture() {
   );
   return { client, permission, send, recovery, events };
 }
+
+it('keeps login restrictions out of the default list, shows concise reasons, and records manual availability', async () => {
+  const tree = organizerTree();
+  let state: BookmarkCheckState = {
+    ...emptyBookmarkCheck(),
+    installationId: tree.installationId,
+    job: {
+      id: 'job',
+      installationId: tree.installationId,
+      scopeId: null,
+      status: 'completed',
+      startedAt: 1,
+      updatedAt: 2,
+      duplicateGroups: 1,
+      items: [
+        { nativeId: 'a', url: 'https://x.test/?a#b', result: { status: 'broken', reason: 'http', code: 404, at: 2 } },
+        { nativeId: 'b', url: 'https://x.test/?a#b', result: { status: 'review', reason: 'http', code: 403, at: 2 } },
+      ],
+    },
+  };
+  const client = vi.fn<CheckClient>(async message => {
+    if (message.action === 'verify')
+      state = {
+        ...state,
+        revision: state.revision + 1,
+        verified: [{ installationId: tree.installationId, nativeId: message.nativeId, url: message.url, at: 3 }],
+      };
+    return state;
+  });
+  render(
+    <LocaleProvider>
+      <BookmarkCheck client={client} onRecovery={() => {}} />
+    </LocaleProvider>,
+  );
+  const mark = await screen.findByRole('button', { name: '我能打开' });
+  expect(screen.getByLabelText('选择收藏：a')).toBeVisible();
+  expect(screen.queryByLabelText('选择收藏：b')).not.toBeInTheDocument();
+  expect(screen.getByText('HTTP 404')).toBeVisible();
+  fireEvent.click(mark);
+  await screen.findByText('暂无疑似失效链接');
+  expect(client).toHaveBeenCalledWith({
+    type: 'bookmarkCheck',
+    action: 'verify',
+    installationId: 'install',
+    nativeId: 'a',
+    url: 'https://x.test/?a#b',
+    available: true,
+  });
+  fireEvent.change(screen.getByLabelText('检查结果'), { target: { value: 'all' } });
+  expect(screen.getByText('拒绝检测')).toBeVisible();
+  expect(screen.getByText('已手动确认')).toBeVisible();
+  expect(screen.getByRole('button', { name: '恢复检查' })).toBeVisible();
+});
 it('uses explicit keep/delete choices, retains them through locale changes and confirms before writing', async () => {
   const f = fixture();
   await waitFor(() => expect(screen.getByRole('button', { name: '立即检查' })).toBeEnabled());
@@ -99,9 +152,9 @@ it('requests website permission directly from the click before scheduling, and e
   const check = vi.fn();
   render(
     <LocaleProvider>
-      <PanelFooter onCheck={check} onOrganize={() => {}} onImport={() => {}} onExport={() => {}} onBatch={() => {}} />
+      <PanelQuickActions onCheck={check} />
     </LocaleProvider>,
   );
-  fireEvent.click(screen.getByRole('button', { name: '检查' }));
+  fireEvent.click(screen.getByRole('button', { name: '书签检查' }));
   expect(check).toHaveBeenCalledOnce();
 });

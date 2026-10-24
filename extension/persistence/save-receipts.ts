@@ -39,6 +39,8 @@ export type SaveReceipt = {
   nameRequestId?: string;
   /** Explicit review only; closing the dialog does not resolve a receipt. */
   reviewedAt?: number;
+  /** Hides only the reminder; never claims an uncertain bookmark write was reviewed. */
+  dismissedAt?: number;
   reviewRequestId?: string;
 };
 
@@ -64,7 +66,12 @@ export function pendingSaveReceipts(receipts: SaveReceipt[]) {
     const key = JSON.stringify([receipt.installationId, receipt.bookmarkId]);
     if (seen.has(key)) return false;
     seen.add(key);
-    return !receipt.reviewedAt && receipt.status !== 'undone' && receipt.reason !== 'missing-bookmark';
+    return (
+      !receipt.reviewedAt &&
+      receipt.dismissedAt === undefined &&
+      receipt.status !== 'undone' &&
+      receipt.reason !== 'missing-bookmark'
+    );
   });
 }
 
@@ -116,8 +123,10 @@ export class SaveReceiptLog {
     return this.enqueue(async () => {
       const list = await readSaveReceipts(this.storage);
       const index = list.findIndex(item => item.id === receipt.id);
-      if (index >= 0) list[index] = receipt;
-      else list.unshift(receipt);
+      if (index >= 0) {
+        const dismissedAt = list[index]!.dismissedAt;
+        list[index] = dismissedAt === undefined ? receipt : { ...receipt, dismissedAt };
+      } else list.unshift(receipt);
       await this.storage.set({
         [SAVE_RECEIPTS_KEY]: list.filter(
           (item, index) => index < SAVE_RECEIPTS_LIMIT || (!!item.suggestedTitle && !item.nameReview),
@@ -136,6 +145,21 @@ export class SaveReceiptLog {
       list[index] = next;
       await this.storage.set({ [SAVE_RECEIPTS_KEY]: list });
       return next;
+    });
+  }
+
+  /** Strict durable dismissal: failed reads must not look like an already removed reminder. */
+  dismiss(id: string) {
+    return this.enqueue(async () => {
+      const data = await this.storage.get(SAVE_RECEIPTS_KEY);
+      const stored = data[SAVE_RECEIPTS_KEY];
+      if (stored !== undefined && !Array.isArray(stored)) throw Error('invalid-receipts');
+      const list = (stored ?? []) as SaveReceipt[];
+      const receipt = list.find(item => item.id === id);
+      if (!receipt || receipt.dismissedAt !== undefined) return;
+      await this.storage.set({
+        [SAVE_RECEIPTS_KEY]: list.map(item => (item.id === id ? { ...item, dismissedAt: Date.now() } : item)),
+      });
     });
   }
 

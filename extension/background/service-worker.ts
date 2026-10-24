@@ -69,6 +69,7 @@ chrome.action.onClicked.addListener(tab => {
 });
 
 const saveDialog = new SaveDialogHost({
+  dismiss: receiptId => saveReceipts.dismiss(receiptId),
   pending: async () =>
     pendingSaveReceipts(await readSaveReceipts(chrome.storage.local))
       .map(receipt => receipt.id)

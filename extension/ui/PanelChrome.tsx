@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useI18n } from './i18n';
 import {
   ArrowLeft,
@@ -126,13 +126,11 @@ export function PanelChrome({
 
 export function PanelFooter({
   onOrganize,
-  onCheck,
   onImport,
   onExport,
   onBatch,
 }: {
   onOrganize: () => void;
-  onCheck?: () => void;
   onImport: () => void;
   onExport: () => void;
   onBatch: () => void;
@@ -144,12 +142,6 @@ export function PanelFooter({
         <FolderKanban aria-hidden="true" />
         {t('整理')}
       </button>
-      {onCheck && (
-        <button type="button" title={t('书签检查')} onClick={onCheck}>
-          <ShieldCheck aria-hidden="true" />
-          {t('检查')}
-        </button>
-      )}
       <button type="button" title={t('在设置页中导入书签文件')} onClick={onImport}>
         <Upload aria-hidden="true" />
         {t('导入')}
@@ -163,6 +155,20 @@ export function PanelFooter({
         {t('批量')}
       </button>
     </footer>
+  );
+}
+
+/** Visible beside pending reviews, above the scrollable bookmark tree. */
+export function PanelQuickActions({ onCheck, children }: { onCheck: () => void; children?: ReactNode }) {
+  const { t } = useI18n();
+  return (
+    <div className="panel-quick-actions">
+      <button type="button" className="panel-check-entry" onClick={onCheck}>
+        <ShieldCheck aria-hidden="true" />
+        {t('书签检查')}
+      </button>
+      {children}
+    </div>
   );
 }
 

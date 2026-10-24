@@ -1581,6 +1581,10 @@ body.sidepanel .theme-root {
   background: color-mix(in oklab, var(--surface) 92%, transparent);
   backdrop-filter: blur(8px);
 }
+.panel-quick-actions { flex-shrink: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 0 8px 8px; }
+.panel-quick-actions .save-review-launcher { margin: 0; }
+.panel-check-entry { gap: 6px; min-height: 30px; padding: 5px 9px; font-size: 12px; color: var(--accent-text); background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 25%, var(--border)); }
+.panel-check-entry svg { width: 15px; height: 15px; }
 .zh-footer button {
   flex-direction: column;
   gap: 3px;

@@ -5,6 +5,7 @@ import {
   WEEK_MS,
   bookmarkCheckMessageSchema,
   checkScopeNodes,
+  currentCheckResults,
   emptyBookmarkCheck,
   type BookmarkCheckMessage,
   type BookmarkCheckState,
@@ -74,7 +75,8 @@ export class BookmarkCheckOwner {
   private async start(installationId: string, scopeId: string | null) {
     if (this.state.job?.status === 'running') throw Error('already-running');
     if (!(await this.options.permitted())) throw Error('permission-required');
-    const { nodes } = await this.scope(installationId, scopeId);
+    const { tree, nodes } = await this.scope(installationId, scopeId);
+    const manual = currentCheckResults(tree, { ...this.state, job: undefined });
     const now = this.now();
     await this.persist({
       ...this.state,
@@ -89,7 +91,11 @@ export class BookmarkCheckOwner {
         startedAt: now,
         updatedAt: now,
         duplicateGroups: groupDuplicateNodes(nodes).length,
-        items: nodes.map(node => ({ nativeId: node.ref.nativeId, url: node.url ?? '' })),
+        items: nodes.map(node => ({
+          nativeId: node.ref.nativeId,
+          url: node.url ?? '',
+          result: manual.get(node.ref.nativeId),
+        })),
       },
     });
     this.launch();
@@ -99,6 +105,42 @@ export class BookmarkCheckOwner {
     if (message.action === 'get') return structuredClone(this.state);
     return this.queue(async () => {
       if (message.action === 'start') await this.start(message.installationId, message.scopeId);
+      if (message.action === 'verify') {
+        const { tree, nodes } = await this.scope(message.installationId, null);
+        const node = nodes.find(node => node.ref.nativeId === message.nativeId);
+        if (!node || node.url !== message.url) throw Error('stale-selection');
+        const current = new Map(tree.nodes.map(node => [node.ref.nativeId, node]));
+        const verified = (this.state.verified ?? []).filter(
+          item =>
+            item.installationId === tree.installationId &&
+            current.get(item.nativeId)?.url === item.url &&
+            item.nativeId !== message.nativeId,
+        );
+        const result: LinkResult | undefined = message.available
+          ? { status: 'ok', reason: 'manual', at: this.now() }
+          : undefined;
+        if (message.available)
+          verified.push({
+            installationId: message.installationId,
+            nativeId: node.ref.nativeId,
+            url: node.url!,
+            at: this.now(),
+          });
+        await this.persist({
+          ...this.state,
+          verified,
+          job: this.state.job && {
+            ...this.state.job,
+            items: this.state.job.items.map(item =>
+              this.state.job!.installationId === message.installationId &&
+              item.nativeId === message.nativeId &&
+              item.url === message.url
+                ? { ...item, result }
+                : item,
+            ),
+          },
+        });
+      }
       if (message.action === 'configure') {
         const changed = message.scopeId !== this.state.scopeId || message.installationId !== this.state.installationId;
         // Turning a schedule off must work even after its folder was removed.
@@ -203,7 +245,7 @@ export class BookmarkCheckOwner {
   private async run(signal: AbortSignal) {
     const cache = new Map<string, LinkResult>();
     for (const item of this.state.job?.items ?? [])
-      if (item.result && item.result.reason !== 'changed') cache.set(item.url, item.result);
+      if (item.result && !['changed', 'manual'].includes(item.result.reason)) cache.set(item.url, item.result);
     while (!signal.aborted && !this.disposed) {
       const job = this.state.job;
       if (!job || job.status !== 'running') return;
@@ -259,7 +301,9 @@ export class BookmarkCheckOwner {
           job: {
             ...this.state.job,
             updatedAt: this.now(),
-            items: this.state.job.items.map(item => updates.get(item.nativeId) ?? item),
+            items: this.state.job.items.map(item =>
+              item.result?.reason === 'manual' ? item : (updates.get(item.nativeId) ?? item),
+            ),
           },
         });
       });

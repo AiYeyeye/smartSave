@@ -51,6 +51,80 @@ async function settled(owner: BookmarkCheckOwner, status: string) {
   return get(owner);
 }
 
+it('preserves per-bookmark manual confirmation through weekly scans and restart, never across URL changes', async () => {
+  const f = fixture(),
+    owner = f.create();
+  await start(owner);
+  await settled(owner, 'completed');
+  const verify = {
+    type: 'bookmarkCheck' as const,
+    action: 'verify' as const,
+    installationId: 'install',
+    nativeId: 'a',
+    url: 'https://x.test/?a#b',
+    available: true,
+  };
+  await owner.handle(verify);
+  await owner.handle({
+    type: 'bookmarkCheck',
+    action: 'configure',
+    installationId: 'install',
+    scopeId: null,
+    weekly: true,
+  });
+  owner.dispose();
+  const restored = f.create();
+  f.options.probe.mockResolvedValue({ status: 'broken', reason: 'http', code: 404, at: 100 });
+  await restored.weekly();
+  const report = await settled(restored, 'completed');
+  expect(report.job!.items.find(item => item.nativeId === 'a')!.result).toMatchObject({
+    status: 'ok',
+    reason: 'manual',
+  });
+  expect(report.job!.items.find(item => item.nativeId === 'b')!.result).toMatchObject({ status: 'broken' });
+  f.tree.nodes.find(node => node.ref.nativeId === 'a')!.url = 'https://changed.test/';
+  await expect(restored.handle(verify)).rejects.toThrow('stale-selection');
+  await start(restored);
+  expect((await settled(restored, 'completed')).job!.items.find(item => item.nativeId === 'a')!.result).toMatchObject({
+    status: 'broken',
+  });
+});
+
+it('manual confirmation wins an in-flight probe and can be restored without native mutations', async () => {
+  const f = fixture(),
+    owner = f.create();
+  let finish!: (result: LinkResult) => void;
+  f.options.probe.mockImplementationOnce(
+    () =>
+      new Promise(resolve => {
+        finish = resolve;
+      }),
+  );
+  await start(owner);
+  await vi.waitFor(() => expect(finish).toBeTypeOf('function'));
+  const verify = {
+    type: 'bookmarkCheck' as const,
+    action: 'verify' as const,
+    installationId: 'install',
+    nativeId: 'a',
+    url: 'https://x.test/?a#b',
+    available: true,
+  };
+  const before = structuredClone(f.tree);
+  await owner.handle(verify);
+  finish({ status: 'broken', reason: 'http', code: 404, at: 100 });
+  expect((await settled(owner, 'completed')).job!.items.find(item => item.nativeId === 'a')!.result!.reason).toBe(
+    'manual',
+  );
+  await owner.handle({ ...verify, available: false });
+  expect((await get(owner)).verified).toEqual([]);
+  await start(owner);
+  expect((await settled(owner, 'completed')).job!.items.find(item => item.nativeId === 'a')!.result!.reason).toBe(
+    'http',
+  );
+  expect(f.tree).toEqual(before);
+});
+
 it('checks locally owned native URLs once, persists progress and never mutates the native tree', async () => {
   const f = fixture(),
     before = structuredClone(f.tree),

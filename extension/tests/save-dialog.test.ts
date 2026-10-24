@@ -3,6 +3,41 @@ import { SAVE_CONFIRM_PORT, SaveDialogHost, startSaveDialogService } from '../ba
 import { SAVE_CONFIRM_QUEUE_KEY } from '../persistence/save-confirm';
 
 const PAGE = 'save/index.html';
+it('dismisses durable state before removing a queued reminder, with strict popup-only authorization', async () => {
+  const f = setup();
+  await f.host.openAutomatic('gone', 1);
+  startSaveDialogService(f.host);
+  const message = { type: 'saveConfirmDismiss', receiptId: 'gone' };
+  for (const sender of [
+    { ...f.popupSender, url: 'chrome-extension://i/panel/index.html' },
+    { ...f.popupSender, id: 'foreign' },
+  ]) {
+    const reply = vi.fn();
+    expect(f.messages[0]!(message, sender, reply)).toBe(false);
+    expect(reply).toHaveBeenCalledWith({ status: 'error' });
+  }
+  expect(f.dismiss).not.toHaveBeenCalled();
+  f.dismiss.mockRejectedValueOnce(Error('storage'));
+  const failed = vi.fn();
+  f.messages[0]!(message, f.popupSender, failed);
+  await vi.waitFor(() => expect(failed).toHaveBeenCalledWith({ status: 'error' }));
+  expect(f.session[SAVE_CONFIRM_QUEUE_KEY]).toEqual(['gone']);
+  let resolve!: () => void;
+  f.dismiss.mockImplementationOnce(
+    () =>
+      new Promise<void>(done => {
+        resolve = done;
+      }),
+  );
+  const success = vi.fn();
+  f.messages[0]!(message, f.popupSender, success);
+  await vi.waitFor(() => expect(resolve).toBeTypeOf('function'));
+  expect(f.session[SAVE_CONFIRM_QUEUE_KEY]).toEqual(['gone']);
+  resolve();
+  await vi.waitFor(() => expect(success).toHaveBeenCalledWith({ status: 'done', remaining: 0 }));
+  expect(f.session[SAVE_CONFIRM_QUEUE_KEY]).toEqual([]);
+  f.connect();
+});
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
@@ -71,7 +106,8 @@ function setup({ armedOnStart = [] as number[] } = {}) {
   });
   const hint = vi.fn();
   const pending = vi.fn(async () => ['older', 'newer']);
-  const host = new SaveDialogHost({ hint, pending });
+  const dismiss = vi.fn<(id: string) => Promise<void>>(async () => {});
+  const host = new SaveDialogHost({ hint, pending, dismiss });
   const popupSender = {
     id: 'i',
     url: `chrome-extension://i/${PAGE}`,
@@ -94,6 +130,7 @@ function setup({ armedOnStart = [] as number[] } = {}) {
     action,
     hint,
     pending,
+    dismiss,
     session,
     popups,
     messages,

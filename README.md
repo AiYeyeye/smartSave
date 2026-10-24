@@ -49,7 +49,7 @@
 
 需要 **Chrome / Edge 127+**。
 
-1. 从 [下载页面](https://github.com/AiYeyeye/smartSave/releases/tag/v0.1.0-preview.20261023.2) 下载 **zhilan-0.1.0-candidate.zip**，解压到固定文件夹。
+1. 从 [下载页面](https://github.com/AiYeyeye/smartSave/releases/tag/v0.1.0-preview.20261023.3) 下载 **zhilan-0.1.0-candidate.zip**，解压到固定文件夹。
 2. 打开 `chrome://extensions` 或 `edge://extensions`，开启**开发者模式**。
 3. 点击**加载已解压的扩展程序**，选择解压后包含 `manifest.json` 的文件夹。
 4. 把智栏固定到工具栏，点击图标打开书签侧栏。

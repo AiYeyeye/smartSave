@@ -23,6 +23,7 @@ type ActionPopupApi = {
 export type SaveDialogOptions = {
   /** Unreviewed receipts in display order; the sidebar launcher queues all of them. */
   pending?: () => Promise<string[]>;
+  dismiss?: (receiptId: string) => Promise<void>;
   /** Toolbar hint for a confirmation the browser could not show automatically. Never throws. */
   hint?: (tabId: number, on: boolean) => void;
   action?: ActionPopupApi;
@@ -286,6 +287,11 @@ export class SaveDialogHost {
   done(receiptId: string) {
     return this.queue.remove(receiptId);
   }
+  async dismiss(receiptId: string) {
+    if (!this.options.dismiss) throw Error('dismiss-unavailable');
+    await this.options.dismiss(receiptId);
+    return this.done(receiptId);
+  }
   openCapture(tabId: number) {
     const pending = this.capture(tabId);
     this.capturing.add(pending);
@@ -322,17 +328,19 @@ export class SaveDialogHost {
 export function startSaveDialogService(host: SaveDialogHost) {
   chrome.runtime.onMessage.addListener((raw: unknown, sender, reply) => {
     if (!raw || typeof raw !== 'object' || !('type' in raw)) return false;
-    if (raw.type === 'saveConfirmDone') {
+    if (raw.type === 'saveConfirmDone' || raw.type === 'saveConfirmDismiss') {
       const receiptId = 'receiptId' in raw ? raw.receiptId : undefined;
       if (
         Object.keys(raw).length !== 2 ||
         typeof receiptId !== 'string' ||
+        !receiptId ||
+        receiptId.length > 256 ||
         extensionDocumentKind(sender, chrome.runtime.id) !== 'save'
       ) {
         reply({ status: 'error' });
         return false;
       }
-      void host.done(receiptId).then(
+      void (raw.type === 'saveConfirmDismiss' ? host.dismiss(receiptId) : host.done(receiptId)).then(
         remaining => reply({ status: 'done', remaining }),
         () => reply({ status: 'error' }),
       );

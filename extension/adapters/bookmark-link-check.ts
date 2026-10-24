@@ -69,6 +69,7 @@ export async function probeBookmarkLink(
         referrerPolicy: 'no-referrer',
         redirect: 'manual',
         cache: 'no-store',
+        headers: { Accept: 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.8' },
       }),
       aborted,
     ]);
@@ -82,6 +83,10 @@ export async function probeBookmarkLink(
       return { status: 'review', reason: 'redirect', at: now() };
     // Some sites reject HEAD or return a false 404. Verify with GET before calling a page broken.
     if (!response.ok) response = await request('GET');
+    if (response.status === 404 || response.status === 410) {
+      // A single error response can be transient. Only repeatable GET misses are suspected broken.
+      response = await request('GET');
+    }
     if (response.type === 'opaqueredirect' || (response.status >= 300 && response.status < 400))
       return { status: 'review', reason: 'redirect', at: now() };
     const code = response.status >= 100 && response.status <= 599 ? response.status : undefined;

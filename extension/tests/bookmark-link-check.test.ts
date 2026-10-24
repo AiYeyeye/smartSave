@@ -22,17 +22,25 @@ it.each([
 it.each([
   [200, 200, 'ok', 1],
   [404, 200, 'ok', 2],
-  [405, 404, 'broken', 2],
-  [404, 410, 'broken', 2],
+  [405, 404, 'broken', 3],
+  [404, 410, 'broken', 3],
   [403, 403, 'review', 2],
   [429, 429, 'review', 2],
   [500, 503, 'review', 2],
   [302, 200, 'review', 1],
 ])('checks %s then %s without reading response text', async (head, get, status, calls) => {
-  const responses = [new Response('head', { status: head as number }), new Response('body', { status: get as number })];
+  const responses = [
+    new Response('head', { status: head as number }),
+    new Response('body', { status: get as number }),
+    new Response('retry', { status: get as number }),
+  ];
   const texts = responses.map(r => vi.spyOn(r, 'text'));
   const cancels = responses.map(r => vi.spyOn(r.body!, 'cancel'));
-  const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(responses[0]!).mockResolvedValueOnce(responses[1]!);
+  const fetcher = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(responses[0]!)
+    .mockResolvedValueOnce(responses[1]!)
+    .mockResolvedValueOnce(responses[2]!);
   expect(
     await probeBookmarkLink('https://example.test/a?token=1#frag', new AbortController().signal, {
       fetch: fetcher,
@@ -45,10 +53,25 @@ it.each([
     'https://example.test/a?token=1',
     expect.objectContaining({ method: 'HEAD', credentials: 'omit', redirect: 'manual', referrerPolicy: 'no-referrer' }),
   );
-  if (calls === 2)
+  if ((calls as number) >= 2)
     expect(fetcher).toHaveBeenNthCalledWith(2, expect.any(String), expect.objectContaining({ method: 'GET' }));
   expect(cancels[0]).toHaveBeenCalled();
   for (const text of texts) expect(text).not.toHaveBeenCalled();
+});
+it('does not keep a transient GET 404 verdict when the repeat request succeeds', async () => {
+  const fetcher = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(new Response(null, { status: 405 }))
+    .mockResolvedValueOnce(new Response(null, { status: 404 }))
+    .mockResolvedValueOnce(new Response(null, { status: 200 }));
+  expect(
+    await probeBookmarkLink('https://example.test/', new AbortController().signal, { fetch: fetcher }),
+  ).toMatchObject({ status: 'ok', code: 200 });
+  expect(fetcher).toHaveBeenNthCalledWith(
+    2,
+    expect.any(String),
+    expect.objectContaining({ headers: { Accept: expect.stringContaining('text/html') } }),
+  );
 });
 it('marks network/timeouts uncertain, while user cancellation rejects without a false verdict', async () => {
   const signal = new AbortController();

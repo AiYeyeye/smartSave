@@ -328,6 +328,7 @@ export function startNativeBookmarkIngress(options: NativeBookmarkIngressOptions
           receipt &&
           receipt.id === review.receiptId &&
           !receipt.reviewedAt &&
+          receipt.dismissedAt === undefined &&
           receipt.status !== 'classifying' &&
           receipt.status !== 'undone' &&
           receipt.reason !== 'excluded' &&
