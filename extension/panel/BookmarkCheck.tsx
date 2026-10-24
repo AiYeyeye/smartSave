@@ -10,6 +10,7 @@ import { submitMutation, type SendMutation } from './mutation-client';
 import { sendBookmarkCheck, requestCheckPermission, type CheckClient } from './bookmark-check-client';
 import {
   checkedDuplicateDeletions,
+  CHECK_DELETE_LIMIT,
   checkScopeNodes,
   compileCheckDeletion,
   currentCheckResults,
@@ -20,6 +21,7 @@ import {
   type LinkResult,
 } from '../domain/bookmark-check';
 import { groupDuplicateNodes } from '../domain/suspected-duplicates';
+import { exactDuplicateCleanup, unreachableSiteCleanup, type CleanupPlan } from '../domain/bookmark-cleanup';
 import type { DuplicateChoice } from '../domain/exact-duplicates';
 import type { TreeSnapshot } from '../domain/node-reference';
 import { organizePaths } from '../domain/organize-review';
@@ -97,6 +99,8 @@ export function BookmarkCheck({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const baselines = useRef(new Map<string, TreeSnapshot['nodes'][number]>());
   const [preview, setPreview] = useState<ConfirmMutation>();
+  const [bulkPreview, setBulkPreview] = useState<CleanupPlan & { kind: 'links' | 'duplicates' }>();
+  const [removedCount, setRemovedCount] = useState(0);
   const [result, setResult] = useState<MutationResult>();
   const [deleting, setDeleting] = useState(false);
   const lock = useRef(false);
@@ -199,9 +203,12 @@ export function BookmarkCheck({
     else if (category === 'unknown') counts.unknown++;
   }
   const running = state?.job?.status === 'running';
+  const duplicatePlan = useMemo(() => exactDuplicateCleanup(nodes), [nodes]);
+  const sitePlan = useMemo(() => unreachableSiteCleanup(nodes, checked), [nodes, checked]);
+  const bulkPlan = tab === 'duplicates' ? duplicatePlan : sitePlan;
   const uncertain =
     !!result && result.status !== 'completed' && (result.needsReconcile || result.status !== 'rejected');
-  const disabled = busy || deleting || !!preview || uncertain || !connected;
+  const disabled = busy || deleting || !!preview || uncertain || !connected || !state;
   const selectedCount =
     tab === 'links' ? selected.size : Object.values(choices).filter(choice => choice === 'delete').length;
   function clearSelection() {
@@ -250,9 +257,10 @@ export function BookmarkCheck({
     if (!tree || disabled || lock.current) return;
     setError(undefined);
     setResult(undefined);
+    setBulkPreview(undefined);
     try {
       const ids = tab === 'links' ? [...selected] : checkedDuplicateDeletions(nodes, choices);
-      if (ids.length > 500) {
+      if (ids.length > CHECK_DELETE_LIMIT) {
         setError('一次最多删除 500 项，请减少选择。');
         return;
       }
@@ -271,6 +279,17 @@ export function BookmarkCheck({
       setError(errors[error instanceof Error ? error.message : ''] ?? '书签有变化，请清除选择后重新核对。');
     }
   }
+  function prepareBulk() {
+    if (!tree || disabled || lock.current || (tab === 'links' && running) || !bulkPlan.deleteIds.length) return;
+    setError(undefined);
+    setResult(undefined);
+    try {
+      setPreview(compileCheckDeletion(tree, scopeId, bulkPlan.deleteIds));
+      setBulkPreview({ ...bulkPlan, kind: tab });
+    } catch {
+      setError('书签有变化，请清除选择后重新核对。');
+    }
+  }
   let stale = false;
   if (preview && tree) {
     try {
@@ -278,6 +297,15 @@ export function BookmarkCheck({
     } catch {
       stale = true;
     }
+    if (
+      bulkPreview?.kind === 'links' &&
+      (running ||
+        bulkPreview.deleteIds.some(id => {
+          const value = checked.get(id);
+          return !value || linkCategory(value) !== 'site';
+        }))
+    )
+      stale = true;
   }
   async function confirmDelete() {
     if (!preview || !tree || stale || !connected || lock.current) return;
@@ -286,9 +314,12 @@ export function BookmarkCheck({
     const outcome = await submitMutation(preview, send);
     if (!live.current) return;
     setPreview(undefined);
+    setBulkPreview(undefined);
     setDeleting(false);
     setResult(outcome.status === 'completed' ? undefined : outcome);
     if (outcome.status === 'completed' || (outcome.status === 'rejected' && !outcome.needsReconcile)) {
+      if (outcome.status === 'completed')
+        setRemovedCount(preview.command.type === 'batch' ? preview.command.operations.length : 0);
       lock.current = false;
       clearSelection();
     }
@@ -460,6 +491,16 @@ export function BookmarkCheck({
                   {t(job ? '重新检查' : '立即检查')}
                 </button>
               )}
+              {group !== 'pages' && (
+                <button
+                  className="check-cleanup"
+                  disabled={disabled || running || !sitePlan.total}
+                  onClick={prepareBulk}
+                >
+                  {t('一键处理')}
+                  {sitePlan.total > 0 && <span>{sitePlan.total}</span>}
+                </button>
+              )}
             </div>
             {job && (
               <div className="check-progress">
@@ -574,6 +615,12 @@ export function BookmarkCheck({
         )}
         {tab === 'duplicates' && (
           <>
+            <div className="check-runbar check-bulkbar">
+              <span className="check-bulk-count">{t('可清理 {count} 条重复收藏', { count: duplicatePlan.total })}</span>
+              <button className="check-cleanup" disabled={disabled || !duplicatePlan.total} onClick={prepareBulk}>
+                {t('一键处理')}
+              </button>
+            </div>
             <DuplicateReview
               compact
               groups={groups.slice(0, limit)}
@@ -626,6 +673,12 @@ export function BookmarkCheck({
           {uncertain && <button onClick={onRecovery}>{t('查看恢复记录')}</button>}
         </div>
       )}
+      {removedCount > 0 && !result && (
+        <div className="check-completed" role="status">
+          <span>{t('已删除 {count} 条收藏', { count: removedCount })}</span>
+          <button onClick={onRecovery}>{t('查看恢复记录')}</button>
+        </div>
+      )}
       {(state?.nextRun || job?.status === 'completed') && (
         <small className="check-date">
           {state?.nextRun
@@ -635,7 +688,10 @@ export function BookmarkCheck({
       )}
       {preview && (
         <ImpactConfirmDialog
-          onCancel={() => setPreview(undefined)}
+          onCancel={() => {
+            setPreview(undefined);
+            setBulkPreview(undefined);
+          }}
           onConfirm={() => void confirmDelete()}
           disabled={stale || !connected}
           busy={deleting}
@@ -645,13 +701,59 @@ export function BookmarkCheck({
               count: preview.command.type === 'batch' ? preview.command.operations.length : 0,
             })}
           </p>
-          <ul className="check-delete-list">
-            {preview.command.type === 'batch' &&
-              preview.command.operations.map(operation => {
-                const id = 'target' in operation.command ? operation.command.target.nativeId : '';
-                return <li key={id}>{preview.before.find(node => node.ref.nativeId === id)?.title}</li>;
+          {bulkPreview && (
+            <p className="check-preview-note">
+              {t(
+                bulkPreview.kind === 'duplicates'
+                  ? '相同网址保留一份，优先保留受保护项；不同网址的疑似重复不处理。'
+                  : '仅处理网站无法连接的收藏，可能包含临时网络故障。',
+              )}
+            </p>
+          )}
+          {bulkPreview && bulkPreview.total > bulkPreview.deleteIds.length && (
+            <p>
+              {t('本次处理 {count} 项，剩余 {remaining} 项可继续处理。', {
+                count: bulkPreview.deleteIds.length,
+                remaining: bulkPreview.total - bulkPreview.deleteIds.length,
               })}
-          </ul>
+            </p>
+          )}
+          <div className="check-preview-items">
+            {bulkPreview?.keepIds.length ? (
+              <section aria-label={t('保留的收藏')}>
+                <h3>{t('保留的收藏')}</h3>
+                <ul>
+                  {bulkPreview.keepIds.map(id => {
+                    const node = preview.before.find(node => node.ref.nativeId === id);
+                    return (
+                      <li key={id}>
+                        <strong>{node?.title}</strong>
+                        <small>{paths.get(id)}</small>
+                        <small>{node?.url}</small>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            ) : null}
+            <section>
+              <h3>{t('将删除的收藏')}</h3>
+              <ul className="check-delete-list" aria-label={t('将删除的收藏')}>
+                {preview.command.type === 'batch' &&
+                  preview.command.operations.map(operation => {
+                    const id = 'target' in operation.command ? operation.command.target.nativeId : '';
+                    const node = preview.before.find(node => node.ref.nativeId === id);
+                    return (
+                      <li key={id}>
+                        <strong>{node?.title}</strong>
+                        <small>{paths.get(id)}</small>
+                        <small>{node?.url}</small>
+                      </li>
+                    );
+                  })}
+              </ul>
+            </section>
+          </div>
           {stale && <p role="alert">{t('书签有变化，请清除选择后重新核对。')}</p>}
         </ImpactConfirmDialog>
       )}

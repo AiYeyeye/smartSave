@@ -1581,10 +1581,10 @@ body.sidepanel .theme-root {
   background: color-mix(in oklab, var(--surface) 92%, transparent);
   backdrop-filter: blur(8px);
 }
-.panel-quick-actions { flex-shrink: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 0 8px 8px; }
-.panel-quick-actions .save-review-launcher { margin: 0; }
-.panel-check-entry { gap: 6px; min-height: 30px; padding: 5px 9px; font-size: 12px; color: var(--accent-text); background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 25%, var(--border)); }
-.panel-check-entry svg { width: 15px; height: 15px; }
+.panel-navigation { flex-shrink: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 3px; margin: 0 12px 12px; padding: 4px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2); }
+.panel-navigation button { justify-content: center; min-width: 0; min-height: 34px; padding: 6px 2px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); box-shadow: none; font-size: 12px; }
+.panel-navigation button[aria-pressed='true'] { background: var(--surface); color: var(--accent-text); box-shadow: 0 1px 4px #00000012; font-weight: 600; }
+.shell.panel > .save-review-launcher { align-self: flex-start; margin: 0 12px 10px; }
 .zh-footer button {
   flex-direction: column;
   gap: 3px;

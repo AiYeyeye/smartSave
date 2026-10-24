@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { BookmarkCheck } from '../panel/BookmarkCheck';
-import { PanelQuickActions } from '../ui/PanelChrome';
+import { PanelNavigation } from '../ui/PanelChrome';
 import { LocaleProvider, LANGUAGE_KEY } from '../ui/i18n';
 import { organizerTree } from './fixtures/organizer-tree';
 import { emptyBookmarkCheck, type BookmarkCheckState } from '../domain/bookmark-check';
@@ -93,6 +93,18 @@ it('prioritizes unreachable sites, separates page issue categories, and records 
   );
   act(() => publish({ status: 'ready', snapshot: tree }));
   await screen.findByLabelText('选择收藏：c');
+  fireEvent.click(screen.getByRole('button', { name: /一键处理/ }));
+  expect(screen.getByRole('dialog')).toHaveTextContent('将删除 1 条收藏');
+  expect(screen.getByRole('list', { name: '将删除的收藏' })).toHaveTextContent('c');
+  expect(screen.getByRole('list', { name: '将删除的收藏' })).not.toHaveTextContent('https://x.test');
+  // Another view marks it available while the frozen deletion preview is open.
+  state = {
+    ...state,
+    revision: state.revision + 1,
+    verified: [{ installationId: tree.installationId, nativeId: 'c', url: 'https://gone.test/page', at: 3 }],
+  };
+  await waitFor(() => expect(screen.getByRole('button', { name: '确认删除' })).toBeDisabled(), { timeout: 2500 });
+  fireEvent.click(screen.getByRole('button', { name: '取消' }));
   expect(screen.queryByLabelText('选择收藏：a')).not.toBeInTheDocument();
   expect(screen.queryByLabelText('选择收藏：b')).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: /收藏页异常/ }));
@@ -172,9 +184,48 @@ it('requests website permission directly from the click before scheduling, and e
   const check = vi.fn();
   render(
     <LocaleProvider>
-      <PanelQuickActions onCheck={check} />
+      <PanelNavigation section="directory" onSection={check} />
     </LocaleProvider>,
   );
   fireEvent.click(screen.getByRole('button', { name: '书签检查' }));
   expect(check).toHaveBeenCalledOnce();
+  expect(check).toHaveBeenCalledWith('check');
+});
+
+it('prepares exact duplicate cleanup without changing manual choices, shows keepers and freezes native authority', async () => {
+  const f = fixture();
+  await waitFor(() => expect(screen.getByRole('button', { name: '立即检查' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('tab', { name: /重复收藏/ }));
+  fireEvent.change(screen.getByLabelText('c 保留或删除'), { target: { value: 'keep' } });
+  fireEvent.click(screen.getByRole('button', { name: '一键处理' }));
+  expect(screen.getByRole('dialog')).toHaveTextContent('将删除 2 条收藏');
+  expect(screen.getByRole('region', { name: '保留的收藏' })).toHaveTextContent('a');
+  expect(f.send).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: '取消' }));
+  expect(screen.getByLabelText('c 保留或删除')).toHaveValue('keep');
+  fireEvent.click(screen.getByRole('button', { name: '一键处理' }));
+  const changed = organizerTree();
+  changed.nodes.find(node => node.ref.nativeId === 'a')!.url = 'https://edited.test/';
+  act(() => publish({ status: 'ready', snapshot: changed }));
+  expect(screen.getByRole('button', { name: '确认删除' })).toBeDisabled();
+  expect(f.send).not.toHaveBeenCalled();
+});
+
+it('submits one bulk batch and locks cleanup after an uncertain result', async () => {
+  const f = fixture();
+  await waitFor(() => expect(screen.getByRole('button', { name: '立即检查' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('tab', { name: /重复收藏/ }));
+  fireEvent.click(screen.getByRole('button', { name: '一键处理' }));
+  f.send.mockRejectedValueOnce(Error('lost reply'));
+  fireEvent.click(screen.getByRole('button', { name: '确认删除' }));
+  await screen.findByRole('button', { name: '查看恢复记录' });
+  expect(f.send).toHaveBeenCalledTimes(1);
+  expect(f.send.mock.calls[0]![0].command).toMatchObject({
+    type: 'batch',
+    operations: [
+      { command: { type: 'remove', target: { nativeId: 'b' } } },
+      { command: { type: 'remove', target: { nativeId: 'c' } } },
+    ],
+  });
+  expect(screen.getByRole('button', { name: '一键处理' })).toBeDisabled();
 });

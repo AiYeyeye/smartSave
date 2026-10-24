@@ -25,7 +25,7 @@ Saving a page is easy. Finding it months later can take a little more work. Zhil
 | Find pages in your own words | Describe what you remember, or search by title, URL, Chinese pinyin or initials. |
 | Find previously visited pages | Enable optional history search, filter by time, title or URL, or explicitly ask AI to interpret a description. Bookmark a result when you find it. |
 | Organize a collection | Select folders, review the AI's suggestions and choose whether to apply them. Close the page while suggestions are generated and return later. |
-| Bookmark check | Find broken links and duplicate bookmarks, optionally every week; choose what to keep or delete. |
+| Bookmark check | Check links and duplicates in the sidebar, optionally weekly; preview and confirm a batch cleanup. |
 | Import, export and recover | Work with common bookmark formats, inspect recent operations and preview undo or recovery. |
 
 Your bookmarks stay in your browser. Zhilan helps you manage them directly, without another account or a move to a separate bookmark service.
@@ -49,7 +49,7 @@ Screenshots use demonstration bookmarks.
 
 You need **Chrome / Edge 127+**.
 
-1. Download **zhilan-0.1.0-candidate.zip** from the [download page](https://github.com/AiYeyeye/smartSave/releases/tag/v0.1.0-preview.20261023.4) and extract it to a permanent folder.
+1. Download **zhilan-0.1.0-candidate.zip** from the [download page](https://github.com/AiYeyeye/smartSave/releases/tag/v0.1.0-preview.20261024.1) and extract it to a permanent folder.
 2. Open `chrome://extensions` or `edge://extensions` and enable **Developer mode**.
 3. Choose **Load unpacked** and select the extracted folder containing `manifest.json`.
 4. Pin Zhilan to the toolbar and click its icon to open your bookmarks.

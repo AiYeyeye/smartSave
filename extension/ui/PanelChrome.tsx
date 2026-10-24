@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useI18n } from './i18n';
 import {
   ArrowLeft,
@@ -8,7 +8,6 @@ import {
   PanelLeftClose,
   Search,
   Settings,
-  ShieldCheck,
   Upload,
   X,
 } from 'lucide-react';
@@ -158,17 +157,33 @@ export function PanelFooter({
   );
 }
 
-/** Visible beside pending reviews, above the scrollable bookmark tree. */
-export function PanelQuickActions({ onCheck, children }: { onCheck: () => void; children?: ReactNode }) {
+export type PanelSection = 'directory' | 'recent' | 'history' | 'check';
+
+/** One full-width navigation row; work stays in the sidebar. */
+export function PanelNavigation({
+  section,
+  onSection,
+}: {
+  section: PanelSection;
+  onSection: (section: PanelSection) => void;
+}) {
   const { t } = useI18n();
   return (
-    <div className="panel-quick-actions">
-      <button type="button" className="panel-check-entry" onClick={onCheck}>
-        <ShieldCheck aria-hidden="true" />
-        {t('书签检查')}
-      </button>
-      {children}
-    </div>
+    <nav className="panel-navigation" aria-label={t('书签导航')}>
+      {(['directory', 'recent', 'history', 'check'] as const).map(key => (
+        <button
+          key={key}
+          type="button"
+          aria-pressed={section === key}
+          aria-label={t(
+            key === 'directory' ? '目录' : key === 'recent' ? '最近收藏' : key === 'history' ? '历史' : '书签检查',
+          )}
+          onClick={() => onSection(key)}
+        >
+          {t(key === 'directory' ? '目录' : key === 'recent' ? '最近' : key === 'history' ? '历史' : '检查')}
+        </button>
+      ))}
+    </nav>
   );
 }
 

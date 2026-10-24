@@ -16,7 +16,7 @@ import './theme.css';
 import '../panel/save-dialog.css';
 import { SAVE_CONFIRM_PORT } from '../persistence/save-confirm';
 import { BookmarkTree } from '../panel/BookmarkTree';
-import { PanelChrome, PanelFooter, PanelQuickActions, SearchBox, type PopupView } from './PanelChrome';
+import { PanelChrome, PanelFooter, PanelNavigation, SearchBox, type PopupView, type PanelSection } from './PanelChrome';
 import { OptionsNav, parseOptionsHash, ROUTE_META, type OptionsRoute } from './OptionsNav';
 import { PopupSettings } from './PopupSettings';
 import { PanelModePicker } from './PanelModePicker';
@@ -106,11 +106,22 @@ function PopupApp({ overlay = false }: { overlay?: boolean }) {
   const [query, setQuery] = useState('');
   const [searchSource, setSearchSource] = useState<SearchSource>('bookmarks');
   const [recentBookmarks, setRecentBookmarks] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [checkOpened, setCheckOpened] = useState(false);
+  function selectSection(section: PanelSection) {
+    setChecking(section === 'check');
+    if (section === 'check') setCheckOpened(true);
+    else {
+      setSearchSource(section === 'history' ? 'history' : 'bookmarks');
+      setRecentBookmarks(section === 'recent');
+    }
+  }
   const [batchNonce, setBatchNonce] = useState(0);
   const onboarding = useOnboarding();
   const [focusRequest, setFocusRequest] = useState(0);
   useSearchKey(() => {
     setView('browse');
+    setChecking(false);
     setFocusRequest(value => value + 1);
   });
 
@@ -139,7 +150,10 @@ function PopupApp({ overlay = false }: { overlay?: boolean }) {
         focusRequest={focusRequest}
         view={view}
         query={query}
-        onQuery={setQuery}
+        onQuery={value => {
+          setQuery(value);
+          setChecking(false);
+        }}
         onSettings={() => {
           setQuery('');
           setView('settings');
@@ -148,12 +162,18 @@ function PopupApp({ overlay = false }: { overlay?: boolean }) {
         onClose={overlay ? closeOverlay : undefined}
       />
       {view === 'browse' && (
-        <PanelQuickActions onCheck={() => open('check')}>
+        <>
+          <PanelNavigation
+            section={
+              checking ? 'check' : searchSource === 'history' ? 'history' : recentBookmarks ? 'recent' : 'directory'
+            }
+            onSection={selectSection}
+          />
           <SaveReviewLauncher />
-        </PanelQuickActions>
+        </>
       )}
       <main id="main" tabIndex={-1}>
-        <div hidden={view !== 'browse'}>
+        <div hidden={view !== 'browse' || checking}>
           {onboarding.visible && !query.trim() && searchSource === 'bookmarks' && !recentBookmarks && (
             <OnboardingSteps
               onConfigure={() => open('ai-services/add')}
@@ -164,12 +184,13 @@ function PopupApp({ overlay = false }: { overlay?: boolean }) {
           )}
           {onboarding.saveFailed && <p role="status">{t('关闭状态未能保存，下次打开可能仍会显示步骤。')}</p>}
           <SearchWorkspace
+            navigation={false}
             query={query}
             source={searchSource}
             onSource={setSearchSource}
             recentBookmarks={recentBookmarks}
             onRecentBookmarks={setRecentBookmarks}
-            visible={view === 'browse'}
+            visible={view === 'browse' && !checking}
             settings={settingsStore}
             services={ai.store}
             onOrganize={() => open('organize')}
@@ -183,6 +204,7 @@ function PopupApp({ overlay = false }: { overlay?: boolean }) {
               batchNonce={batchNonce}
               positionActive={
                 view === 'browse' &&
+                !checking &&
                 !query.trim() &&
                 searchSource === 'bookmarks' &&
                 !recentBookmarks &&
@@ -191,12 +213,18 @@ function PopupApp({ overlay = false }: { overlay?: boolean }) {
             />
           </section>
         </div>
+        {checkOpened && (
+          <div hidden={view !== 'browse' || !checking}>
+            <BookmarkCheck visible={view === 'browse' && checking} onRecovery={() => open('export')} />
+          </div>
+        )}
         {view === 'settings' && (
           <PopupSettings
             onOnboarding={() => {
               setQuery('');
               setSearchSource('bookmarks');
               setRecentBookmarks(false);
+              setChecking(false);
               setView('browse');
               onboarding.show();
               document.getElementById('main')?.scrollTo?.({ top: 0 });
@@ -211,7 +239,7 @@ function PopupApp({ overlay = false }: { overlay?: boolean }) {
           />
         )}
       </main>
-      {view === 'browse' && (
+      {view === 'browse' && !checking && (
         <PanelFooter
           onOrganize={() => open('organize')}
           onImport={() => open('import')}

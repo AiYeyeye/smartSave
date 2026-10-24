@@ -235,14 +235,57 @@ with sync_playwright() as playwright:
         sidebar=context.new_page()
         sidebar.goto(f'chrome-extension://{extension_id}/panel/index.html')
         sidebar.set_viewport_size({'width':320,'height':700})
+        extra=page.evaluate("async item=>chrome.bookmarks.create({parentId:item.parentId,title:'快捷重复',url:item.url})",fixture['items'][0])
+        page.wait_for_timeout(1500)
         entry=sidebar.get_by_role('button',name='书签检查',exact=True)
         expect(entry).to_be_visible()
         assert entry.bounding_box()['y']<130
         assert sidebar.evaluate('document.documentElement.scrollWidth')<=321
+        nav=sidebar.get_by_role('navigation',name='书签导航',exact=True)
+        boxes=[button.bounding_box() for button in nav.get_by_role('button').all()]
+        assert len(boxes)==4 and max(b['y'] for b in boxes)-min(b['y'] for b in boxes)<1
+        assert max(b['width'] for b in boxes)-min(b['width'] for b in boxes)<1
         sidebar.screenshot(path=str(root/'sidebar-entry.png'),full_page=True)
-        with context.expect_page() as opened:
-            entry.click()
-        expect(opened.value).to_have_url(f'chrome-extension://{extension_id}/options/index.html#check')
+        tabs_before=len(context.pages)
+        entry.click()
+        expect(sidebar.get_by_role('region',name='书签检查',exact=True)).to_be_visible()
+        assert len(context.pages)==tabs_before
+        expect(sidebar).to_have_url(f'chrome-extension://{extension_id}/panel/index.html')
+        for language in ['zh-CN','en']:
+            if language=='en': page.get_by_label('语言',exact=True).select_option('en')
+            for width in [320,380,480]:
+                sidebar.set_viewport_size({'width':width,'height':700})
+                sidebar.evaluate('()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))')
+                assert sidebar.evaluate('document.documentElement.scrollWidth')<=width+1
+                sidebar.screenshot(path=str(root/f'sidebar-check-{language}-{width}.png'),full_page=True)
+        page.get_by_label('Language',exact=True).select_option('zh-CN')
+        sidebar.set_viewport_size({'width':320,'height':700})
+        sidebar.get_by_role('tab',name='重复收藏',exact=False).click()
+        expect(sidebar.get_by_label('快捷重复 保留或删除',exact=True)).to_be_visible()
+        sidebar.get_by_role('button',name='一键处理',exact=True).click()
+        dialog=sidebar.get_by_role('dialog')
+        expect(dialog).to_contain_text('将删除 1 条收藏')
+        expect(dialog.get_by_role('region',name='保留的收藏')).to_contain_text('正常网页')
+        sidebar.screenshot(path=str(root/'sidebar-bulk-preview.png'),full_page=True)
+        assert page.evaluate('async id=>(await chrome.bookmarks.get(id))[0].title',extra['id'])=='快捷重复'
+        sidebar.get_by_role('button',name='确认删除',exact=True).click()
+        expect(sidebar.get_by_text('未发现重复收藏',exact=True)).to_be_visible()
+        expect(sidebar.get_by_text('已删除 1 条收藏',exact=True)).to_be_visible()
+        assert page.evaluate('async id=>{try{await chrome.bookmarks.get(id);return true}catch{return false}}',extra['id']) is False
+        assert page.evaluate('async id=>(await chrome.bookmarks.get(id))[0].url',fixture['items'][0]['id'])==fixture['items'][0]['url']
+        nav.get_by_role('button',name='目录',exact=True).click()
+        entry.click()
+        expect(sidebar.get_by_role('tab',name='重复收藏',exact=False)).to_have_attribute('aria-selected','true')
+        sidebar.get_by_role('tab',name='失效链接',exact=True).click()
+        sidebar.get_by_role('button',name='一键处理',exact=False).click()
+        expect(dialog).to_contain_text('整站无法连接演示')
+        expect(dialog).not_to_contain_text('失效网页')
+        sidebar.get_by_role('button',name='确认删除',exact=True).click()
+        expect(sidebar.get_by_text('暂无无法连接的网站',exact=True)).to_be_visible()
+        all_nodes=page.evaluate('async()=>{const out=[];function walk(nodes){for(const n of nodes){out.push(n);if(n.children)walk(n.children)}}walk(await chrome.bookmarks.getTree());return out}')
+        assert not any(n.get('url')==fixture['items'][4]['url'] for n in all_nodes)
+        assert all(any(n.get('url')==fixture['items'][i]['url'] for n in all_nodes) for i in [0,1,2,3])
+        assert len(context.pages)==tabs_before
         # A deleted bookmark must still allow durable reminder dismissal, without native writes.
         native_before_dismiss=page.evaluate('()=>chrome.bookmarks.getTree()')
         page.evaluate('''async () => {
@@ -261,7 +304,7 @@ with sync_playwright() as playwright:
         expect(sidebar.get_by_role('button',name='待确认 1 项',exact=True)).to_have_count(0)
         result={'status':'PASS','evidence':str(root),'browser':context.browser.version,'geometry':geometry,
                 'manualCheck':True,'weeklyAlarm':True,'pauseReloadResume':True,'viewClosure':True,'workerRestart':True,'crossRootDuplicates':True,
-                'explicitDeletionAndUndo':True,'sidebarEntry':True,'manualAvailability':True,'siteAndPageSeparation':True,'pageIssueCategories':True,'durableReminderDismissal':True,'requests':requests,
+                'explicitDeletionAndUndo':True,'sidebarEntry':True,'inlineBulkCleanup':True,'equalWidthNavigation':True,'manualAvailability':True,'siteAndPageSeparation':True,'pageIssueCategories':True,'durableReminderDismissal':True,'requests':requests,
                 'workerSHA256':hashlib.sha256((production/'service-worker.js').read_bytes()).hexdigest(),
                 'limit':'Production JS/CSS, disposable manifest pregrants optional website access; browser permission prompt and branded-browser release matrix not verified.'}
         (root/'results.json').write_text(json.dumps(result,indent=2,ensure_ascii=False),encoding='utf-8')

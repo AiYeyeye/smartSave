@@ -15,6 +15,7 @@ export function SearchWorkspace({
   services,
   onOrganize,
   visible = true,
+  navigation = true,
 }: {
   query: string;
   source: SearchSource;
@@ -25,6 +26,7 @@ export function SearchWorkspace({
   services?: AiServicesStore;
   onOrganize?: () => void;
   visible?: boolean;
+  navigation?: boolean;
 }) {
   const { t } = useI18n();
   const [historyOpened, setHistoryOpened] = useState(false);
@@ -33,33 +35,35 @@ export function SearchWorkspace({
   }, [source]);
   return (
     <>
-      <div className="search-scopes" role="group" aria-label={t('搜索范围')}>
-        <button
-          type="button"
-          aria-pressed={source === 'bookmarks' && !recentBookmarks}
-          onClick={() => {
-            onRecentBookmarks?.(false);
-            onSource('bookmarks');
-          }}
-        >
-          {t('目录')}
-        </button>
-        {onRecentBookmarks && (
+      {navigation && (
+        <div className="search-scopes" role="group" aria-label={t('搜索范围')}>
           <button
             type="button"
-            aria-pressed={source === 'bookmarks' && recentBookmarks}
+            aria-pressed={source === 'bookmarks' && !recentBookmarks}
             onClick={() => {
-              onRecentBookmarks(true);
+              onRecentBookmarks?.(false);
               onSource('bookmarks');
             }}
           >
-            {t('最近收藏')}
+            {t('目录')}
           </button>
-        )}
-        <button type="button" aria-pressed={source === 'history'} onClick={() => onSource('history')}>
-          {t('历史')}
-        </button>
-      </div>
+          {onRecentBookmarks && (
+            <button
+              type="button"
+              aria-pressed={source === 'bookmarks' && recentBookmarks}
+              onClick={() => {
+                onRecentBookmarks(true);
+                onSource('bookmarks');
+              }}
+            >
+              {t('最近收藏')}
+            </button>
+          )}
+          <button type="button" aria-pressed={source === 'history'} onClick={() => onSource('history')}>
+            {t('历史')}
+          </button>
+        </div>
+      )}
       <div hidden={source === 'history'}>
         <SearchResults
           query={query}

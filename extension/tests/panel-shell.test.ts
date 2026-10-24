@@ -9,6 +9,7 @@ import { App } from '../ui/App';
 import { TreeRows } from '../panel/BookmarkTree';
 import { TREE_PORT, type TreeSnapshot } from '../domain/node-reference';
 import { LANGUAGE_KEY, LanguagePicker, LocaleProvider } from '../ui/i18n';
+import { emptyBookmarkCheck } from '../domain/bookmark-check';
 const tree: TreeSnapshot = {
   installationId: 'i',
   epoch: 'e',
@@ -168,6 +169,29 @@ it('popup: brand, always-on search, pinned tool dock; long workbenches open in t
   expect(create).toHaveBeenLastCalledWith({ url: 'chrome-extension://i/options/index.html#privacy' });
   await user.click(screen.getByRole('button', { name: '返回书签' }));
   expect(screen.getByRole('searchbox')).toBeVisible();
+});
+
+it('sidebar checks stay local and mounted while search drafts and check selections survive navigation', async () => {
+  chromeStub(true);
+  const create = vi.fn();
+  vi.stubGlobal('chrome', { ...chrome, tabs: { create } });
+  chrome.runtime.sendMessage = vi.fn(async () => ({ status: 'ok', state: emptyBookmarkCheck() }));
+  render(createElement(App, { page: 'panel' }));
+  const nav = within(screen.getByRole('navigation', { name: '书签导航' }));
+  expect(nav.getAllByRole('button')).toHaveLength(4);
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'draft' } });
+  fireEvent.click(nav.getByRole('button', { name: '书签检查' }));
+  const check = await screen.findByRole('region', { name: '书签检查' });
+  expect(check).toBeVisible();
+  expect(screen.queryByRole('contentinfo')).toBeNull();
+  fireEvent.click(screen.getByRole('tab', { name: /重复收藏/ }));
+  fireEvent.click(nav.getByRole('button', { name: '目录' }));
+  expect(check).not.toBeVisible();
+  expect(screen.getByRole('searchbox')).toHaveValue('draft');
+  fireEvent.click(nav.getByRole('button', { name: '书签检查' }));
+  expect(screen.getByRole('region', { name: '书签检查' })).toBe(check);
+  expect(screen.getByRole('tab', { name: /重复收藏/ })).toHaveAttribute('aria-selected', 'true');
+  expect(create).not.toHaveBeenCalled();
 });
 
 it('options page: one side navigation hosts every workbench and settings page, routed by hash', async () => {

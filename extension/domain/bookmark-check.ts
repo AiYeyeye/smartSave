@@ -9,6 +9,7 @@ export const CHECK_ORIGINS = ['https://*/*', 'http://*/*'];
 export const CHECK_ALARM = 'zhilan.bookmark-check.weekly.v1';
 export const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 export const MAX_CHECK_ITEMS = 50_000;
+export const CHECK_DELETE_LIMIT = 500;
 const id = z.string().min(1).max(256);
 const scope = id.nullable();
 export const siteResultSchema = z.strictObject({
@@ -185,7 +186,8 @@ export function checkedDuplicateDeletions(nodes: TreeSnapshot['nodes'], choices:
 
 /** One explicit deletion batch through the existing preview, coordinator, backup and recovery path. */
 export function compileCheckDeletion(tree: TreeSnapshot, scopeId: string | null, ids: string[]): ConfirmMutation {
-  if (!ids.length || new Set(ids).size !== ids.length || ids.length > 500) throw Error('invalid-selection');
+  if (!ids.length || new Set(ids).size !== ids.length || ids.length > CHECK_DELETE_LIMIT)
+    throw Error('invalid-selection');
   const scoped = new Map(checkScopeNodes(tree, scopeId).map(node => [node.ref.nativeId, node]));
   const byId = new Map(tree.nodes.map(node => [node.ref.nativeId, node]));
   const chains = ids.map(id => {

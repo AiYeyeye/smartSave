@@ -51,8 +51,14 @@ it.each(['panel', 'options'] as const)(
     snapshot.nodes[2]!.dateAdded = now - 86400000;
     const fetcher = vi.spyOn(globalThis, 'fetch');
     render(createElement(App, { page }));
-    const tabs = within(screen.getByRole('group', { name: '搜索范围' }));
-    expect(tabs.getAllByRole('button').map(button => button.textContent)).toEqual(['目录', '最近收藏', '历史']);
+    const tabs = within(
+      page === 'panel'
+        ? screen.getByRole('navigation', { name: '书签导航' })
+        : screen.getByRole('group', { name: '搜索范围' }),
+    );
+    expect(tabs.getAllByRole('button').map(button => button.textContent)).toEqual(
+      page === 'panel' ? ['目录', '最近', '历史', '检查'] : ['目录', '最近收藏', '历史'],
+    );
     expect(tabs.getByRole('button', { name: '目录' })).toHaveAttribute('aria-pressed', 'true');
     fireEvent.click(screen.getByRole('button', { name: '最近收藏' }));
     expect(tabs.getByRole('button', { name: '目录' })).toHaveAttribute('aria-pressed', 'false');

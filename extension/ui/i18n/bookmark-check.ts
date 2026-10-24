@@ -4,6 +4,19 @@ export const bookmarkCheckEnglish = {
   打开: 'Open',
   '打开 {title}': 'Open {title}',
   书签检查: 'Bookmark check',
+  书签导航: 'Bookmark navigation',
+  最近: 'Recent',
+  一键处理: 'Quick cleanup',
+  '可清理 {count} 条重复收藏': '{count} duplicate copies to clean up',
+  '已删除 {count} 条收藏': 'Deleted {count} bookmarks',
+  保留的收藏: 'Bookmarks to keep',
+  将删除的收藏: 'Bookmarks to delete',
+  '相同网址保留一份，优先保留受保护项；不同网址的疑似重复不处理。':
+    'Keep one copy of each exact URL, preferring protected bookmarks. Different URL variants stay untouched.',
+  '仅处理网站无法连接的收藏，可能包含临时网络故障。':
+    'Only bookmarks on unreachable sites. This can include temporary network failures.',
+  '本次处理 {count} 项，剩余 {remaining} 项可继续处理。':
+    'This batch contains {count} items. Clean up the remaining {remaining} afterward.',
   检查: 'Check',
   失效链接: 'Broken links',
   重复收藏: 'Duplicates',

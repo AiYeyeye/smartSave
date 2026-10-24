@@ -30,6 +30,17 @@
 .check-categories button[aria-pressed='true'] { color: var(--accent-text); background: var(--accent-soft); border-color: var(--accent); }
 .check-categories span { margin-left: 6px; font-size: 11px; }
 .check-runbar > button:last-child { margin-left: auto; }
+.check-cleanup { color: var(--accent-text); background: var(--accent-soft); border-color: transparent; gap: 6px; }
+.check-bulk-count { font-size: 12px; color: var(--muted); }
+.check-preview-note { font-size: 12px; color: var(--muted); }
+.check-preview-items { max-height: 40vh; overflow-y: auto; overflow-wrap: anywhere; }
+.check-preview-items h3 { font-size: 12px; color: var(--accent-text); }
+.check-preview-items ul { padding-left: 20px; }
+.check-preview-items li { margin-bottom: 10px; }
+.check-preview-items li strong, .check-preview-items li small { display: block; }
+.check-preview-items li small { font-size: 11px; color: var(--muted); }
+.check-completed { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.check-completed button { font-size: 12px; }
 .check-open-actions { display: grid; gap: 3px; }
 .check-status.is-review { color: var(--accent-text); }
 .check-verdict { display: grid; justify-items: end; gap: 3px; }
@@ -41,7 +52,7 @@
 .check-actions { position: sticky; bottom: 0; padding: 10px 0; background: var(--bg, var(--surface)); }
 .check-date { color: var(--muted); font-size: 11px; }
 .check-error { margin: 0; font-size: 13px; }
-.check-delete-list { max-height: 240px; overflow: auto; overflow-wrap: anywhere; }
+.check-delete-list { overflow-wrap: anywhere; }
 .bookmark-check .duplicate-review article { margin: 0 0 14px; padding: 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
 .bookmark-check .duplicate-review h3 { margin: 0 0 10px; font-size: 13px; }
 .bookmark-check .duplicate-review .field { display: grid; grid-template-columns: minmax(0, 1fr) 130px; gap: 3px 12px; padding: 10px 0; border-top: 1px solid var(--border); margin: 0; }
