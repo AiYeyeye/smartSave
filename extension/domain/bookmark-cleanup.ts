@@ -1,7 +1,20 @@
 import type { TreeSnapshot } from './node-reference';
 import { CHECK_DELETE_LIMIT, linkCategory, type LinkResult } from './bookmark-check';
+import type { DuplicateGroup } from './suspected-duplicates';
 
 export type CleanupPlan = { deleteIds: string[]; keepIds: string[]; total: number };
+
+/** A user-chosen keeper in one reviewed group; protection always overrides removal. */
+export function reviewedDuplicateCleanup(group: DuplicateGroup, keeperId: string): CleanupPlan {
+  if (!group.items.some(node => node.ref.nativeId === keeperId)) throw Error('keep-required');
+  const keep = group.items.filter(node => node.ref.nativeId === keeperId || node.readOnly);
+  const remove = group.items.filter(node => node.ref.nativeId !== keeperId && !node.readOnly);
+  return {
+    keepIds: keep.map(node => node.ref.nativeId),
+    deleteIds: remove.slice(0, CHECK_DELETE_LIMIT).map(node => node.ref.nativeId),
+    total: remove.length,
+  };
+}
 
 /** A reviewable default, never mutation authority. Raw URLs remain byte-for-byte identical. */
 export function exactDuplicateCleanup(nodes: TreeSnapshot['nodes']): CleanupPlan {

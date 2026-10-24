@@ -20,8 +20,13 @@ import {
   type BookmarkCheckMessage,
   type LinkResult,
 } from '../domain/bookmark-check';
-import { groupDuplicateNodes } from '../domain/suspected-duplicates';
-import { exactDuplicateCleanup, unreachableSiteCleanup, type CleanupPlan } from '../domain/bookmark-cleanup';
+import { groupDuplicateNodes, type DuplicateGroup } from '../domain/suspected-duplicates';
+import {
+  exactDuplicateCleanup,
+  reviewedDuplicateCleanup,
+  unreachableSiteCleanup,
+  type CleanupPlan,
+} from '../domain/bookmark-cleanup';
 import type { DuplicateChoice } from '../domain/exact-duplicates';
 import type { TreeSnapshot } from '../domain/node-reference';
 import { organizePaths } from '../domain/organize-review';
@@ -87,6 +92,8 @@ export function BookmarkCheck({
   const { t, language } = useI18n();
   const [tree, setTree] = useState<TreeSnapshot>();
   const [connected, setConnected] = useState(false);
+  const [connectionError, setConnectionError] = useState(false);
+  const [connectionAttempt, setConnectionAttempt] = useState(0);
   const [state, setState] = useState<BookmarkCheckState>();
   const [tab, setTab] = useState<'links' | 'duplicates'>('links');
   const [group, setGroup] = useState<'site' | 'pages' | 'all'>('site');
@@ -99,7 +106,7 @@ export function BookmarkCheck({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const baselines = useRef(new Map<string, TreeSnapshot['nodes'][number]>());
   const [preview, setPreview] = useState<ConfirmMutation>();
-  const [bulkPreview, setBulkPreview] = useState<CleanupPlan & { kind: 'links' | 'duplicates' }>();
+  const [bulkPreview, setBulkPreview] = useState<CleanupPlan & { kind: 'links' | 'duplicates'; suspected?: boolean }>();
   const [removedCount, setRemovedCount] = useState(0);
   const [result, setResult] = useState<MutationResult>();
   const [deleting, setDeleting] = useState(false);
@@ -119,9 +126,10 @@ export function BookmarkCheck({
     () =>
       connectTree(chrome.runtime, next => {
         setConnected(next.status === 'ready');
+        setConnectionError(next.status === 'error');
         if (next.status === 'ready') setTree(next.snapshot);
       }),
-    [],
+    [connectionAttempt],
   );
   useEffect(() => {
     if (!visible) return;
@@ -204,6 +212,7 @@ export function BookmarkCheck({
   }
   const running = state?.job?.status === 'running';
   const duplicatePlan = useMemo(() => exactDuplicateCleanup(nodes), [nodes]);
+  const suspectedCount = groups.filter(group => group.suspected).length;
   const sitePlan = useMemo(() => unreachableSiteCleanup(nodes, checked), [nodes, checked]);
   const bulkPlan = tab === 'duplicates' ? duplicatePlan : sitePlan;
   const uncertain =
@@ -286,6 +295,18 @@ export function BookmarkCheck({
     try {
       setPreview(compileCheckDeletion(tree, scopeId, bulkPlan.deleteIds));
       setBulkPreview({ ...bulkPlan, kind: tab });
+    } catch {
+      setError('书签有变化，请清除选择后重新核对。');
+    }
+  }
+  function prepareGroup(group: DuplicateGroup, keeperId: string) {
+    if (!tree || disabled || lock.current) return;
+    setError(undefined);
+    setResult(undefined);
+    try {
+      const plan = reviewedDuplicateCleanup(group, keeperId);
+      setPreview(compileCheckDeletion(tree, scopeId, plan.deleteIds));
+      setBulkPreview({ ...plan, kind: 'duplicates', suspected: !!group.suspected });
     } catch {
       setError('书签有变化，请清除选择后重新核对。');
     }
@@ -424,6 +445,12 @@ export function BookmarkCheck({
           {t(notice)}
         </p>
       )}
+      {connectionError && (
+        <div className="check-error" role="alert">
+          <p>{t('书签连接已断开，请重新连接。')}</p>
+          <button onClick={() => setConnectionAttempt(value => value + 1)}>{t('重新连接')}</button>
+        </div>
+      )}
       <div role="tabpanel" aria-label={t(tab === 'links' ? '失效链接' : '重复收藏')}>
         {tab === 'links' && (
           <>
@@ -433,14 +460,16 @@ export function BookmarkCheck({
                   key={key}
                   type="button"
                   aria-pressed={group === key}
+                  aria-label={`${t(key === 'site' ? '网站无法连接' : key === 'pages' ? '收藏页异常' : '全部结果')} ${counts[key]}`}
+                  title={t(key === 'site' ? '网站无法连接' : key === 'pages' ? '收藏页异常' : '全部结果')}
                   onClick={() => {
                     setGroup(key);
                     setFilter('all');
                     setLimit(50);
                   }}
                 >
-                  {t(key === 'site' ? '网站无法连接' : key === 'pages' ? '收藏页异常' : '全部结果')}
-                  <span>{counts[key]}</span>
+                  {t(key === 'site' ? '无法连接' : key === 'pages' ? '页面异常' : '全部')}
+                  <span title={String(counts[key])}>{counts[key]}</span>
                 </button>
               ))}
             </div>
@@ -615,18 +644,32 @@ export function BookmarkCheck({
         )}
         {tab === 'duplicates' && (
           <>
-            <div className="check-runbar check-bulkbar">
-              <span className="check-bulk-count">{t('可清理 {count} 条重复收藏', { count: duplicatePlan.total })}</span>
-              <button className="check-cleanup" disabled={disabled || !duplicatePlan.total} onClick={prepareBulk}>
-                {t('一键处理')}
-              </button>
-            </div>
+            {!!groups.length && (
+              <div className="check-runbar check-bulkbar">
+                <span className="check-bulk-count">
+                  {t(
+                    duplicatePlan.total
+                      ? '可清理 {count} 条重复收藏'
+                      : suspectedCount
+                        ? '待核对 {count} 组疑似重复'
+                        : '没有可删除的重复副本',
+                    { count: duplicatePlan.total || suspectedCount },
+                  )}
+                </span>
+                {duplicatePlan.total > 0 && (
+                  <button className="check-cleanup" disabled={disabled || !duplicatePlan.total} onClick={prepareBulk}>
+                    {t('一键处理')}
+                  </button>
+                )}
+              </div>
+            )}
             <DuplicateReview
               compact
               groups={groups.slice(0, limit)}
               choices={choices}
               paths={paths}
               disabled={disabled}
+              onKeepOnly={prepareGroup}
               onChoice={(id, choice) => {
                 remember(id);
                 setChoices(old => ({ ...old, [id]: choice }));
@@ -705,7 +748,9 @@ export function BookmarkCheck({
             <p className="check-preview-note">
               {t(
                 bulkPreview.kind === 'duplicates'
-                  ? '相同网址保留一份，优先保留受保护项；不同网址的疑似重复不处理。'
+                  ? bulkPreview.suspected
+                    ? '网址不同，请核对保留和删除的项目。'
+                    : '相同网址保留一份，优先保留受保护项；不同网址的疑似重复不处理。'
                   : '仅处理网站无法连接的收藏，可能包含临时网络故障。',
               )}
             </p>

@@ -1,8 +1,25 @@
 import { expect, it } from 'vitest';
-import { exactDuplicateCleanup, unreachableSiteCleanup } from '../domain/bookmark-cleanup';
+import { exactDuplicateCleanup, reviewedDuplicateCleanup, unreachableSiteCleanup } from '../domain/bookmark-cleanup';
+import { groupDuplicateNodes } from '../domain/suspected-duplicates';
 import { checkScopeNodes, compileCheckDeletion, type LinkResult } from '../domain/bookmark-check';
 import { preflight } from '../domain/preflight';
 import { organizerTree } from './fixtures/organizer-tree';
+
+it('only removes a suspected group after choosing its keeper, preserving protected items and original URLs', () => {
+  const tree = organizerTree();
+  tree.nodes.find(n => n.ref.nativeId === 'c')!.url = 'http://www.x.test/?a#b';
+  tree.nodes.find(n => n.ref.nativeId === 'b')!.readOnly = true;
+  const group = groupDuplicateNodes(checkScopeNodes(tree, null))[0]!;
+  const before = structuredClone(group);
+  expect(() => reviewedDuplicateCleanup(group, 'foreign')).toThrow('keep-required');
+  const plan = reviewedDuplicateCleanup(group, 'c');
+  expect(plan).toEqual({ keepIds: ['b', 'c'], deleteIds: ['a'], total: 1 });
+  expect(group).toEqual(before);
+  const request = compileCheckDeletion(tree, null, plan.deleteIds);
+  expect(preflight(request, tree).steps).toEqual([{ type: 'remove', id: 'a' }]);
+  tree.nodes.find(n => n.ref.nativeId === 'c')!.url += '#changed';
+  expect(() => preflight(request, tree)).toThrow();
+});
 
 it('keeps original URLs distinct, including exact copies inside a suspected group', () => {
   const tree = organizerTree();

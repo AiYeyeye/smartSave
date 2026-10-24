@@ -236,6 +236,17 @@ with sync_playwright() as playwright:
         sidebar.goto(f'chrome-extension://{extension_id}/panel/index.html')
         sidebar.set_viewport_size({'width':320,'height':700})
         extra=page.evaluate("async item=>chrome.bookmarks.create({parentId:item.parentId,title:'快捷重复',url:item.url})",fixture['items'][0])
+        variants=page.evaluate('''async folder => {
+          const pairs=[];
+          for(const [title,urls] of [
+            ['待核对 A',['https://www.pair-a.check.test/topic/','https://pair-a.check.test/topic/']],
+            ['待核对 B',['https://pair-b.check.test/docs/','https://pair-b.check.test/docs']],
+            ['待核对 C',['https://pair-c.check.test/','http://pair-c.check.test/']]]) {
+            const nodes=[]; for(const url of urls) nodes.push(await chrome.bookmarks.create({parentId:folder,title,url}));
+            pairs.push(nodes);
+          }
+          return pairs;
+        }''',fixture['folder'])
         page.wait_for_timeout(1500)
         entry=sidebar.get_by_role('button',name='书签检查',exact=True)
         expect(entry).to_be_visible()
@@ -257,6 +268,13 @@ with sync_playwright() as playwright:
                 sidebar.set_viewport_size({'width':width,'height':700})
                 sidebar.evaluate('()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))')
                 assert sidebar.evaluate('document.documentElement.scrollWidth')<=width+1
+                for selector,count in [('.check-tabs button',2),('.check-categories button',3)]:
+                    buttons=sidebar.locator(selector)
+                    boxes=[button.bounding_box() for button in buttons.all()]
+                    assert len(boxes)==count
+                    assert max(b['y'] for b in boxes)-min(b['y'] for b in boxes)<1, boxes
+                    assert max(b['width'] for b in boxes)-min(b['width'] for b in boxes)<1, boxes
+                    assert buttons.evaluate_all('(buttons)=>buttons.every(button=>button.scrollWidth<=button.clientWidth+1)')
                 sidebar.screenshot(path=str(root/f'sidebar-check-{language}-{width}.png'),full_page=True)
         page.get_by_label('Language',exact=True).select_option('zh-CN')
         sidebar.set_viewport_size({'width':320,'height':700})
@@ -269,10 +287,30 @@ with sync_playwright() as playwright:
         sidebar.screenshot(path=str(root/'sidebar-bulk-preview.png'),full_page=True)
         assert page.evaluate('async id=>(await chrome.bookmarks.get(id))[0].title',extra['id'])=='快捷重复'
         sidebar.get_by_role('button',name='确认删除',exact=True).click()
-        expect(sidebar.get_by_text('未发现重复收藏',exact=True)).to_be_visible()
+        expect(sidebar.get_by_text('待核对 3 组疑似重复',exact=True)).to_be_visible()
+        expect(sidebar.get_by_role('button',name='一键处理',exact=True)).to_have_count(0)
         expect(sidebar.get_by_text('已删除 1 条收藏',exact=True)).to_be_visible()
         assert page.evaluate('async id=>{try{await chrome.bookmarks.get(id);return true}catch{return false}}',extra['id']) is False
         assert page.evaluate('async id=>(await chrome.bookmarks.get(id))[0].url',fixture['items'][0]['id'])==fixture['items'][0]['url']
+        sidebar.screenshot(path=str(root/'sidebar-suspected-remaining.png'),full_page=True)
+        first=sidebar.locator('.duplicate-review article').filter(has=sidebar.get_by_text('待核对 A',exact=True))
+        first.get_by_role('button',name='自定义选择',exact=True).click()
+        choice=first.get_by_label('待核对 A 保留或删除',exact=True).first
+        choice.click()
+        sidebar.get_by_role('listbox').get_by_role('option',name='明确保留',exact=True).click()
+        expect(choice).to_have_value('keep')
+        first.get_by_role('button',name='收起自选',exact=True).click()
+        for pair in variants:
+            keep=sidebar.get_by_role('button',name='保留这条：'+pair[0]['title'],exact=True).first
+            expect(keep).to_be_enabled()
+            keep.click()
+            expect(dialog.get_by_role('region',name='保留的收藏')).to_contain_text(pair[0]['url'])
+            expect(dialog.get_by_role('list',name='将删除的收藏')).to_contain_text(pair[1]['url'])
+            sidebar.get_by_role('button',name='确认删除',exact=True).click()
+            expect(sidebar.get_by_role('button',name='保留这条：'+pair[0]['title'],exact=True)).to_have_count(0)
+            assert page.evaluate('async id=>(await chrome.bookmarks.get(id))[0].url',pair[0]['id'])==pair[0]['url']
+            assert page.evaluate('async id=>{try{await chrome.bookmarks.get(id);return true}catch{return false}}',pair[1]['id']) is False
+        expect(sidebar.get_by_text('未发现重复收藏',exact=True)).to_be_visible()
         nav.get_by_role('button',name='目录',exact=True).click()
         entry.click()
         expect(sidebar.get_by_role('tab',name='重复收藏',exact=False)).to_have_attribute('aria-selected','true')
@@ -304,7 +342,7 @@ with sync_playwright() as playwright:
         expect(sidebar.get_by_role('button',name='待确认 1 项',exact=True)).to_have_count(0)
         result={'status':'PASS','evidence':str(root),'browser':context.browser.version,'geometry':geometry,
                 'manualCheck':True,'weeklyAlarm':True,'pauseReloadResume':True,'viewClosure':True,'workerRestart':True,'crossRootDuplicates':True,
-                'explicitDeletionAndUndo':True,'sidebarEntry':True,'inlineBulkCleanup':True,'equalWidthNavigation':True,'manualAvailability':True,'siteAndPageSeparation':True,'pageIssueCategories':True,'durableReminderDismissal':True,'requests':requests,
+                'explicitDeletionAndUndo':True,'sidebarEntry':True,'inlineBulkCleanup':True,'equalWidthNavigation':True,'singleRowCheckTabs':True,'continuedSuspectedCleanup':True,'realCustomSelectClick':True,'manualAvailability':True,'siteAndPageSeparation':True,'pageIssueCategories':True,'durableReminderDismissal':True,'requests':requests,
                 'workerSHA256':hashlib.sha256((production/'service-worker.js').read_bytes()).hexdigest(),
                 'limit':'Production JS/CSS, disposable manifest pregrants optional website access; browser permission prompt and branded-browser release matrix not verified.'}
         (root/'results.json').write_text(json.dumps(result,indent=2,ensure_ascii=False),encoding='utf-8')

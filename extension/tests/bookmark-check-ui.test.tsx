@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { BookmarkCheck } from '../panel/BookmarkCheck';
 import { PanelNavigation } from '../ui/PanelChrome';
@@ -228,4 +228,56 @@ it('submits one bulk batch and locks cleanup after an uncertain result', async (
     ],
   });
   expect(screen.getByRole('button', { name: '一键处理' })).toBeDisabled();
+});
+
+it('continues with explicit suspected-group review after bulk cleanup instead of a disabled dead end', async () => {
+  const f = fixture();
+  await waitFor(() => expect(screen.getByRole('button', { name: '立即检查' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('tab', { name: /重复收藏/ }));
+  const mixed = organizerTree();
+  mixed.nodes.find(node => node.ref.nativeId === 'c')!.url = 'http://www.x.test/?a#b';
+  act(() => publish({ status: 'ready', snapshot: mixed }));
+  fireEvent.click(screen.getByRole('button', { name: '一键处理' }));
+  fireEvent.click(screen.getByRole('button', { name: '确认删除' }));
+  await screen.findByText('已删除 1 条收藏');
+  mixed.nodes = mixed.nodes.filter(node => node.ref.nativeId !== 'b');
+  mixed.nodes.find(node => node.ref.nativeId === 'left')!.childrenIds = ['a'];
+  mixed.observedRevision++;
+  act(() => publish({ status: 'ready', snapshot: structuredClone(mixed) }));
+  expect(screen.queryByRole('button', { name: '一键处理' })).toBeNull();
+  expect(screen.getByText('待核对 1 组疑似重复')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: '自定义选择' }));
+  fireEvent.mouseDown(screen.getByLabelText('c 保留或删除'));
+  fireEvent.click(within(screen.getByRole('listbox')).getByRole('option', { name: '明确保留' }));
+  expect(screen.getByLabelText('c 保留或删除')).toHaveValue('keep');
+  fireEvent.click(screen.getByRole('button', { name: '收起自选' }));
+  fireEvent.click(screen.getByRole('button', { name: '保留这条：a' }));
+  expect(f.send).toHaveBeenCalledTimes(1);
+  expect(screen.getByRole('region', { name: '保留的收藏' })).toHaveTextContent('https://x.test/?a#b');
+  expect(screen.getByRole('list', { name: '将删除的收藏' })).toHaveTextContent('http://www.x.test/?a#b');
+  fireEvent.click(screen.getByRole('button', { name: '取消' }));
+  fireEvent.click(screen.getByRole('button', { name: '自定义选择' }));
+  expect(screen.getByLabelText('c 保留或删除')).toHaveValue('keep');
+  fireEvent.click(screen.getByRole('button', { name: '收起自选' }));
+  fireEvent.click(screen.getByRole('button', { name: '保留这条：a' }));
+  fireEvent.click(screen.getByRole('button', { name: '确认删除' }));
+  await waitFor(() => expect(f.send).toHaveBeenCalledTimes(2));
+  expect(f.send.mock.calls[1]![0].command).toMatchObject({
+    type: 'batch',
+    operations: [{ command: { type: 'remove', target: { nativeId: 'c' } } }],
+  });
+});
+
+it('exposes reconnect when the native subscription fails, without replaying writes', async () => {
+  const f = fixture();
+  await waitFor(() => expect(screen.getByRole('button', { name: '立即检查' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('tab', { name: /重复收藏/ }));
+  fireEvent.change(screen.getByLabelText('a 保留或删除'), { target: { value: 'keep' } });
+  act(() => publish({ status: 'error', message: 'connection lost' }));
+  expect(screen.getByRole('alert')).toHaveTextContent('书签连接已断开');
+  expect(screen.getByLabelText('a 保留或删除')).toBeDisabled();
+  fireEvent.click(screen.getByRole('button', { name: '重新连接' }));
+  expect(screen.getByLabelText('a 保留或删除')).toBeEnabled();
+  expect(screen.getByLabelText('a 保留或删除')).toHaveValue('keep');
+  expect(f.send).not.toHaveBeenCalled();
 });

@@ -10,8 +10,8 @@
 .check-help > div { position: absolute; right: 0; z-index: 10; width: min(300px, 70vw); padding: 12px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 24px #0002; }
 .check-help p { margin: 4px 0 12px; font-size: 12px; line-height: 1.65; }
 .check-help p:last-child { margin-bottom: 4px; }
-.check-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); }
-.check-tabs button { border: 0; border-radius: 6px 6px 0 0; background: transparent; color: var(--muted); padding: 10px 14px; }
+.check-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; border-bottom: 1px solid var(--border); }
+.check-tabs button { justify-content: center; min-width: 0; border: 0; border-radius: 6px 6px 0 0; background: transparent; color: var(--muted); padding: 10px 6px; }
 .check-tabs button[aria-selected='true'] { color: var(--accent-text); background: var(--accent-soft); box-shadow: inset 0 -2px var(--accent); }
 .check-tabs span { margin-left: 8px; font-size: 11px; }
 .check-runbar { justify-content: space-between; margin-bottom: 14px; }
@@ -25,10 +25,10 @@
 .check-link small { color: var(--muted); font-size: 11px; }
 .check-status { font-size: 11px; white-space: nowrap; border-radius: 5px; padding: 3px 6px; background: var(--surface-2); color: var(--muted); }
 .check-status.is-site, .check-error { color: var(--danger, #b42318); }
-.check-categories { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
-.check-categories button { padding: 6px 9px; font-size: 12px; background: var(--surface); color: var(--muted); }
+.check-categories { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; margin-bottom: 12px; }
+.check-categories button { justify-content: center; min-width: 0; gap: 4px; padding: 7px 3px; font-size: 12px; white-space: nowrap; background: var(--surface); color: var(--muted); }
 .check-categories button[aria-pressed='true'] { color: var(--accent-text); background: var(--accent-soft); border-color: var(--accent); }
-.check-categories span { margin-left: 6px; font-size: 11px; }
+.check-categories span { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 11px; }
 .check-runbar > button:last-child { margin-left: auto; }
 .check-cleanup { color: var(--accent-text); background: var(--accent-soft); border-color: transparent; gap: 6px; }
 .check-bulk-count { font-size: 12px; color: var(--muted); }
@@ -55,6 +55,10 @@
 .check-delete-list { overflow-wrap: anywhere; }
 .bookmark-check .duplicate-review article { margin: 0 0 14px; padding: 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
 .bookmark-check .duplicate-review h3 { margin: 0 0 10px; font-size: 13px; }
+.duplicate-review .duplicate-group-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.bookmark-check .duplicate-review .duplicate-group-heading h3 { margin-bottom: 0; }
+.duplicate-review .duplicate-custom { padding: 3px 5px; border: 0; background: transparent; color: var(--muted); box-shadow: none; font-size: 11px; }
+.bookmark-check .duplicate-review .duplicate-keep { grid-column: 2; grid-row: 1 / 4; align-self: center; justify-content: center; color: var(--accent-text); background: var(--accent-soft); border-color: transparent; }
 .bookmark-check .duplicate-review .field { display: grid; grid-template-columns: minmax(0, 1fr) 130px; gap: 3px 12px; padding: 10px 0; border-top: 1px solid var(--border); margin: 0; }
 .bookmark-check .duplicate-review .field > strong { font-size: 13px; }
 .bookmark-check .duplicate-review .field > span { font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
@@ -65,4 +69,5 @@
   .check-status { padding: 2px; }
   .bookmark-check .duplicate-review .field { grid-template-columns: minmax(0, 1fr); }
   .bookmark-check .duplicate-review .field > .in-panel-select { grid-column: 1; grid-row: auto; margin-top: 5px; }
+  .bookmark-check .duplicate-review .duplicate-keep { grid-column: 1; grid-row: auto; justify-self: end; margin-top: 5px; padding: 6px 12px; }
 }
