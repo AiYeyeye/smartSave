@@ -38,6 +38,9 @@ class Handler(BaseHTTPRequestHandler):
         self.respond()
     def respond(self):
         requests.append((self.command, self.path))
+        if self.headers.get('Host','').startswith('dead.check.test:'):
+            self.close_connection = True
+            return
         if self.path.startswith('/slow'):
             slow.wait(10)
         code = 404 if self.path.startswith('/missing') else 403 if self.path == '/restricted' else 302 if self.path == '/redirect' else 200
@@ -63,6 +66,7 @@ with sync_playwright() as playwright:
           const folder=await chrome.bookmarks.create({parentId:roots[0].id,title:'检查演示'});
           const urls=[['正常网页','/ok'],['失效网页','/missing'],['需要登录','/restricted'],['网页跳转','/redirect']];
           const items=[];for(const [title,path] of urls) items.push(await chrome.bookmarks.create({parentId:folder.id,title,url:`http://web.check.test:${port}${path}`}));
+          items.push(await chrome.bookmarks.create({parentId:folder.id,title:'整站无法连接演示',url:`http://dead.check.test:${port}/gone`}));
           const duplicate=await chrome.bookmarks.create({parentId:roots[1].id,title:'重复网页',url:items[0].url});
           const local=await chrome.bookmarks.create({parentId:folder.id,title:'本机地址',url:'http://127.0.0.1/private'});
           return {folder:folder.id,items,duplicate,local};
@@ -88,7 +92,7 @@ with sync_playwright() as playwright:
         checked=wait_state(lambda s:s.get('job',{}).get('status')=='completed')
         expect(page.get_by_role('button',name='重新检查',exact=True)).to_be_visible()
         verdicts={item['nativeId']:item['result']['status'] for item in checked['job']['items']}
-        assert [verdicts[item['id']] for item in fixture['items']]==['ok','broken','review','review'], verdicts
+        assert [verdicts[item['id']] for item in fixture['items']]==['ok','broken','review','review','review'], verdicts
         assert verdicts[fixture['local']['id']]=='skipped'
         assert requests.count(('HEAD','/ok'))==1 and not any(path=='/must-not-follow' for _,path in requests)
         after=page.evaluate('()=>chrome.bookmarks.getTree()')
@@ -97,6 +101,9 @@ with sync_playwright() as playwright:
         assert after==before
         expect(page.get_by_role('checkbox',name='选择收藏：需要登录',exact=True)).to_have_count(0)
         assert requests.count(('GET','/missing'))==2
+        assert next(item for item in checked['job']['items'] if item['nativeId']==fixture['items'][4]['id'])['result']['site']['status']=='unreachable'
+        expect(page.get_by_role('checkbox',name='选择收藏：失效网页',exact=True)).to_have_count(0)
+        expect(page.get_by_role('checkbox',name='选择收藏：整站无法连接演示',exact=True)).to_be_visible()
         geometry=[]
         for language in ['zh-CN','en']:
             if language=='en': page.get_by_label('语言',exact=True).select_option('en')
@@ -119,13 +126,24 @@ with sync_playwright() as playwright:
         page.screenshot(path=str(root/'links-dark.png'),full_page=True)
         page.get_by_role('radio',name='快速切换为浅色',exact=True).check()
         expect(page.locator('.theme-root')).to_have_attribute('data-mode','light')
+        page.get_by_role('group',name='结果分类',exact=True).get_by_role('button',name='收藏页异常',exact=False).click()
+        expect(page.get_by_role('checkbox',name='选择收藏：整站无法连接演示',exact=True)).to_have_count(0)
+        for kind,title in [('missing','失效网页'),('restricted','需要登录'),('redirect','网页跳转')]:
+            page.get_by_label('检查结果',exact=True).select_option(kind)
+            expect(page.locator('.check-row')).to_have_count(1)
+            expect(page.locator('.check-row').get_by_text(title,exact=True)).to_be_visible()
         page.get_by_label('检查结果',exact=True).select_option('all')
+        for width in [320,1024]:
+            page.set_viewport_size({'width':width,'height':900})
+            assert page.evaluate('document.documentElement.scrollWidth')<=width+1
+            page.screenshot(path=str(root/f'page-issues-{width}.png'),full_page=True)
+        page.get_by_role('group',name='结果分类',exact=True).get_by_role('button',name='全部结果',exact=False).click()
         restricted=page.locator('.check-row').filter(has=page.get_by_text('需要登录',exact=True))
         expect(restricted.get_by_text('拒绝检测',exact=True)).to_be_visible()
         restricted.get_by_role('button',name='我能打开',exact=True).click()
         wait_state(lambda s:any(item['nativeId']==fixture['items'][2]['id'] for item in s.get('verified',[])))
         expect(restricted.get_by_text('已手动确认',exact=True)).to_be_visible()
-        page.get_by_label('检查结果',exact=True).select_option('issues')
+        page.get_by_role('group',name='结果分类',exact=True).get_by_role('button',name='收藏页异常',exact=False).click()
         page.get_by_role('tab',name='重复收藏',exact=False).click()
         expect(page.get_by_role('heading',name='精确重复 · 2 条',exact=True)).to_be_visible()
         page.get_by_label('检查范围',exact=True).select_option(fixture['folder'])
@@ -243,7 +261,7 @@ with sync_playwright() as playwright:
         expect(sidebar.get_by_role('button',name='待确认 1 项',exact=True)).to_have_count(0)
         result={'status':'PASS','evidence':str(root),'browser':context.browser.version,'geometry':geometry,
                 'manualCheck':True,'weeklyAlarm':True,'pauseReloadResume':True,'viewClosure':True,'workerRestart':True,'crossRootDuplicates':True,
-                'explicitDeletionAndUndo':True,'sidebarEntry':True,'manualAvailability':True,'durableReminderDismissal':True,'requests':requests,
+                'explicitDeletionAndUndo':True,'sidebarEntry':True,'manualAvailability':True,'siteAndPageSeparation':True,'pageIssueCategories':True,'durableReminderDismissal':True,'requests':requests,
                 'workerSHA256':hashlib.sha256((production/'service-worker.js').read_bytes()).hexdigest(),
                 'limit':'Production JS/CSS, disposable manifest pregrants optional website access; browser permission prompt and branded-browser release matrix not verified.'}
         (root/'results.json').write_text(json.dumps(result,indent=2,ensure_ascii=False),encoding='utf-8')

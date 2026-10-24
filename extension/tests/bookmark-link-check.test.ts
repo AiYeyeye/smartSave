@@ -1,5 +1,7 @@
-import { expect, it, vi } from 'vitest';
-import { checkableLink, probeBookmarkLink } from '../adapters/bookmark-link-check';
+import { afterEach, expect, it, vi } from 'vitest';
+import { checkableLink, createBookmarkLinkProbe, probeBookmarkLink } from '../adapters/bookmark-link-check';
+import { linkCategory } from '../domain/bookmark-check';
+afterEach(() => vi.unstubAllGlobals());
 
 it.each(['file:///a', 'javascript:alert(1)', 'not a url', 'https://a.test/ bad'])('skips unsupported URL %s', url => {
   expect(checkableLink(url)).toEqual({ reason: 'unsupported' });
@@ -40,14 +42,15 @@ it.each([
     .fn<typeof fetch>()
     .mockResolvedValueOnce(responses[0]!)
     .mockResolvedValueOnce(responses[1]!)
-    .mockResolvedValueOnce(responses[2]!);
+    .mockResolvedValueOnce(responses[2]!)
+    .mockImplementation(async () => new Response(null, { status: 200 }));
   expect(
     await probeBookmarkLink('https://example.test/a?token=1#frag', new AbortController().signal, {
       fetch: fetcher,
       now: () => 7,
     }),
   ).toMatchObject({ status, at: 7 });
-  expect(fetcher).toHaveBeenCalledTimes(calls as number);
+  expect(fetcher).toHaveBeenCalledTimes((calls as number) + (status === 'ok' ? 0 : 1));
   expect(fetcher).toHaveBeenNthCalledWith(
     1,
     'https://example.test/a?token=1',
@@ -57,6 +60,87 @@ it.each([
     expect(fetcher).toHaveBeenNthCalledWith(2, expect.any(String), expect.objectContaining({ method: 'GET' }));
   expect(cancels[0]).toHaveBeenCalled();
   for (const text of texts) expect(text).not.toHaveBeenCalled();
+});
+it.each([401, 403, 404, 410, 429, 503, 302])(
+  'keeps responding sites out of the unreachable category for page HTTP %s',
+  async code => {
+    const fetcher = vi.fn<typeof fetch>(
+      async input => new Response(null, { status: String(input).endsWith('/') ? 200 : code }),
+    );
+    const result = await probeBookmarkLink(
+      'https://example.test/article?q=private#fragment',
+      new AbortController().signal,
+      { fetch: fetcher },
+    );
+    expect(result.site).toMatchObject({ status: 'responding', code: 200 });
+    expect(linkCategory(result)).not.toBe('site');
+    expect(fetcher).toHaveBeenCalledWith(
+      'https://example.test/',
+      expect.objectContaining({ method: 'GET', credentials: 'omit', redirect: 'manual' }),
+    );
+  },
+);
+
+it('checks both protocols twice before marking a site unreachable, without guessing other hosts', async () => {
+  const fetcher = vi.fn<typeof fetch>().mockRejectedValue(Error('connection failed'));
+  const result = await probeBookmarkLink('https://gone.test:8443/private?q=secret', new AbortController().signal, {
+    fetch: fetcher,
+  });
+  expect(result.site).toMatchObject({ status: 'unreachable', reason: 'network' });
+  expect(linkCategory(result)).toBe('site');
+  expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
+    'https://gone.test:8443/private?q=secret',
+    'https://gone.test:8443/',
+    'http://gone.test:8443/',
+    'https://gone.test:8443/',
+    'http://gone.test:8443/',
+  ]);
+});
+
+it('an alternate protocol response or a root redirect means the site still responds', async () => {
+  const fetcher = vi.fn<typeof fetch>(async input => {
+    if (String(input) === 'http://moved.test/')
+      return new Response(null, { status: 302, headers: { Location: 'http://127.0.0.1/private' } });
+    throw Error('failed');
+  });
+  const result = await probeBookmarkLink('https://moved.test/article', new AbortController().signal, {
+    fetch: fetcher,
+  });
+  expect(result.site).toMatchObject({ status: 'responding', reason: 'redirect' });
+  expect(linkCategory(result)).toBe('temporary');
+  expect(fetcher.mock.calls.every(([url]) => String(url).includes('moved.test'))).toBe(true);
+});
+
+it('does not lose an earlier HTTP response when a later page retry and homepage fail', async () => {
+  const fetcher = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(new Response(null, { status: 404 }))
+    .mockRejectedValue(Error('network'));
+  const result = await probeBookmarkLink('https://example.test/page', new AbortController().signal, { fetch: fetcher });
+  expect(result).toMatchObject({ reason: 'network', site: { status: 'responding', code: 404 } });
+  expect(linkCategory(result)).toBe('temporary');
+  expect(fetcher).toHaveBeenCalledTimes(3);
+});
+
+it('reuses website entry checks per scan, but does not treat manual confirmation as network evidence', async () => {
+  const fetcher = vi.fn<typeof fetch>(
+    async input => new Response(null, { status: String(input).endsWith('/') ? 200 : 404 }),
+  );
+  vi.stubGlobal('fetch', fetcher);
+  const probe = createBookmarkLinkProbe([
+    { url: 'https://example.test/manual', result: { status: 'ok', reason: 'manual', at: 1 } },
+  ]);
+  for (const path of ['a', 'b'])
+    expect((await probe(`https://example.test/${path}`, new AbortController().signal)).site?.status).toBe('responding');
+  expect(fetcher.mock.calls.filter(([url]) => url === 'https://example.test/')).toHaveLength(1);
+});
+
+it('never reports a permanently gone site when the browser itself is offline', async () => {
+  vi.stubGlobal('navigator', { onLine: false });
+  const fetcher = vi.fn<typeof fetch>().mockRejectedValue(Error('offline'));
+  const result = await probeBookmarkLink('https://example.test/', new AbortController().signal, { fetch: fetcher });
+  expect(linkCategory(result)).toBe('unknown');
+  expect(fetcher).not.toHaveBeenCalled();
 });
 it('does not keep a transient GET 404 verdict when the repeat request succeeds', async () => {
   const fetcher = vi

@@ -47,8 +47,9 @@ function fixture() {
   return { client, permission, send, recovery, events };
 }
 
-it('keeps login restrictions out of the default list, shows concise reasons, and records manual availability', async () => {
+it('prioritizes unreachable sites, separates page issue categories, and records manual availability', async () => {
   const tree = organizerTree();
+  tree.nodes.find(node => node.ref.nativeId === 'c')!.url = 'https://gone.test/page';
   let state: BookmarkCheckState = {
     ...emptyBookmarkCheck(),
     installationId: tree.installationId,
@@ -63,6 +64,16 @@ it('keeps login restrictions out of the default list, shows concise reasons, and
       items: [
         { nativeId: 'a', url: 'https://x.test/?a#b', result: { status: 'broken', reason: 'http', code: 404, at: 2 } },
         { nativeId: 'b', url: 'https://x.test/?a#b', result: { status: 'review', reason: 'http', code: 403, at: 2 } },
+        {
+          nativeId: 'c',
+          url: 'https://gone.test/page',
+          result: {
+            status: 'review',
+            reason: 'network',
+            at: 2,
+            site: { status: 'unreachable', reason: 'network', at: 2 },
+          },
+        },
       ],
     },
   };
@@ -80,12 +91,21 @@ it('keeps login restrictions out of the default list, shows concise reasons, and
       <BookmarkCheck client={client} onRecovery={() => {}} />
     </LocaleProvider>,
   );
-  const mark = await screen.findByRole('button', { name: '我能打开' });
+  act(() => publish({ status: 'ready', snapshot: tree }));
+  await screen.findByLabelText('选择收藏：c');
+  expect(screen.queryByLabelText('选择收藏：a')).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('选择收藏：b')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: /收藏页异常/ }));
+  fireEvent.change(screen.getByLabelText('检查结果'), { target: { value: 'restricted' } });
+  expect(screen.getByLabelText('选择收藏：b')).toBeVisible();
+  expect(screen.queryByLabelText('选择收藏：a')).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('检查结果'), { target: { value: 'missing' } });
+  const mark = screen.getByRole('button', { name: '我能打开' });
   expect(screen.getByLabelText('选择收藏：a')).toBeVisible();
   expect(screen.queryByLabelText('选择收藏：b')).not.toBeInTheDocument();
   expect(screen.getByText('HTTP 404')).toBeVisible();
   fireEvent.click(mark);
-  await screen.findByText('暂无疑似失效链接');
+  await screen.findByText('没有匹配的检查结果');
   expect(client).toHaveBeenCalledWith({
     type: 'bookmarkCheck',
     action: 'verify',
@@ -94,7 +114,7 @@ it('keeps login restrictions out of the default list, shows concise reasons, and
     url: 'https://x.test/?a#b',
     available: true,
   });
-  fireEvent.change(screen.getByLabelText('检查结果'), { target: { value: 'all' } });
+  fireEvent.click(screen.getByRole('button', { name: /全部结果/ }));
   expect(screen.getByText('拒绝检测')).toBeVisible();
   expect(screen.getByText('已手动确认')).toBeVisible();
   expect(screen.getByRole('button', { name: '恢复检查' })).toBeVisible();

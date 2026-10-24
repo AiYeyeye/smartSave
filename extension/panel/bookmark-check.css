@@ -24,7 +24,13 @@
 .check-link strong { font-size: 13px; font-weight: 550; }
 .check-link small { color: var(--muted); font-size: 11px; }
 .check-status { font-size: 11px; white-space: nowrap; border-radius: 5px; padding: 3px 6px; background: var(--surface-2); color: var(--muted); }
-.check-status.is-broken, .check-error { color: var(--danger, #b42318); }
+.check-status.is-site, .check-error { color: var(--danger, #b42318); }
+.check-categories { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.check-categories button { padding: 6px 9px; font-size: 12px; background: var(--surface); color: var(--muted); }
+.check-categories button[aria-pressed='true'] { color: var(--accent-text); background: var(--accent-soft); border-color: var(--accent); }
+.check-categories span { margin-left: 6px; font-size: 11px; }
+.check-runbar > button:last-child { margin-left: auto; }
+.check-open-actions { display: grid; gap: 3px; }
 .check-status.is-review { color: var(--accent-text); }
 .check-verdict { display: grid; justify-items: end; gap: 3px; }
 .check-status small { display: block; text-align: right; font-size: 10px; opacity: .8; }

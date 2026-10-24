@@ -6,6 +6,8 @@ import {
   compileCheckDeletion,
   currentCheckResults,
   emptyBookmarkCheck,
+  linkCategory,
+  type BookmarkCheckState,
 } from '../domain/bookmark-check';
 import { groupDuplicateNodes } from '../domain/suspected-duplicates';
 import { preflight } from '../domain/preflight';
@@ -77,4 +79,42 @@ it('persists local settings/results through new store instances and rejects malf
   });
   await expect(store.read()).rejects.toThrow('storage-unavailable');
   db.close();
+});
+
+it('legacy page failures never become site failures, and live HTTP evidence outweighs same-origin network failures', async () => {
+  expect(linkCategory({ status: 'broken', reason: 'http', code: 404, at: 1 })).toBe('missing');
+  expect(linkCategory({ status: 'review', reason: 'timeout', at: 1 })).toBe('unknown');
+  const tree = organizerTree();
+  const state: BookmarkCheckState = {
+    ...emptyBookmarkCheck(),
+    job: {
+      id: 'job',
+      installationId: 'install',
+      scopeId: null,
+      status: 'completed',
+      startedAt: 1,
+      updatedAt: 2,
+      duplicateGroups: 1,
+      items: [
+        {
+          nativeId: 'a',
+          url: 'https://x.test/?a#b',
+          result: {
+            status: 'review',
+            reason: 'network',
+            at: 1,
+            site: { status: 'unreachable', reason: 'network', at: 1 },
+          },
+        },
+        { nativeId: 'b', url: 'https://x.test/?a#b', result: { status: 'ok', reason: 'http', code: 200, at: 2 } },
+      ],
+    },
+  };
+  const store = new BookmarkCheckStore(new IDBFactory());
+  await store.write(state);
+  expect(linkCategory(currentCheckResults(tree, await store.read()).get('a')!)).toBe('temporary');
+  tree.nodes.find(node => node.ref.nativeId === 'b')!.url = 'https://different.test/';
+  expect(linkCategory(currentCheckResults(tree, state).get('a')!)).toBe('site');
+  state.job!.items[1]!.result = { status: 'ok', reason: 'manual', at: 2 };
+  expect(linkCategory(currentCheckResults(organizerTree(), state).get('a')!)).toBe('site');
 });

@@ -11,13 +11,46 @@ export const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 export const MAX_CHECK_ITEMS = 50_000;
 const id = z.string().min(1).max(256);
 const scope = id.nullable();
+export const siteResultSchema = z.strictObject({
+  status: z.enum(['responding', 'unreachable']),
+  reason: z.enum(['http', 'redirect', 'network', 'timeout']),
+  code: z.number().int().min(100).max(599).optional(),
+  at: z.number().finite().nonnegative(),
+});
+export type SiteResult = z.infer<typeof siteResultSchema>;
 export const linkResultSchema = z.strictObject({
   status: z.enum(['ok', 'broken', 'review', 'skipped']),
   reason: z.enum(['http', 'network', 'timeout', 'redirect', 'unsupported', 'restricted', 'changed', 'manual']),
   code: z.number().int().min(100).max(599).optional(),
   at: z.number().finite().nonnegative(),
+  site: siteResultSchema.optional(),
 });
 export type LinkResult = z.infer<typeof linkResultSchema>;
+
+/** Any HTTP response proves a server answered; 404 never proves an entire site disappeared. */
+export function siteResponse(result: LinkResult): SiteResult | undefined {
+  if (result.reason === 'http' || result.reason === 'redirect')
+    return {
+      status: 'responding',
+      reason: result.reason,
+      ...(result.code ? { code: result.code } : {}),
+      at: result.at,
+    };
+  return result.site?.status === 'responding' ? result.site : undefined;
+}
+
+export function linkCategory(result: LinkResult) {
+  if (result.status === 'ok' || result.status === 'skipped') return result.status;
+  if (!siteResponse(result) && result.site?.status === 'unreachable') return 'site';
+  if (result.reason === 'redirect') return 'redirect';
+  if (result.reason === 'http') {
+    if (result.code === 404 || result.code === 410) return 'missing';
+    if ([401, 403, 407, 429, 451].includes(result.code ?? 0)) return 'restricted';
+    return 'temporary';
+  }
+  return siteResponse(result) ? 'temporary' : 'unknown';
+}
+export type LinkCategory = ReturnType<typeof linkCategory>;
 export const checkItemSchema = z.strictObject({ nativeId: id, url: z.string(), result: linkResultSchema.optional() });
 export const bookmarkCheckStateSchema = z.strictObject({
   version: z.literal(1),
@@ -106,6 +139,26 @@ export function currentCheckResults(tree: TreeSnapshot, state: BookmarkCheckStat
     const node = nodes.get(item.nativeId);
     if (node?.ref.kind === 'bookmark' && node.url === item.url && item.result && item.result.reason !== 'changed')
       results.set(item.nativeId, item.result);
+  }
+  // A response from another current page on the same origin outweighs connection failures.
+  // Manual confirmations remain per bookmark and do not supply network evidence for other pages.
+  const responding = new Map<string, SiteResult>();
+  for (const [id, result] of results) {
+    const response = siteResponse(result);
+    try {
+      if (response) responding.set(new URL(nodes.get(id)!.url!).origin, response);
+    } catch {
+      /* Legacy URLs. */
+    }
+  }
+  for (const [id, result] of results) {
+    if (result.site?.status !== 'unreachable') continue;
+    try {
+      const response = responding.get(new URL(nodes.get(id)!.url!).origin);
+      if (response) results.set(id, { ...result, site: response });
+    } catch {
+      /* Legacy URLs. */
+    }
   }
   for (const item of state.verified ?? []) {
     const node = nodes.get(item.nativeId);

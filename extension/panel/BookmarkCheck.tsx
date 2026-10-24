@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CircleHelp, ExternalLink } from 'lucide-react';
+import { CircleHelp, ExternalLink, House } from 'lucide-react';
 import { useI18n, type MessageKey } from '../ui/i18n';
 import { Select } from '../ui/Select';
 import { ImpactConfirmDialog } from '../ui/ImpactConfirmDialog';
@@ -13,6 +13,8 @@ import {
   checkScopeNodes,
   compileCheckDeletion,
   currentCheckResults,
+  linkCategory,
+  type LinkCategory,
   type BookmarkCheckState,
   type BookmarkCheckMessage,
   type LinkResult,
@@ -36,7 +38,18 @@ const errors: Record<string, MessageKey> = {
   'keep-required': '请先为每组选择至少一项保留。',
   'stale-selection': '书签有变化，请清除选择后重新核对。',
 };
-const resultLabels = { ok: '可访问', broken: '疑似失效', review: '未能判断', skipped: '已跳过' } as const;
+const resultLabels = { ok: '可访问', broken: '页面未找到', review: '未能判断', skipped: '已跳过' } as const;
+const categoryLabels = {
+  site: '网站无法连接',
+  missing: '页面未找到',
+  restricted: '登录或访问限制',
+  redirect: '链接跳转',
+  temporary: '临时异常',
+  unknown: '未能判断',
+  ok: '可访问',
+  skipped: '已跳过',
+} as const;
+const pageCategories: LinkCategory[] = ['missing', 'restricted', 'redirect', 'temporary'];
 const reasonLabels = {
   network: '连接失败',
   timeout: '请求超时',
@@ -54,7 +67,7 @@ function resultReason(value: LinkResult): MessageKey {
   if (value.code && value.code >= 500) return '服务暂不可用';
   return resultLabels[value.status];
 }
-type Filter = 'issues' | 'all' | LinkResult['status'];
+type Filter = 'all' | LinkCategory;
 
 export function BookmarkCheck({
   visible = true,
@@ -74,7 +87,8 @@ export function BookmarkCheck({
   const [connected, setConnected] = useState(false);
   const [state, setState] = useState<BookmarkCheckState>();
   const [tab, setTab] = useState<'links' | 'duplicates'>('links');
-  const [filter, setFilter] = useState<Filter>('issues');
+  const [group, setGroup] = useState<'site' | 'pages' | 'all'>('site');
+  const [filter, setFilter] = useState<Filter>('all');
   const [limit, setLimit] = useState(50);
   const [busy, setBusy] = useState(false);
   const [weeklyDraft, setWeeklyDraft] = useState<boolean>();
@@ -152,16 +166,38 @@ export function BookmarkCheck({
       nodes
         .filter(node => {
           const value = checked.get(node.ref.nativeId);
+          if (!value) return false;
+          const category = linkCategory(value);
           return (
-            value && (filter === 'all' || (filter === 'issues' ? value.status === 'broken' : value.status === filter))
+            (group === 'all' || (group === 'site' ? category === 'site' : pageCategories.includes(category))) &&
+            (filter === 'all' || category === filter)
           );
         })
         .sort((a, b) => {
-          const order = { broken: 0, review: 1, skipped: 2, ok: 3 };
-          return order[checked.get(a.ref.nativeId)!.status] - order[checked.get(b.ref.nativeId)!.status];
+          const order = {
+            site: 0,
+            missing: 1,
+            restricted: 2,
+            redirect: 3,
+            temporary: 4,
+            unknown: 5,
+            skipped: 6,
+            ok: 7,
+          };
+          return order[linkCategory(checked.get(a.ref.nativeId)!)] - order[linkCategory(checked.get(b.ref.nativeId)!)];
         }),
-    [nodes, checked, filter],
+    [nodes, checked, filter, group],
   );
+  const counts = { site: 0, pages: 0, all: 0, unknown: 0 };
+  for (const node of nodes) {
+    const value = checked.get(node.ref.nativeId);
+    if (!value) continue;
+    counts.all++;
+    const category = linkCategory(value);
+    if (category === 'site') counts.site++;
+    else if (pageCategories.includes(category)) counts.pages++;
+    else if (category === 'unknown') counts.unknown++;
+  }
   const running = state?.job?.status === 'running';
   const uncertain =
     !!result && result.status !== 'completed' && (result.needsReconcile || result.status !== 'rejected');
@@ -319,7 +355,8 @@ export function BookmarkCheck({
             <CircleHelp aria-hidden="true" />
           </summary>
           <div>
-            <p>{t('检查只读响应状态。登录限制、超时和跳转不算失效；404/410 也仅供参考。')}</p>
+            <p>{t('优先检查整个网站是否有响应。收藏页异常单独分类，404、登录限制和跳转不代表网站失效。')}</p>
+            <p>{t('网站无法连接仍可能是临时网络问题；无法自动确认永久关闭或迁站。只读响应状态，不读取正文。')}</p>
             <p>{t('能正常打开的链接可手动确认，后续检查会跳过；可在全部结果中恢复检查。')}</p>
             <p>{t('每周检查所选范围；浏览器重新运行后补查。不会自动删除收藏。')}</p>
             <p>{t('重复收藏在本机比较。疑似重复需核对原始链接，每组至少保留一项。')}</p>
@@ -359,25 +396,43 @@ export function BookmarkCheck({
       <div role="tabpanel" aria-label={t(tab === 'links' ? '失效链接' : '重复收藏')}>
         {tab === 'links' && (
           <>
+            <div className="check-categories" role="group" aria-label={t('结果分类')}>
+              {(['site', 'pages', 'all'] as const).map(key => (
+                <button
+                  key={key}
+                  type="button"
+                  aria-pressed={group === key}
+                  onClick={() => {
+                    setGroup(key);
+                    setFilter('all');
+                    setLimit(50);
+                  }}
+                >
+                  {t(key === 'site' ? '网站无法连接' : key === 'pages' ? '收藏页异常' : '全部结果')}
+                  <span>{counts[key]}</span>
+                </button>
+              ))}
+            </div>
             <div className="check-runbar">
-              <Select
-                aria-label={t('检查结果')}
-                value={filter}
-                onChange={event => {
-                  setFilter(event.target.value as Filter);
-                  setLimit(50);
-                }}
-              >
-                <option value="issues">{t('疑似失效')}</option>
-                <option value="all">{t('全部结果')}</option>
-                {Object.entries(resultLabels)
-                  .filter(([value]) => value !== 'broken')
-                  .map(([value, label]) => (
-                    <option key={value} value={value}>
-                      {t(label)}
-                    </option>
-                  ))}
-              </Select>
+              {group !== 'site' && (
+                <Select
+                  aria-label={t('检查结果')}
+                  value={filter}
+                  onChange={event => {
+                    setFilter(event.target.value as Filter);
+                    setLimit(50);
+                  }}
+                >
+                  <option value="all">{t(group === 'pages' ? '全部页面异常' : '全部结果')}</option>
+                  {Object.entries(categoryLabels)
+                    .filter(([value]) => group === 'all' || pageCategories.includes(value as LinkCategory))
+                    .map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {t(label)}
+                      </option>
+                    ))}
+                </Select>
+              )}
               {running ? (
                 <button disabled={busy} onClick={() => void command({ type: 'bookmarkCheck', action: 'pause' })}>
                   {t('暂停检查')}
@@ -419,6 +474,7 @@ export function BookmarkCheck({
             <div className="check-results">
               {rows.slice(0, limit).map(node => {
                 const value = checked.get(node.ref.nativeId)!;
+                const category = linkCategory(value);
                 const detail = value.reason === 'http' ? `HTTP ${value.code}` : t(reasonLabels[value.reason]);
                 return (
                   <article className="check-row" key={node.ref.nativeId}>
@@ -435,11 +491,15 @@ export function BookmarkCheck({
                       <small title={paths.get(node.ref.nativeId)}>{paths.get(node.ref.nativeId)}</small>
                     </div>
                     <div className="check-verdict">
-                      <span className={`check-status is-${value.status}`} title={`${detail} · ${date(value.at)}`}>
+                      <span className={`check-status is-${category}`} title={`${detail} · ${date(value.at)}`}>
                         {t(
-                          value.status === 'review' || value.reason === 'manual'
-                            ? resultReason(value)
-                            : resultLabels[value.status],
+                          category === 'site'
+                            ? '网站无法连接'
+                            : category === 'unknown'
+                              ? '未能判断'
+                              : value.status === 'review' || value.reason === 'manual'
+                                ? resultReason(value)
+                                : resultLabels[value.status],
                         )}
                         {value.status === 'broken' && <small>HTTP {value.code}</small>}
                       </span>
@@ -463,25 +523,50 @@ export function BookmarkCheck({
                         </button>
                       )}
                     </div>
-                    <button
-                      className="check-open"
-                      aria-label={t('打开 {title}', { title: node.title })}
-                      title={t('打开')}
-                      disabled={!canOpenUrl(node.url)}
-                      onClick={() => {
-                        if (node.url)
-                          void openBookmarkUrl(node.url, 'tab').catch(() => setError('检查暂不可用，请重试。'));
-                      }}
-                    >
-                      <ExternalLink aria-hidden="true" />
-                    </button>
+                    <div className="check-open-actions">
+                      <button
+                        className="check-open"
+                        aria-label={t('打开 {title}', { title: node.title })}
+                        title={t('打开')}
+                        disabled={!canOpenUrl(node.url)}
+                        onClick={() => {
+                          if (node.url)
+                            void openBookmarkUrl(node.url, 'tab').catch(() => setError('检查暂不可用，请重试。'));
+                        }}
+                      >
+                        <ExternalLink aria-hidden="true" />
+                      </button>
+                      {['broken', 'review'].includes(value.status) && (
+                        <button
+                          className="check-open"
+                          title={t('打开网站首页')}
+                          aria-label={t('打开网站首页：{title}', { title: node.title })}
+                          onClick={() => {
+                            if (node.url)
+                              void openBookmarkUrl(new URL('/', node.url).href, 'tab').catch(() =>
+                                setError('检查暂不可用，请重试。'),
+                              );
+                          }}
+                        >
+                          <House aria-hidden="true" />
+                        </button>
+                      )}
+                    </div>
                   </article>
                 );
               })}
             </div>
             {!rows.length && (
               <p className="check-empty">
-                {t(!job ? '尚未检查' : filter === 'issues' ? '暂无疑似失效链接' : '没有匹配的检查结果')}
+                {t(
+                  !job
+                    ? '尚未检查'
+                    : group === 'site'
+                      ? counts.unknown
+                        ? '部分结果尚未核对网站，请重新检查。'
+                        : '暂无无法连接的网站'
+                      : '没有匹配的检查结果',
+                )}
               </p>
             )}
             {rows.length > limit && <button onClick={() => setLimit(value => value + 50)}>{t('显示更多结果')}</button>}

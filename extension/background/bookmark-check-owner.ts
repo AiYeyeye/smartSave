@@ -13,7 +13,7 @@ import {
 } from '../domain/bookmark-check';
 import { groupDuplicateNodes } from '../domain/suspected-duplicates';
 import { withTrustedSender } from '../domain/trusted-sender';
-import { probeBookmarkLink } from '../adapters/bookmark-link-check';
+import { createBookmarkLinkProbe } from '../adapters/bookmark-link-check';
 import { BookmarkCheckStore, type BookmarkCheckPersistence } from '../persistence/bookmark-check';
 import type { TreeProjection } from './tree-projection';
 import { createWorkerTaskLifetime } from './worker-task-lifetime';
@@ -243,6 +243,7 @@ export class BookmarkCheckOwner {
       });
   }
   private async run(signal: AbortSignal) {
+    const probe = this.options.probe ?? createBookmarkLinkProbe(this.state.job?.items);
     const cache = new Map<string, LinkResult>();
     for (const item of this.state.job?.items ?? [])
       if (item.result && !['changed', 'manual'].includes(item.result.reason)) cache.set(item.url, item.result);
@@ -287,7 +288,7 @@ export class BookmarkCheckOwner {
           const result =
             !node || node.url !== item.url || tree.installationId !== job.installationId
               ? { status: 'skipped' as const, reason: 'changed' as const, at: this.now() }
-              : (cache.get(item.url) ?? (await (this.options.probe ?? probeBookmarkLink)(item.url, signal)));
+              : (cache.get(item.url) ?? (await probe(item.url, signal)));
           if (result.reason !== 'changed') cache.set(item.url, result);
           return { ...item, result };
         }),
