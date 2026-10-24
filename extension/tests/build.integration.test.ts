@@ -16,6 +16,7 @@ describe('MV3 distribution contract', () => {
     expect(manifest.permissions).toEqual([
       'bookmarks',
       'storage',
+      'alarms',
       'activeTab',
       'scripting',
       'contextMenus',

@@ -12,6 +12,7 @@ const manifestSchema = z.object({
   permissions: z.tuple([
     z.literal('bookmarks'),
     z.literal('storage'),
+    z.literal('alarms'),
     z.literal('activeTab'),
     z.literal('scripting'),
     z.literal('contextMenus'),

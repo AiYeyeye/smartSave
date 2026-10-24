@@ -5,6 +5,7 @@ import {
   Palette,
   ScrollText,
   Shield,
+  ShieldCheck,
   Sparkles,
   Upload,
   WandSparkles,
@@ -16,6 +17,7 @@ import { useI18n } from './i18n';
 export type OptionsRoute =
   | 'browse'
   | 'organize'
+  | 'check'
   | 'import'
   | 'export'
   | 'ai-services'
@@ -28,6 +30,7 @@ export type OptionsRoute =
 export const ROUTE_META: Record<OptionsRoute, { title: string; desc: string; icon: LucideIcon; wide?: boolean }> = {
   browse: { title: '书签目录', desc: '浏览、搜索与批量管理浏览器原生书签。', icon: FolderTree },
   organize: { title: 'AI 整理', desc: '在选定目录内整理与精确去重；先预览，确认后才写入。', icon: WandSparkles },
+  check: { title: '书签检查', desc: '', icon: ShieldCheck },
   import: { title: '导入书签', desc: '支持 HTML / JSON / CSV / TXT / Markdown，导入后按设置自动分类。', icon: Upload },
   export: { title: '导出与备份', desc: '手动导出、自动输出到本地文件，以及撤销与恢复记录。', icon: Archive },
   'ai-services': {
@@ -44,7 +47,7 @@ export const ROUTE_META: Record<OptionsRoute, { title: string; desc: string; ico
 };
 
 const GROUPS: { label: string; routes: OptionsRoute[] }[] = [
-  { label: '书签', routes: ['browse', 'organize', 'import', 'export'] },
+  { label: '书签', routes: ['browse', 'organize', 'check', 'import', 'export'] },
   { label: 'AI', routes: ['ai-services', 'token-usage'] },
   { label: '偏好', routes: ['personalization', 'appearance', 'privacy', 'debug'] },
 ];

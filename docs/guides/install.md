@@ -4,7 +4,7 @@
 
 ## 下载 ZIP 安装
 
-1. 在 [下载页面](https://github.com/AiYeyeye/smartSave/releases/tag/v0.1.0-preview.20261023.1) 下载 **zhilan-0.1.0-candidate.zip**，不要选择 GitHub 自动生成的 Source code 压缩包。
+1. 在 [下载页面](https://github.com/AiYeyeye/smartSave/releases/tag/v0.1.0-preview.20261023.2) 下载 **zhilan-0.1.0-candidate.zip**，不要选择 GitHub 自动生成的 Source code 压缩包。
 2. 解压到固定文件夹。该文件夹内应直接包含 `manifest.json`，安装后请保留它。
 3. 打开 `chrome://extensions` 或 `edge://extensions`，开启“开发者模式”。
 4. 点击“加载已解压的扩展程序”，选择上面的文件夹。
@@ -30,7 +30,7 @@
 
 Requires Chrome / Edge 127+. Source is available for noncommercial use under [PolyForm Noncommercial 1.0.0](../../LICENSE).
 
-1. Download **zhilan-0.1.0-candidate.zip** from the [download page](https://github.com/AiYeyeye/smartSave/releases/tag/v0.1.0-preview.20261023.1), rather than GitHub's automatic Source code archives.
+1. Download **zhilan-0.1.0-candidate.zip** from the [download page](https://github.com/AiYeyeye/smartSave/releases/tag/v0.1.0-preview.20261023.2), rather than GitHub's automatic Source code archives.
 2. Extract it to a permanent folder with `manifest.json` directly inside. Keep that folder after installation.
 3. Open `chrome://extensions` or `edge://extensions`, enable **Developer mode**, and select **Load unpacked**.
 4. Select the extracted folder and pin Zhilan to the toolbar. Local bookmark functions need no model; connect an existing provider under **AI services** when needed.

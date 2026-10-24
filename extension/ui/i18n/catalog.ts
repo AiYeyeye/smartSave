@@ -1,4 +1,5 @@
 import { onboardingEnglish } from './onboarding';
+import { bookmarkCheckEnglish } from './bookmark-check';
 import { aiServicesEnglish } from './ai-services';
 import { saveEnglish } from './save';
 import { saveReceiptsEnglish } from './save-receipts';
@@ -17,6 +18,7 @@ import { bookmarkRecencyEnglish } from './bookmark-recency';
 import { personalizationEnglish } from './personalization';
 /** UI-owned messages only. Native bookmark content and provider output never enter this catalog. */
 export const english = {
+  ...bookmarkCheckEnglish,
   '关闭不会删除已收藏的书签。': 'Closing keeps your bookmark.',
   '展开目录：{folder}': 'Expand folder: {folder}',
   '收起目录：{folder}': 'Collapse folder: {folder}',

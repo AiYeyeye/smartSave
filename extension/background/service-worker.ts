@@ -1,4 +1,5 @@
 import { bookmarksWrite } from '../adapters/bookmarks-write';
+import { startBookmarkChecks } from './bookmark-check-owner';
 import { startFileOutput } from './file-output';
 import { ImportPersistenceStore } from '../persistence/import-persistence';
 import { startImportAuthority } from './import-authority';
@@ -85,6 +86,7 @@ const { validateSaveContext, livePageForSender } = startSaveEntrypoints(
   saveDialog,
 );
 const projection = startTreeService();
+startBookmarkChecks(projection);
 const bookmarkKeywords = new BookmarkKeywordsStore(chrome.storage.local, () => projection.fresh());
 startBookmarkKeywords(bookmarkKeywords, projection);
 startSearchEntrypoints(projection, chrome, () => bookmarkKeywords.read());

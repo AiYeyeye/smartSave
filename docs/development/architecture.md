@@ -61,6 +61,16 @@ For larger multi-folder collections, bookmark AI search plans folder order, comb
 
 Combined name/folder review uses the existing correction owner, mutation coordinator and journal, with explicit steps under one request. Native APIs are not transactional: partial/unknown results retain evidence and require recovery without replay. No-op review only marks completion; closing neither mutates bookmarks nor learns preferences. The page is not web-accessible and adds no host permission. See the linked Chrome windows API.
 
+## 书签检查 / Bookmark checks
+
+`background/bookmark-check-owner.ts` 独占只读检查任务，可信扩展 RPC 仅接受当前安装和范围，不接受任意待请求网址。`zhilan-bookmark-check` 本地 IndexedDB 保存版本化进度；页面只观察，关闭后继续，worker 重启从未完成项恢复，主动暂停保留。周检默认关闭，使用 `alarms` 每七天调度，启动检查并恢复丢失的闹钟；权限只能由界面点击请求，后台仅检查现有授权。最多两个不同主机并发、同主机一次一个请求，每批间隔 200ms；同网址复用结果。HEAD/GET 只读响应状态、取消响应体，12 秒超时，不带 Cookie/referrer、不跟随跳转；404/410 才标失效，其余受限/网络故障/跳转待复查。结果按安装、原生 ID 和原始网址匹配当前树。
+
+The worker owns durable read-only scan progress, with strict trusted-extension RPC and native scope resolution. The separate local IndexedDB report resumes unfinished items after worker restart; closing the page does not cancel work, while explicit pauses persist. Weekly checks are opt-in, use a seven-day alarm and restore missing alarms on startup. Only a user click requests website permission. Probes use at most two distinct hosts concurrently, one request per host, a 200ms batch gap and URL-result reuse. HEAD/GET inspect status and cancel bodies with a 12-second deadline, no cookies/referrer and no redirect following; only 404/410 are broken, while other failures remain reviewable. Verdicts bind to installation, native ID and original URL.
+
+重复检测复用本地分组逻辑，支持跨原生根目录但不扩大写权限。明确保留后才能选择重复删除；预览冻结原始树，确认后进入已有 mutation coordinator、备份和恢复日志。原生状态变化使预览失效，未知写入锁定并转到恢复记录，禁止自动重放。两种语言与主题切换保留选择；详情收进帮助，不堆叠默认说明文字。
+
+Duplicate detection reuses local grouping across native roots without expanding write authority. Groups require an explicit keeper before deletion. Confirmation freezes the native snapshot and uses the existing mutation coordinator, backup and recovery journal; changed authority invalidates previews and unknown writes stay locked for recovery without replay. Language/theme switches preserve selections. Optional explanation lives in collapsed help.
+
 ## 目录浏览位置 / Directory reading position
 
 目录通过 `panel/use-navigation-memory.ts` 保存真正滚动容器 `main` 中的顶部可见书签 ID、相对偏移及有限回退 ID；按 installationId 隔离，仅本地存储。等展开状态和当前树就绪后恢复一次，用户先交互会取消迟到恢复。滚动节流保存，打开书签及切换界面前立即快照；隐藏目录不覆盖为零。恢复偏好不含标题、URL、搜索词、选择或写入授权，不跟随其他窗口的存储事件跳转。

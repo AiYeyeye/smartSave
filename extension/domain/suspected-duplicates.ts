@@ -32,8 +32,13 @@ export function suspectedDuplicateKey(raw: string): string | undefined {
 
 /** Disjoint review groups: variants and their exact copies share one explicit keep/delete decision. */
 export function duplicateGroups(tree: TreeSnapshot, rootId: string): DuplicateGroup[] {
+  return groupDuplicateNodes(scopeNodes(tree, rootId));
+}
+
+/** Shared local grouping; callers own their read scope, never a synthetic writable root. */
+export function groupDuplicateNodes(nodes: TreeSnapshot['nodes']): DuplicateGroup[] {
   const groups = new Map<string, TreeSnapshot['nodes']>();
-  for (const node of scopeNodes(tree, rootId)) {
+  for (const node of nodes) {
     if (node.ref.kind !== 'bookmark' || node.url === undefined) continue;
     const key = suspectedDuplicateKey(node.url);
     const identity = key === undefined ? `raw:${node.url}` : `suspected:${key}`;

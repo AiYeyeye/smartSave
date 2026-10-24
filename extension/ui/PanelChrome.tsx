@@ -8,6 +8,7 @@ import {
   PanelLeftClose,
   Search,
   Settings,
+  ShieldCheck,
   Upload,
   X,
 } from 'lucide-react';
@@ -125,11 +126,13 @@ export function PanelChrome({
 
 export function PanelFooter({
   onOrganize,
+  onCheck,
   onImport,
   onExport,
   onBatch,
 }: {
   onOrganize: () => void;
+  onCheck?: () => void;
   onImport: () => void;
   onExport: () => void;
   onBatch: () => void;
@@ -141,6 +144,12 @@ export function PanelFooter({
         <FolderKanban aria-hidden="true" />
         {t('整理')}
       </button>
+      {onCheck && (
+        <button type="button" title={t('书签检查')} onClick={onCheck}>
+          <ShieldCheck aria-hidden="true" />
+          {t('检查')}
+        </button>
+      )}
       <button type="button" title={t('在设置页中导入书签文件')} onClick={onImport}>
         <Upload aria-hidden="true" />
         {t('导入')}

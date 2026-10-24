@@ -42,11 +42,17 @@ Provider retention, training, subprocessors, processing locations and deletion d
 
 ## Other connections and permissions
 
+### Optional bookmark checks
+
+Duplicate comparison runs locally without AI. Starting/resuming a link check or enabling weekly checks requests HTTP(S) website access. Once enabled, weekly checks contact bookmarked websites in the selected scope while the browser runs, including when settings are closed. Requests use the original path and query parameters, without fragments; destination websites receive the URL and connection metadata such as your IP. This is separate from AI URL redaction settings. Choose a folder to limit the scope.
+
+Checks send HEAD and, when needed, GET to verify response status, without reading page text, sending browser cookies or referrer information, or automatically following redirects. Non-web, credential-bearing and recognizable local/private addresses are skipped; DNS resolution and website behavior still depend on the network and destination. Results, native bookmark IDs, original URLs, progress and weekly settings stay in a local extension database. They are not synced, sent to models or written to debug logs. A new scan replaces the report; changing scope clears it. Disabling weekly checks retains the report. Revoking website access pauses active checks; disabling weekly checks stops future scheduled checks. Checking never automatically deletes bookmarks. The `alarms` permission schedules only opted-in weekly checks.
+
 Optional, user-initiated OpenRouter sign-in requests identity and its host permission, opens the provider's authorization page and exchanges a code/PKCE verifier for API credentials. Zhilan does not receive your account password. See [OpenRouter privacy](https://openrouter.ai/privacy).
 
 Favicons use the browser-owned favicon API, with no extension-integrated third-party icon service; the browser controls its own retrieval/cache. Opening a bookmark visits the destination under its policy. If you contact support by GitHub or email, the platform and maintainer process what you choose to send for support.
 
-Required permissions support bookmarks, local settings/preferences, user-triggered current-tab extraction/overlay injection, context menus, favicons and the native side panel. Optional identity supports sign-in; optional history supports user-enabled history search; optional HTTP(S) host access is requested for specific model hosts. Installation does not grant all-site access. The overlay document is web-accessible; there are no persistent manifest content scripts.
+Required permissions support bookmarks, local settings/preferences, user-triggered current-tab extraction/overlay injection, context menus, favicons and the native side panel. Optional identity supports sign-in; optional history supports user-enabled history search; optional HTTP(S) host access is requested for specific model hosts or user-enabled bookmark checks. Installation does not grant all-site access. The overlay document is web-accessible; there are no persistent manifest content scripts.
 
 ## Control, retention and deletion
 

@@ -11,6 +11,7 @@
   "permissions": [
     "bookmarks",
     "storage",
+    "alarms",
     "activeTab",
     "scripting",
     "contextMenus",

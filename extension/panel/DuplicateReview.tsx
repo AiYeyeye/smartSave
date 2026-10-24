@@ -9,29 +9,33 @@ export function DuplicateReview({
   paths,
   disabled,
   onChoice,
+  compact = false,
 }: {
   groups: DuplicateGroup[];
   choices: Record<string, DuplicateChoice>;
   paths: ReadonlyMap<string, string>;
   disabled: boolean;
   onChoice(id: string, choice: DuplicateChoice): void;
+  compact?: boolean;
 }) {
   const { t } = useI18n();
   return (
-    <div className="duplicate-review">
+    <div className={`duplicate-review${compact ? ' is-compact' : ''}`}>
       {groups.map(group => (
         <article key={group.url}>
-          <h3>
+          <h3 title={compact ? t('保留至少一项；未选择的项目不删除。') : undefined}>
             {t(group.suspected ? '疑似重复 · {count} 条' : '精确重复 · {count} 条', { count: group.items.length })}
           </h3>
-          <p>
-            {t(
-              group.suspected
-                ? '忽略 utm_* 参数、http/https、www 和末尾斜杠后相同，仍可能是不同内容。请核对下面的原始链接；同组也可能包含完全相同的副本。'
-                : '原始链接完全相同。',
-            )}{' '}
-            {t('保留至少一项；未选择的项目不删除。')}
-          </p>
+          {!compact && (
+            <p>
+              {t(
+                group.suspected
+                  ? '忽略 utm_* 参数、http/https、www 和末尾斜杠后相同，仍可能是不同内容。请核对下面的原始链接；同组也可能包含完全相同的副本。'
+                  : '原始链接完全相同。',
+              )}{' '}
+              {t('保留至少一项；未选择的项目不删除。')}
+            </p>
+          )}
           {group.items.map(node => (
             <label className="field" key={node.ref.nativeId}>
               <strong>{node.title}</strong>

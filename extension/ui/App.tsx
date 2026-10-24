@@ -1,5 +1,7 @@
 import { ImportWorkbench } from '../panel/ImportWorkbench';
 import { OrganizeWorkbench } from '../panel/OrganizeWorkbench';
+import { BookmarkCheck } from '../panel/BookmarkCheck';
+import '../panel/bookmark-check.css';
 import { SearchWorkspace } from '../panel/SearchWorkspace';
 import type { SearchSource } from '../domain/history-search';
 import { OnboardingSteps } from '../panel/OnboardingSteps';
@@ -208,6 +210,7 @@ function PopupApp({ overlay = false }: { overlay?: boolean }) {
       {view === 'browse' && (
         <PanelFooter
           onOrganize={() => open('organize')}
+          onCheck={() => open('check')}
           onImport={() => open('import')}
           onExport={() => open('export')}
           onBatch={() => setBatchNonce(value => value + 1)}
@@ -373,6 +376,17 @@ function OptionsApp() {
           <div className="view" hidden={route !== 'organize'}>
             <OrganizeWorkbench visible={route === 'organize'} settings={settingsStore} aiServices={ai.store} />
           </div>
+          {mounted('check') && (
+            <div className="view" hidden={route !== 'check'}>
+              <BookmarkCheck
+                visible={route === 'check'}
+                onRecovery={() => {
+                  setExportRecoveryOpen(true);
+                  go('export');
+                }}
+              />
+            </div>
+          )}
           <div className="view" hidden={route !== 'import'}>
             <ImportWorkbench visible={route === 'import'} settings={settingsStore} aiServices={ai.store} />
           </div>
@@ -381,6 +395,7 @@ function OptionsApp() {
               <ExportSettings visible={route === 'export'} />
               <details
                 className="surface workflow-help"
+                open={exportRecoveryOpen}
                 onToggle={event => setExportRecoveryOpen(event.currentTarget.open)}
               >
                 <summary>{t('备份与恢复记录')}</summary>

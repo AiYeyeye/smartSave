@@ -17,6 +17,14 @@ For a description such as “the flowchart tool I visited last week”, click **
 
 Ordinary history search stays local, with no persistent history database. Browser deletion or permission revocation clears the search cache and invalidates pending AI results. Choose **Turn off history access** in the menu beside the date range to revoke permission without deleting browser history. An explicitly opened bookmark draft remains available until cancelled or saved. The `zl` address-bar shortcut continues to search bookmarks only.
 
+## Bookmark check (no AI required)
+
+Choose **Check** at the bottom of the sidebar, or **Bookmark check** in full settings. Select all bookmarks or a folder, then choose **Check now** under **Broken links**. **Duplicates** lists exact and possible matches locally.
+
+The first link check requests website access. Checks read response status without reading page text. Confirmed 404/410 responses are marked broken; restricted, timed-out and redirected links need review. Open the original page to verify it before selecting deletion. Duplicate groups require an explicit item to keep. Deletions need confirmation and support previewed undo under **Export and backup → Backups and recovery records**; follow recovery guidance for identity or identical-URL conflicts. Checking itself never deletes or moves bookmarks.
+
+Enable **Check weekly** to check the selected scope every seven days. Checks cannot run while the browser is closed; missed checks run after reopening. Progress is saved in the background, supports pause/resume and survives closing settings. Deliberately paused work needs manual resume. Reports stay local and are replaced by the next full check; edited or deleted bookmarks do not inherit old verdicts. A scan supports up to 50,000 bookmarks; choose smaller folders for larger collections.
+
 ## Bookmarks and other features
 
 Zhilan works with native Chrome / Edge bookmarks. No Zhilan account is required. Start with local browsing and search; AI is optional.
