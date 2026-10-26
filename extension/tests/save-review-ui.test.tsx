@@ -139,6 +139,59 @@ function harness({
 }
 afterEach(() => vi.unstubAllGlobals());
 
+it('offers explicit AI retry after refusal, prevents double clicks and preserves an edited draft', async () => {
+  const failed: SaveReceipt = { ...receipt, status: 'failed', reason: 'refused', suggestedTitle: undefined };
+  const h = harness({ receipts: [failed], suggestions: {} });
+  let fail!: (error: Error) => void;
+  const retry = vi.fn(
+    () =>
+      new Promise<void>((_resolve, reject) => {
+        fail = reject;
+      }),
+  );
+  render(
+    <SaveReviewForm
+      receipt={failed}
+      send={h.send}
+      retry={retry}
+      onComplete={vi.fn()}
+      onLater={vi.fn()}
+      onDismiss={vi.fn()}
+      onOpen={vi.fn()}
+    />,
+  );
+  const name = await screen.findByRole('textbox', { name: '名称' });
+  fireEvent.change(name, { target: { value: 'My draft' } });
+  const button = screen.getByRole('button', { name: '重新 AI 识别' });
+  fireEvent.click(button);
+  fireEvent.click(button);
+  expect(retry).toHaveBeenCalledTimes(1);
+  expect(retry).toHaveBeenCalledWith('first');
+  expect(name).toBeDisabled();
+  expect(screen.getByRole('button', { name: '保存修改' })).toBeDisabled();
+  await act(async () => fail(Error('disconnected')));
+  expect(screen.getByRole('alert')).toHaveTextContent('未能开始识别');
+  expect(button).toBeEnabled();
+  expect(name).toHaveValue('My draft');
+  expect(h.reviews()).toHaveLength(0);
+});
+
+it('shows a pending retry after reopening and keeps uncertain native writes out of the retry entrypoint', async () => {
+  const failed: SaveReceipt = {
+    ...receipt,
+    status: 'failed',
+    reason: 'refused',
+    aiRetry: { id: 'request', status: 'pending' },
+  };
+  const h = harness({ receipts: [failed] });
+  render(<SaveReviewQueue send={h.send} onOpen={vi.fn()} />);
+  expect(await screen.findByText('AI 正在重新识别…')).toBeVisible();
+  expect(h.send).not.toHaveBeenCalled();
+  h.publishReceipts([{ ...failed, reason: 'native-write-uncertain', aiRetry: undefined }]);
+  await screen.findByRole('textbox', { name: /名称/ });
+  expect(screen.queryByRole('button', { name: '重新 AI 识别' })).toBeNull();
+});
+
 it('removes a stale reminder only after durable acknowledgement and offers retry on failure', async () => {
   const h = harness();
   h.send.mockResolvedValue({ status: 'error', reason: 'stale-correction' });

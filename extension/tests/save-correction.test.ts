@@ -12,6 +12,30 @@ import { correctionExamples } from '../domain/correction-learning';
 
 const sender = { id: 'test', url: 'chrome-extension://test/panel/index.html', documentId: 'page' };
 
+it('applies retried AI advice only on review, without learning unchanged AI adoption', async () => {
+  const h = await harness();
+  await h.receipts.patch('receipt', {
+    status: 'failed',
+    reason: 'refused',
+    fromParentId: 'source',
+    suggestedFolderId: 'target',
+    suggestedTitle: 'AI advice',
+    aiRetry: { id: 'retry', status: 'ready' },
+  });
+  const ready = await h.owner.handle({ type: 'nativeSaveCorrection', action: 'begin', receiptId: 'receipt' }, sender);
+  expect(ready).toMatchObject({ status: 'ready', suggestedFolderId: 'target', suggestedTitle: 'AI advice' });
+  expect(h.move).not.toHaveBeenCalled();
+  expect(h.update).not.toHaveBeenCalled();
+  if (ready.status !== 'ready') throw Error('ready');
+  await h.owner.handle(
+    { type: 'nativeSaveCorrection', action: 'review', token: ready.token, title: 'AI advice', targetId: 'target' },
+    sender,
+  );
+  expect(h.node).toMatchObject({ title: 'AI advice', parentId: 'target' });
+  expect(correctionExamples((await h.journal.all())[0]!)).toEqual([]);
+  h.projection.stop();
+});
+
 it.each(['timeout', 'restart'])('a fresh begin after %s can confirm the same draft once', async reason => {
   const h = await harness();
   const token = await h.begin();

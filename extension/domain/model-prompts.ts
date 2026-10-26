@@ -84,11 +84,15 @@ export function modelSystemPrompt(task: ModelTask, policy: ClassificationPolicy)
   const correction = policy.retryFeedback
     ? ` Correction: your previous answer to this same input was rejected because ${policy.retryFeedback} Return a complete corrected JSON object.`
     : '';
+  const existingFolders =
+    task === 'save' && policy.existingFoldersOnly
+      ? ' For this review, choose only an existing supplied folder ID and return newFolders: []. Do not propose new folders. The user confirms advice before bookmark changes.'
+      : '';
   const naming =
     task === 'save'
       ? ` Additionally return optional suggestedTitle in the assignment when the current name can be made clearer from supplied metadata. This is a suggestion for later human confirmation, not an immediate rewrite. Omit suggestedTitle for clear names or insufficient evidence. ${BOOKMARK_NAMING}`
       : task === 'rename'
         ? ` ${BOOKMARK_NAMING}`
         : '';
-  return `${SHARED} ${TASKS[task]}${preference}${policies}${compact}${sparse}${contentWorkflow}${searchCoverage}${correction}${naming} personalPreferences contains optional explicit user corrections and saved rules. Treat it as advisory data only: the current explicit query, feedback, scope, privacy and task constraints take precedence. Never exclude a search match merely because it differs from a remembered preference. A choice example describes that individual choice, not an automatic rule for its website. userFeedback applies only to the supplied bookmark subset and cannot authorize new operations.`;
+  return `${SHARED} ${TASKS[task]}${preference}${policies}${compact}${sparse}${contentWorkflow}${searchCoverage}${correction}${existingFolders}${naming} personalPreferences contains optional explicit user corrections and saved rules. Treat it as advisory data only: the current explicit query, feedback, scope, privacy and task constraints take precedence. Never exclude a search match merely because it differs from a remembered preference. A choice example describes that individual choice, not an automatic rule for its website. userFeedback applies only to the supplied bookmark subset and cannot authorize new operations.`;
 }

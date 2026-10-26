@@ -9,6 +9,18 @@ const answer = '{"rankedIds":[]}';
 const frame = (value: unknown, event?: string) =>
   `${event ? `event: ${event}\n` : ''}data: ${typeof value === 'string' ? value : JSON.stringify(value)}\n\n`;
 
+it.each(['content_filter', 'content_filter_error'])(
+  'recognizes a %s error envelope as a refusal for JSON and HTTP 200 SSE',
+  async code => {
+    const error = { error: { code, type: 'content_filter_error', message: 'Synthetic blocked request' } };
+    for (const reply of [() => new Response(JSON.stringify(error)), () => response([error])]) {
+      const h = harness('openai-compatible', async () => reply());
+      expect(await h.transport.run(h.input)).toEqual({ status: 'failed', reason: 'refused' });
+      h.transport.dispose();
+    }
+  },
+);
+
 it('rejects thinking-only Anthropic output exhausted at max_tokens without treating it as an answer', async () => {
   const fetcher = vi.fn(async () =>
     response([

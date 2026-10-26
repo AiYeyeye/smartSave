@@ -25,6 +25,7 @@ import { extractSaveBodyForUi } from './extract-coordinator';
 import { setOverlayDocumentTrust, withTrustedSender } from '../domain/trusted-sender';
 import { OwnWriteGuard } from './own-write-guard';
 import { nativeSaveBadge, startNativeBookmarkIngress } from './native-bookmark-ingress';
+import { SaveRetryOwner, startSaveRetryService } from './save-retry';
 import { SiteRulesStore } from '../persistence/site-rules';
 import { pendingSaveReceipts, readSaveReceipts, SaveReceiptLog } from '../persistence/save-receipts';
 import { startWorkerDiagnostics } from './worker-diagnostics';
@@ -199,6 +200,7 @@ const nativeSaves = startNativeBookmarkIngress({
   badge: nativeSaveBadge,
 });
 startSaveCorrectionService(new SaveCorrectionOwner(projection, coordinator, saveReceipts, siteRules));
+startSaveRetryService(new SaveRetryOwner({ projection, settings, aiServices, receipts: saveReceipts }));
 
 startOrganizeTaskService(organizeTasks, organizeBadge);
 

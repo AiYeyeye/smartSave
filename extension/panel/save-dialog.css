@@ -40,6 +40,7 @@ html:has(.save-pop) body { width: 352px; overflow-x: hidden; }
 .save-pop-actions > button { min-height: 32px; padding: 0 14px; }
 .save-pop-actions > .primary { min-width: 84px; }
 .save-pop-actions > .ghost { color: var(--muted); box-shadow: none; }
+.save-pop-actions > .save-pop-retry { margin-right: auto; padding: 0 6px; color: var(--accent-text); background: transparent; border-color: transparent; box-shadow: none; white-space: nowrap; }
 .save-pop-note { margin: 0; font-size: 12px; line-height: 1.45; color: var(--muted); }
 .save-pop-note.is-warn { color: var(--warn); }
 

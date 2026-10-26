@@ -3,6 +3,8 @@ import { z } from 'zod';
 export const classificationPolicySchema = z.strictObject({
   maxNewDepth: z.literal([1, 2, 3, 4]),
   allowRename: z.boolean(),
+  /** Read-only save review can suggest only existing destinations. */
+  existingFoldersOnly: z.boolean().optional(),
   /** Organize only: how many category levels the taxonomy should have (1 = flat, 2 = broad/sub). */
   levels: z.literal([1, 2, 3]).optional(),
   /** One correction round: why the previous answer was rejected locally. Fixed text from PLAN_FEEDBACK only. */

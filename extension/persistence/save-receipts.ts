@@ -34,6 +34,9 @@ export type SaveReceipt = {
   ms?: number;
   timing?: SaveTiming;
   suggestedTitle?: string;
+  /** Explicit read-only re-recognition; applied only through the ordinary review confirmation. */
+  suggestedFolderId?: string;
+  aiRetry?: { id: string; status: 'pending' | 'ready' | 'failed'; reason?: string };
   nameStatus?: 'pending' | 'ready' | 'unchanged' | 'uncertain' | 'failed';
   nameReview?: 'kept' | 'applied';
   nameRequestId?: string;
@@ -104,6 +107,13 @@ export class SaveReceiptLog {
       const list = await readSaveReceipts(this.storage);
       let count = 0;
       const next = list.map(receipt => {
+        if (receipt.aiRetry?.status === 'pending') {
+          count++;
+          receipt = {
+            ...receipt,
+            aiRetry: { ...receipt.aiRetry, status: 'failed', reason: 'recognition-interrupted' },
+          };
+        }
         if (receipt.status !== 'classifying') {
           if (receipt.nameStatus === 'pending') {
             count++;
@@ -197,15 +207,17 @@ export function receiptReasonText(reason: string | undefined): string {
     case 'http-error':
       return '模型服务返回错误';
     case 'provider-error':
-      return '模型服务报告生成失败（HTTP 200 也可能包含错误），请查看 Debug 日志';
+      return '模型服务生成失败，可重试或检查 AI 设置。';
     case 'schema':
       return '模型返回的内容无法解析（打开 Debug 日志可看到原因）';
     case 'empty':
       return '模型响应中没有可用文字；请在 Debug 日志检查返回正文和协议结束状态';
     case 'incomplete':
-      return '模型输出未完成，可能是额度用完或连接中断；此次没有执行归类';
+      return '模型回复未完成，请重试。';
     case 'refused':
-      return '模型拒绝回答或被安全策略拦截';
+      return '模型服务因内容规则拒绝了本次请求。';
+    case 'recognition-interrupted':
+      return '识别已中断，请重试。';
     case 'stale-context':
       return '分类过程中书签或设置发生变化，已停止后续操作';
     case 'settings-unavailable':

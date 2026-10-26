@@ -23,6 +23,7 @@ type Session = {
   previousRule?: SiteRule | null;
   response?: CorrectionResponse;
   reviewInput?: { title: string; targetId: string };
+  suggestedFolderId?: string;
 };
 
 /** Purpose-bound readback/consent owner. All native moves remain in MutationCoordinator. */
@@ -94,7 +95,8 @@ export class SaveCorrectionOwner {
       if (this.sessions.size >= 32) throw Error('session-limit');
       return this.receipts.withAction(message.receiptId, async () => {
         let receipt = await this.receipts.get(message.receiptId);
-        if (!receipt || receipt.status === 'classifying') throw Error('stale-correction');
+        if (!receipt || receipt.status === 'classifying' || receipt.aiRetry?.status === 'pending')
+          throw Error('stale-correction');
         if ((await this.receipts.latestForBookmark(receipt.bookmarkId))?.id !== receipt.id)
           throw Error('stale-correction');
         if (!receipt.installationId) throw Error('legacy-receipt');
@@ -169,6 +171,13 @@ export class SaveCorrectionOwner {
         const token = crypto.randomUUID();
         this.sessions.set(token, session);
         const current = this.node(session, tree);
+        session.suggestedFolderId =
+          receipt.aiRetry?.status === 'ready' &&
+          current.title === receipt.title &&
+          current.parentId === receipt.fromParentId &&
+          tree.nodes.some(folder => folder.ref.nativeId === receipt.suggestedFolderId && folder.childrenWritable)
+            ? receipt.suggestedFolderId
+            : undefined;
         return {
           status: 'ready',
           token,
@@ -177,6 +186,7 @@ export class SaveCorrectionOwner {
           ...(!receipt.nameReview && current.title === receipt.title && receipt.suggestedTitle
             ? { suggestedTitle: receipt.suggestedTitle }
             : {}),
+          ...(session.suggestedFolderId ? { suggestedFolderId: session.suggestedFolderId } : {}),
         };
       });
     }
@@ -197,6 +207,7 @@ export class SaveCorrectionOwner {
         const receipt = await this.receipts.get(session.receipt.id);
         if (
           !receipt ||
+          receipt.aiRetry?.status === 'pending' ||
           (await this.receipts.latestForBookmark(receipt.bookmarkId))?.id !== receipt.id ||
           receipt.reviewedAt !== session.receipt.reviewedAt ||
           receipt.nameRequestId !== session.receipt.nameRequestId ||
@@ -247,7 +258,7 @@ export class SaveCorrectionOwner {
               renamed && !session.receipt.nameReview && source.title === session.receipt.title
                 ? (session.receipt.suggestedTitle ?? source.title)
                 : source.title,
-            parentId: source.parentId,
+            parentId: session.suggestedFolderId ?? source.parentId,
           },
         ]);
         preflight(request, await this.projection.fresh());

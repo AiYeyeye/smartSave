@@ -20,6 +20,8 @@ import { correctionError, type CorrectionResponse } from '../domain/save-correct
 import type { TreeSnapshot } from '../domain/node-reference';
 import { sendCorrection } from './SaveCorrection';
 import { MutationFeedback } from './BookmarkActions';
+import { canRetrySave } from '../domain/save-retry';
+import { retrySave } from './save-retry-client';
 
 export { pendingSaveReceipts } from '../persistence/save-receipts';
 
@@ -188,6 +190,8 @@ function useSaveConfirmDraft(receiptId: string) {
 }
 
 function statusText(receipt: SaveReceipt) {
+  if (receipt.aiRetry?.status === 'pending') return '已收藏 · AI 正在识别…';
+  if (receipt.aiRetry?.status === 'ready') return '已收藏 · AI 建议已就绪';
   if (receipt.status === 'classifying' || receipt.nameStatus === 'pending') return '已收藏 · AI 正在归类…';
   if (receipt.status === 'moved')
     return receipt.source === 'rule' || receipt.source === 'domain'
@@ -306,10 +310,10 @@ function SaveDetails({
             </dd>
           </>
         ) : null}
-        {receipt.status === 'failed' || receipt.status === 'skipped' ? (
+        {(receipt.status === 'failed' || receipt.status === 'skipped') && receipt.aiRetry?.status !== 'ready' ? (
           <>
             <dt>{t('未归类原因')}</dt>
-            <dd>{message(receiptReasonText(receipt.reason))}</dd>
+            <dd>{message(receiptReasonText(receipt.aiRetry?.reason ?? receipt.reason))}</dd>
           </>
         ) : null}
       </dl>
@@ -319,9 +323,9 @@ function SaveDetails({
             {t('撤销归类')}
           </button>
         )}
-        {CONFIG_REASONS.has(receipt.reason ?? '') && receipt.status !== 'moved' && (
+        {(CONFIG_REASONS.has(receipt.reason ?? '') || canRetrySave(receipt)) && receipt.status !== 'moved' && (
           <button type="button" onClick={() => onOpen('ai-services')}>
-            {t('检查 AI 连接')}
+            {t('AI 设置')}
           </button>
         )}
         <button type="button" onClick={() => onOpen('debug')}>
@@ -342,6 +346,7 @@ export function SaveReviewForm({
   onDismiss,
   onOpen,
   send = sendCorrection,
+  retry = retrySave,
 }: {
   receipt: SaveReceipt;
   onComplete: () => void;
@@ -349,6 +354,7 @@ export function SaveReviewForm({
   onDismiss: () => Promise<void>;
   onOpen: (route: string) => void;
   send?: typeof sendCorrection;
+  retry?: typeof retrySave;
 }) {
   const { t, message } = useI18n();
   const ids = useId();
@@ -358,6 +364,9 @@ export function SaveReviewForm({
   const [result, setResult] = useState<CorrectionResponse>();
   const [busy, setBusy] = useState(false);
   const [dismissError, setDismissError] = useState(false);
+  const [retryBusy, setRetryBusy] = useState(false);
+  const [retryError, setRetryError] = useState(false);
+  const retryLock = useRef(false);
   const [locked, setLocked] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const token = useRef<string | undefined>(undefined);
@@ -373,6 +382,9 @@ export function SaveReviewForm({
     receipt.correction?.requestId,
     receipt.correction?.status,
     receipt.reviewRequestId,
+    receipt.suggestedFolderId,
+    receipt.aiRetry?.status,
+    receipt.aiRetry?.id,
   ]);
   const release = useCallback(() => {
     const value = token.current;
@@ -419,7 +431,7 @@ export function SaveReviewForm({
       entry => entry.ref.nativeId === key && entry.ref.kind === 'folder' && entry.childrenWritable,
     );
   const title = draft?.titleEdited && draft.title !== undefined ? draft.title : baseTitle;
-  const folder = draft?.folderEdited ? (draft.folderId ?? '') : (node?.parentId ?? '');
+  const folder = draft?.folderEdited ? (draft.folderId ?? '') : (ready?.suggestedFolderId ?? node?.parentId ?? '');
   const expandedList = draft?.expanded;
   const expanded = useMemo(
     () => new Set(expandedList ?? (ready && folder ? folderAncestors(ready.tree, folder) : [])),
@@ -430,9 +442,26 @@ export function SaveReviewForm({
   const moved = !!node && folder !== node.parentId;
   const invalid = !writable(folder) || !finalTitle || (renamed && finalTitle.length > 200);
   const treeOpen = !!draft?.treeOpen;
+  const recognizing = retryBusy || receipt.aiRetry?.status === 'pending';
+  const controlsLocked = locked || recognizing;
+
+  async function recognize() {
+    if (lock.current || retryLock.current || !canRetrySave(receipt) || recognizing) return;
+    retryLock.current = true;
+    setRetryBusy(true);
+    setRetryError(false);
+    try {
+      await retry(receipt.id);
+    } catch {
+      if (live.current) setRetryError(true);
+    } finally {
+      retryLock.current = false;
+      if (live.current) setRetryBusy(false);
+    }
+  }
 
   async function confirm() {
-    if (!ready || !token.current || lock.current || invalid) return;
+    if (!ready || !token.current || lock.current || retryLock.current || recognizing || invalid) return;
     lock.current = true;
     setBusy(true);
     setLocked(true);
@@ -553,7 +582,7 @@ export function SaveReviewForm({
           autoFocus
           aria-description={suggested && !draft?.titleEdited ? t('AI 建议') : undefined}
           value={title}
-          disabled={locked}
+          disabled={controlsLocked}
           spellCheck={false}
           onChange={event => updateDraft({ title: event.target.value, titleEdited: true })}
           onKeyDown={event => {
@@ -565,18 +594,19 @@ export function SaveReviewForm({
         />
         <span id={`${ids}-folder`} className="save-pop-label">
           {t('文件夹')}
-          {receipt.status === 'moved' && receipt.source === 'ai' && !draft?.folderEdited && (
-            <span className="save-pop-ai" aria-hidden="true" title={t('AI 建议')}>
-              AI
-            </span>
-          )}
+          {((receipt.status === 'moved' && receipt.source === 'ai') || ready?.suggestedFolderId) &&
+            !draft?.folderEdited && (
+              <span className="save-pop-ai" aria-hidden="true" title={t('AI 建议')}>
+                AI
+              </span>
+            )}
         </span>
         <FolderButton
           tree={ready.tree}
           value={folder}
           open={treeOpen}
           controls={`${ids}-tree`}
-          disabled={locked}
+          disabled={controlsLocked}
           onToggle={() => updateDraft({ treeOpen: !treeOpen })}
         />
         {treeOpen && (
@@ -587,7 +617,7 @@ export function SaveReviewForm({
               labelledBy={`${ids}-folder`}
               tree={ready.tree}
               value={folder}
-              disabled={locked}
+              disabled={controlsLocked}
               expanded={expanded}
               onExpandedChange={next => updateDraft({ expanded: [...next] })}
               onChoose={key => updateDraft({ folderId: key, folderEdited: true, expanded: [...expanded] })}
@@ -595,9 +625,19 @@ export function SaveReviewForm({
           </div>
         )}
       </div>
-      {receipt.status === 'failed' && (
+      {receipt.status === 'failed' && !recognizing && receipt.aiRetry?.status !== 'ready' && (
         <p className="save-pop-note is-warn" role="status">
-          {message(receiptReasonText(receipt.reason))}
+          {message(receiptReasonText(receipt.aiRetry?.reason ?? receipt.reason))}
+        </p>
+      )}
+      {recognizing && (
+        <p className="save-pop-note" role="status">
+          {t('AI 正在重新识别…')}
+        </p>
+      )}
+      {retryError && (
+        <p className="save-pop-note is-warn" role="alert">
+          {t('未能开始识别，请重试。')}
         </p>
       )}
       {busy && (
@@ -629,10 +669,15 @@ export function SaveReviewForm({
         </div>
       )}
       <div className="save-pop-actions">
+        {canRetrySave(receipt) && (
+          <button type="button" className="save-pop-retry" disabled={controlsLocked} onClick={() => void recognize()}>
+            {t('重新 AI 识别')}
+          </button>
+        )}
         <button type="button" className="ghost" disabled={busy} onClick={onLater}>
           {t('稍后处理')}
         </button>
-        <button type="button" className="primary" disabled={locked || invalid} onClick={() => void confirm()}>
+        <button type="button" className="primary" disabled={controlsLocked || invalid} onClick={() => void confirm()}>
           {t(renamed || moved ? '保存修改' : '完成')}
         </button>
       </div>
@@ -701,7 +746,9 @@ export function SaveReviewQueue({
     };
   }, [emptied, onClose]);
   const current = entries[0] ? byId.get(entries[0]) : undefined;
-  const waiting = current && (current.status === 'classifying' || current.nameStatus === 'pending');
+  const waiting =
+    current &&
+    (current.status === 'classifying' || current.nameStatus === 'pending' || current.aiRetry?.status === 'pending');
   return (
     <>
       <header className="save-pop-head">
@@ -719,7 +766,7 @@ export function SaveReviewQueue({
       {current && waiting && (
         <section className="save-pop-form">
           <p className="save-pop-note" role="status">
-            {t('正在自动归类，完成后可确认名称和目录。')}
+            {t(current.aiRetry?.status === 'pending' ? 'AI 正在重新识别…' : '正在自动归类，完成后可确认名称和目录。')}
           </p>
           <div className="save-pop-actions">
             <button type="button" className="ghost" onClick={() => finish(current.id)}>

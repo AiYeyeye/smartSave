@@ -38,6 +38,7 @@ export const correctionResponseSchema = z.discriminatedUnion('status', [
     bookmarkId: id,
     tree: treeStateSchema.options[2].shape.snapshot,
     suggestedTitle: z.string().optional(),
+    suggestedFolderId: id.optional(),
   }),
   z.strictObject({
     status: z.literal('moved'),

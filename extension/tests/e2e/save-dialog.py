@@ -33,6 +33,7 @@ manifest['host_permissions'] = ['http://127.0.0.1/*']
 (extension / 'manifest.json').write_text(json.dumps(manifest), encoding='utf-8')
 events, fixture = [], {}
 release = threading.Event()
+retry_release = threading.Event()
 
 
 class Provider(BaseHTTPRequestHandler):
@@ -45,7 +46,21 @@ class Provider(BaseHTTPRequestHandler):
         events.append(payload)
         assert payload['task'] == 'save', payload
         assert release.wait(20), 'fixture response was not released'
+        if payload['items'][0]['title'] == 'Blocked synthetic':
+            attempts = sum(event['items'][0]['title'] == 'Blocked synthetic' for event in events)
+            if attempts == 1:
+                data = ('data: ' + json.dumps({'error': {'type': 'content_filter_error', 'code': 'content_filter',
+                        'message': 'Synthetic refusal'}}) + '\n\n').encode()
+                self.send_response(200)
+                self.send_header('Content-Type', 'text/event-stream')
+                self.send_header('Content-Length', str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+                return
+            assert retry_release.wait(20), 'retry response was not released'
         assignment = {'itemId': payload['items'][0]['id'], 'folderId': fixture['source']}
+        if payload['items'][0]['title'] == 'Blocked synthetic':
+            assignment.update({'folderId': fixture['target'], 'suggestedTitle': 'Retried synthetic advice'})
         if payload['items'][0]['title'] == 'First synthetic':
             assignment['suggestedTitle'] = 'Suggested synthetic name'
         output = {'assignments': [assignment], 'newFolders': []}
@@ -108,11 +123,11 @@ with sync_playwright() as playwright:
             return reader.evaluate(STATE)
 
         def create(title, completed=True):
-            bookmark = worker.evaluate("""async data => (await chrome.bookmarks.create({parentId:data.parent,
+            bookmark = reader.evaluate("""async data => (await chrome.bookmarks.create({parentId:data.parent,
                 title:data.title,url:'https://'+data.title.split(' ')[0].toLowerCase()+'.example.test/'})).id""",
                 {'parent': fixture['inbox'], 'title': title})
             if completed:
-                wait(lambda: worker.evaluate("""async id => (await chrome.storage.local.get('nativeSaveReceipts'))
+                wait(lambda: reader.evaluate("""async id => (await chrome.storage.local.get('nativeSaveReceipts'))
                     .nativeSaveReceipts?.some(r=>r.bookmarkId===id && r.status!=='classifying')""", bookmark))
             return bookmark
 
@@ -260,6 +275,35 @@ with sync_playwright() as playwright:
             'nativeSaveReceipts')).nativeSaveReceipts.find(r => r.bookmarkId === id).id""", third)])
         final = state()
         assert not any(kind.startswith('popup:') for kind in final['windows']), final
+        blocked = create('Blocked synthetic')
+        review = context.new_page()
+        review.on('pageerror', lambda error: errors.append(str(error)))
+        review.set_viewport_size({'width': 352, 'height': 640})
+        review.goto(f'chrome-extension://{extension_id}/save/index.html')
+        expect(review.get_by_role('textbox', name='名称', exact=True)).to_have_value('Third synthetic')
+        review.get_by_role('button', name='完成', exact=True).click()
+        expect(review.get_by_role('status').filter(has_text='模型服务因内容规则拒绝了本次请求。')).to_be_visible()
+        expect(review.get_by_role('button', name='重新 AI 识别', exact=True)).to_be_enabled()
+        review.locator('.theme-root').screenshot(path=str(root / 'retry-refused-zh.png'))
+        locale.locator('select[aria-label="语言"],select[aria-label="Language"]').select_option('en')
+        expect(review.get_by_role('button', name='Retry AI', exact=True)).to_be_visible()
+        assert review.evaluate('document.documentElement.scrollWidth') <= 353
+        review.locator('.theme-root').screenshot(path=str(root / 'retry-refused-en.png'))
+        locale.locator('select[aria-label="语言"],select[aria-label="Language"]').select_option('zh-CN')
+        native_before_retry = reader.evaluate('()=>chrome.bookmarks.getTree()')
+        review.get_by_role('button', name='重新 AI 识别', exact=True).click()
+        expect(review.get_by_text('AI 正在重新识别…', exact=True)).to_be_visible()
+        review.reload()
+        expect(review.get_by_text('AI 正在重新识别…', exact=True)).to_be_visible()
+        retry_release.set()
+        expect(review.get_by_role('textbox', name='名称', exact=True)).to_have_value('Retried synthetic advice')
+        expect(review.get_by_role('button', name='文件夹：Bookmarks bar / Target').or_(
+            review.get_by_role('button', name='文件夹：书签栏 / Target'))).to_be_visible()
+        assert reader.evaluate('()=>chrome.bookmarks.getTree()') == native_before_retry
+        review.locator('.theme-root').screenshot(path=str(root / 'retry-advice.png'))
+        review.get_by_role('button', name='保存修改', exact=True).click()
+        wait(lambda: get(blocked)['parentId'] == fixture['target'] and get(blocked)['title'] == 'Retried synthetic advice')
+        assert sum(event['items'][0]['title'] == 'Blocked synthetic' for event in events) == 2
         assert not errors, errors
         result = {'status': 'PASS', 'evidence': str(root), 'browser': context.browser.version if context.browser else '',
                   'presentation': mode,
@@ -272,6 +316,8 @@ with sync_playwright() as playwright:
                              'real worker stop/restart with editor open; one click saves the retained name/folder draft',
                              'one combined name+folder write', 'no-op confirm and later keep bookmarks',
                              'sidebar has only the launcher, which re-queues pending receipts'],
+                  'retry': ['HTTP 200 content-filter refusal', 'bilingual retry action', 'pending retry survives view reload',
+                            'read-only advice leaves native tree unchanged', 'one explicit confirmation applies name and folder'],
                   'errors': errors, 'motion': args.motion,
                   'compact_content_height': compact_height, 'compact_toolbar_height': toolbar_compact,
                   'limits': 'Disposable profile, synthetic bookmarks/local provider; the popup document runs in a tab. '
@@ -287,5 +333,6 @@ with sync_playwright() as playwright:
         raise
     finally:
         release.set()
+        retry_release.set()
         context.close()
         server.shutdown()

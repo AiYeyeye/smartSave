@@ -235,6 +235,9 @@ export function extractAssistantText(adapter: ModelConfig['adapter'], raw: unkno
 
 /** Never parse usable-looking partial JSON before the provider outcome. */
 export function completedReplyText(reply: ModelReply): string {
+  // Some providers report a safety refusal as an error event inside an HTTP 200 stream.
+  if (['content_filter', 'content_filter_error'].includes(reply.failed ?? ''))
+    throw new ModelParseError('refused', reply.failed);
   // Some gateways label an incomplete snapshot response.completed. Keep rejecting it,
   // but preserve the actionable budget stop instead of hiding it behind the label mismatch.
   const budgetStop =

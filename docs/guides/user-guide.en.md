@@ -33,6 +33,8 @@ Enable **Check weekly** to check the selected scope every seven days. Checks can
 
 For a deleted or changed bookmark in save confirmation, **Remove from list** clears the reminder. **Review later** keeps it pending.
 
+After AI recognition fails, choose **Retry AI** in the save popup to request name and existing-folder suggestions from the current Smart save model. Advice stays local and changes bookmarks only after **Save changes**; manual name and folder drafts are preserved. **AI settings** in Details opens the model configuration. A content-policy refusal is shown explicitly and does not establish a depleted balance; the provider may still decline a retry. Interrupted background attempts do not resend automatically and can be retried after reopening. Unverified native writes must be reconciled in recovery records first.
+
 ## Bookmarks and other features
 
 Zhilan works with native Chrome / Edge bookmarks. No Zhilan account is required. Start with local browsing and search; AI is optional.

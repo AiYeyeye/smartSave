@@ -61,6 +61,10 @@ For larger multi-folder collections, bookmark AI search plans folder order, comb
 
 Combined name/folder review uses the existing correction owner, mutation coordinator and journal, with explicit steps under one request. Native APIs are not transactional: partial/unknown results retain evidence and require recovery without replay. No-op review only marks completion; closing neither mutates bookmarks nor learns preferences. The page is not web-accessible and adds no host permission. See the linked Chrome windows API.
 
+收藏识别重试由 `background/save-retry.ts` 负责，仅接受可信收藏弹窗的严格 RPC。持久化每次请求的 ID 和状态后才调用当前智能收藏模型，单条记录的重复点击复用当前尝试。只发送原生书签元信息和可选目录，不读取正文；已有目录建议和名称存入本机回执，不能触发原生写入。输入、隐私、模型配置及原生依赖变化会丢弃迟到建议；未知原生写入不提供重试。确认仍走 `SaveCorrectionOwner`、预览、写入协调器与恢复日志，原样采纳 AI 建议不产生人工纠正学习。重启将未完成建议标为失败，不自动重发。
+
+`background/save-retry.ts` owns explicit recognition retries through strict trusted-save-document RPC. It persists an attempt ID and status before calling the current Smart save model and coalesces repeated clicks. Only native bookmark metadata and allowed folders are sent, without page bodies. Existing-folder and name advice stays in local receipts and cannot trigger native writes. Changed inputs, privacy, model configuration or native dependencies invalidate late advice; unknown native writes are ineligible. Confirmation still uses `SaveCorrectionOwner`, preview, the mutation coordinator and recovery journal; unchanged AI adoption does not train correction preferences. Restart marks unfinished advice failed without replay.
+
 ## 书签检查 / Bookmark checks
 
 `background/bookmark-check-owner.ts` 独占只读检查任务，可信扩展 RPC 仅接受当前安装和范围，不接受任意待请求网址。`zhilan-bookmark-check` 本地 IndexedDB 保存版本化进度；页面只观察，关闭后继续，worker 重启从未完成项恢复，主动暂停保留。周检默认关闭，使用 `alarms` 每七天调度，启动检查并恢复丢失的闹钟；权限只能由界面点击请求，后台仅检查现有授权。最多两个不同主机并发、同主机一次一个请求，每批间隔 200ms；同网址复用结果。HEAD/GET 只读响应状态、取消响应体，单次页面请求 12 秒超时，不带 Cookie/referrer、不跟随跳转；重复 GET 的 404/410 归入页面未找到；另按登录或访问限制、跳转、临时异常分类。网站入口 GET 单次最多 6 秒，HTTP/HTTPS 各两次仍无响应，且页面也没有任何 HTTP 响应，才列为网站无法连接。站点证据按 origin 在本次检查中复用；同源其他当前页面的 HTTP 响应优先于连接失败，手动确认不提供跨书签网络证据。断网与旧连接错误保留未能判断，不声称永久关闭或迁站。手动可访问确认只存本机，绑定安装、原生 ID 和原始网址，跨周检保留；取消确认或改网址后恢复检测。结果按安装、原生 ID 和原始网址匹配当前树。
