@@ -5,17 +5,25 @@ import {
   type BookmarkCheckState,
 } from '../domain/bookmark-check';
 
-export type CheckClient = (message: BookmarkCheckMessage) => Promise<BookmarkCheckState>;
+export type CheckSnapshot = BookmarkCheckState & { ownerId?: string };
+export type CheckClient = (message: BookmarkCheckMessage) => Promise<CheckSnapshot>;
 export const sendBookmarkCheck: CheckClient = message =>
   new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(Error('check-unavailable')), 15_000);
+    const timer = setTimeout(() => reject(Error('check-timeout')), 15_000);
     void Promise.resolve()
       .then(() => chrome.runtime.sendMessage(message))
+      .catch(error => {
+        throw Error(
+          error instanceof Error && /Extension context invalidated/i.test(error.message)
+            ? 'extension-updated'
+            : 'check-disconnected',
+        );
+      })
       .then(raw => {
         const response = bookmarkCheckResponseSchema.safeParse(raw);
-        if (!response.success) throw Error('check-unavailable');
+        if (!response.success) throw Error('check-response-invalid');
         if (response.data.status === 'error') throw Error(response.data.reason);
-        resolve(response.data.state);
+        resolve({ ...response.data.state, ...(response.data.ownerId ? { ownerId: response.data.ownerId } : {}) });
       })
       .catch(error => reject(error))
       .finally(() => clearTimeout(timer));

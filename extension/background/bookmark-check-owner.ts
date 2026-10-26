@@ -27,12 +27,16 @@ type Options = {
   now?: () => number;
   lifetime?: { acquire(): () => void };
   batchDelayMs?: number;
+  scheduleTimeoutMs?: number;
 };
 
 /** The worker owns one durable read-only scan. UI disconnects never cancel it. */
 export class BookmarkCheckOwner {
   private state = emptyBookmarkCheck();
-  private ready: Promise<void>;
+  private ready?: Promise<void>;
+  private initialized = false;
+  private scheduleRetry = false;
+  private scheduleQueued = false;
   private tail = Promise.resolve();
   private running?: Promise<void>;
   private abort?: AbortController;
@@ -42,12 +46,58 @@ export class BookmarkCheckOwner {
   constructor(private readonly options: Options) {
     this.now = options.now ?? Date.now;
     this.lifetime = options.lifetime ?? createWorkerTaskLifetime();
-    this.ready = options.store.read().then(async state => {
-      this.state = state;
-      await options.schedule(state.weekly ? (state.nextRun ?? this.now() + WEEK_MS) : undefined);
-      if (state.job?.status === 'running') this.launch();
-    });
-    void this.ready.catch(() => {});
+    void this.initialize().catch(() => {});
+  }
+  private initialize(): Promise<void> {
+    if (this.initialized) return Promise.resolve();
+    if (!this.ready)
+      this.ready = this.options.store
+        .read()
+        .then(async state => {
+          this.state = state;
+          // Alarm availability must not prevent reading, pausing or restarting a saved scan.
+          await this.syncSchedule().catch(() => {});
+          this.initialized = true;
+          if (!this.disposed && state.job?.status === 'running') this.launch();
+        })
+        .finally(() => {
+          // A transient database failure is retried by the next command, never cached forever.
+          this.ready = undefined;
+        });
+    return this.ready;
+  }
+  private async syncSchedule() {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let expired = false;
+    try {
+      const scheduled = this.options.schedule(
+        this.state.weekly ? (this.state.nextRun ?? this.now() + WEEK_MS) : undefined,
+      );
+      // Alarm APIs cannot be cancelled. Reconcile the current setting after a timed-out call finally settles.
+      void scheduled
+        .finally(() => {
+          if (expired && !this.disposed) this.scheduleRetry = true;
+        })
+        .catch(() => {});
+      await Promise.race([
+        scheduled,
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(() => {
+            expired = true;
+            reject(Error('schedule-unavailable'));
+          }, this.options.scheduleTimeoutMs ?? 5000);
+        }),
+      ]);
+      this.scheduleRetry = false;
+      if (this.state.notice === 'schedule-unavailable')
+        this.state = { ...this.state, revision: this.state.revision + 1, notice: undefined };
+    } catch {
+      this.scheduleRetry = true;
+      this.state = { ...this.state, revision: this.state.revision + 1, notice: 'schedule-unavailable' };
+      throw Error('schedule-unavailable');
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
   }
   private queue<T>(run: () => Promise<T>): Promise<T> {
     const next = this.tail.then(run, run);
@@ -101,10 +151,24 @@ export class BookmarkCheckOwner {
     this.launch();
   }
   async handle(message: BookmarkCheckMessage): Promise<BookmarkCheckState> {
-    await this.ready;
+    await this.initialize();
+    // Abort network requests immediately, even while a bounded checkpoint is still pending.
+    if (message.action === 'pause' || message.action === 'restart') this.abort?.abort();
+    if (this.scheduleRetry && !this.scheduleQueued && message.action === 'get') {
+      this.scheduleQueued = true;
+      void this.queue(() => this.syncSchedule())
+        .catch(() => {})
+        .finally(() => {
+          this.scheduleQueued = false;
+        });
+    }
     if (message.action === 'get') return structuredClone(this.state);
     return this.queue(async () => {
       if (message.action === 'start') await this.start(message.installationId, message.scopeId);
+      if (message.action === 'restart') {
+        await this.pause();
+        await this.start(message.installationId, message.scopeId);
+      }
       if (message.action === 'verify') {
         const { tree, nodes } = await this.scope(message.installationId, null);
         const node = nodes.find(node => node.ref.nativeId === message.nativeId);
@@ -157,7 +221,7 @@ export class BookmarkCheckOwner {
           notice: undefined,
           ...(changed ? { job: undefined } : {}),
         });
-        await this.options.schedule(nextRun);
+        await this.syncSchedule();
       }
       if (message.action === 'pause') await this.pause();
       if (message.action === 'resume') {
@@ -182,21 +246,23 @@ export class BookmarkCheckOwner {
       const next = { ...this.state, notice, job: { ...job, status: 'paused' as const, updatedAt: this.now() } };
       try {
         await this.persist(next);
-      } catch {
+      } catch (error) {
         // Cancellation must remain effective even if its durable checkpoint fails.
-        this.state = { ...next, revision: this.state.revision + 1, notice: 'storage-unavailable' };
-        throw Error('storage-unavailable');
+        const notice =
+          error instanceof Error && error.message === 'storage-timeout' ? error.message : 'storage-unavailable';
+        this.state = { ...next, revision: this.state.revision + 1, notice };
+        throw Error(notice, { cause: error });
       }
     }
   }
   async permissionsChanged() {
-    await this.ready;
+    await this.initialize();
     return this.queue(async () => {
       if (!(await this.options.permitted())) await this.pause('permission-required');
     });
   }
   async weekly() {
-    await this.ready;
+    await this.initialize();
     return this.queue(async () => {
       if (!this.state.weekly) return;
       await this.persist({ ...this.state, nextRun: this.now() + WEEK_MS });
@@ -210,30 +276,51 @@ export class BookmarkCheckOwner {
     });
   }
   private launch() {
-    if (this.running || this.disposed) return;
+    if ((this.running && !this.abort?.signal.aborted) || this.disposed) return;
+    const jobId = this.state.job?.id;
+    if (!jobId || this.state.job?.status !== 'running') return;
     const controller = new AbortController();
     this.abort = controller;
     const release = this.lifetime.acquire();
+    let released = false;
+    const stopLifetime = () => {
+      if (released) return;
+      released = true;
+      release();
+    };
+    controller.signal.addEventListener('abort', stopLifetime, { once: true });
     this.running = Promise.resolve()
-      .then(() => this.run(controller.signal))
+      .then(() => this.run(controller.signal, jobId))
       .catch(async error => {
         if (controller.signal.aborted || this.disposed) return;
         await this.queue(async () => {
+          if (controller.signal.aborted || this.disposed || this.abort !== controller || this.state.job?.id !== jobId)
+            return;
+          controller.abort();
           const notice = error instanceof Error ? error.message : 'check-failed';
           const next = {
             ...this.state,
             notice,
-            job: this.state.job && { ...this.state.job, status: 'error' as const },
+            job: { ...this.state.job, status: 'error' as const, updatedAt: this.now() },
           };
           try {
             await this.persist(next);
-          } catch {
-            this.state = { ...next, notice: 'storage-unavailable' };
+          } catch (checkpointError) {
+            this.state = {
+              ...next,
+              revision: this.state.revision + 1,
+              notice:
+                checkpointError instanceof Error && checkpointError.message === 'storage-timeout'
+                  ? checkpointError.message
+                  : 'storage-unavailable',
+            };
           }
         });
       })
       .finally(() => {
-        release();
+        controller.signal.removeEventListener('abort', stopLifetime);
+        stopLifetime();
+        if (this.abort !== controller) return;
         this.running = undefined;
         // Wait behind pending pause/resume checkpoints before deciding to restart.
         if (!this.disposed)
@@ -242,14 +329,14 @@ export class BookmarkCheckOwner {
           });
       });
   }
-  private async run(signal: AbortSignal) {
+  private async run(signal: AbortSignal, jobId: string) {
     const probe = this.options.probe ?? createBookmarkLinkProbe(this.state.job?.items);
     const cache = new Map<string, LinkResult>();
     for (const item of this.state.job?.items ?? [])
       if (item.result && !['changed', 'manual'].includes(item.result.reason)) cache.set(item.url, item.result);
     while (!signal.aborted && !this.disposed) {
       const job = this.state.job;
-      if (!job || job.status !== 'running') return;
+      if (!job || job.id !== jobId || job.status !== 'running') return;
       const pending = job.items.filter(item => !item.result);
       if (!pending.length) {
         await this.queue(async () => {
@@ -262,10 +349,13 @@ export class BookmarkCheckOwner {
         return;
       }
       if (!(await this.options.permitted())) {
-        await this.queue(() => this.pause('permission-required'));
+        await this.queue(async () => {
+          if (!signal.aborted && this.state.job?.id === jobId) await this.pause('permission-required');
+        });
         return;
       }
       const { tree, nodes } = await this.scope(job.installationId, job.scopeId, true);
+      if (signal.aborted || this.disposed || this.state.job?.id !== jobId) return;
       const current = new Map(nodes.map(node => [node.ref.nativeId, node]));
       // At most two hosts concurrently, and one in-flight request per host.
       const hosts = new Set<string>();
@@ -328,6 +418,8 @@ export class BookmarkCheckOwner {
 }
 
 export function startBookmarkChecks(projection: TreeProjection) {
+  // Revisions can roll back to the last durable checkpoint after worker replacement.
+  const ownerId = crypto.randomUUID();
   const owner = new BookmarkCheckOwner({
     projection,
     store: new BookmarkCheckStore(),
@@ -362,7 +454,7 @@ export function startBookmarkChecks(projection: TreeProjection) {
         }
         void owner
           .handle(parsed.data)
-          .then(state => reply({ status: 'ok', state }))
+          .then(state => reply({ status: 'ok', state, ownerId }))
           .catch(error => reply({ status: 'error', reason: error instanceof Error ? error.message : 'check-failed' }));
         return true;
       },

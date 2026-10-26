@@ -4,17 +4,18 @@
 .check-scope .in-panel-select { width: 100%; }
 .check-weekly { display: flex; align-items: center; gap: 6px; font-size: 13px; white-space: nowrap; }
 .check-help { position: relative; margin-left: auto; }
-.check-help summary { list-style: none; cursor: pointer; display: flex; padding: 6px; border-radius: 6px; color: var(--muted); }
-.check-help summary::-webkit-details-marker { display: none; }
-.check-help summary svg, .check-open svg { width: 17px; height: 17px; }
-.check-help > div { position: absolute; right: 0; z-index: 10; width: min(300px, 70vw); padding: 12px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 24px #0002; }
-.check-help p { margin: 4px 0 12px; font-size: 12px; line-height: 1.65; }
-.check-help p:last-child { margin-bottom: 4px; }
-.check-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; border-bottom: 1px solid var(--border); }
-.check-tabs button { justify-content: center; min-width: 0; border: 0; border-radius: 6px 6px 0 0; background: transparent; color: var(--muted); padding: 10px 6px; }
-.check-tabs button[aria-selected='true'] { color: var(--accent-text); background: var(--accent-soft); box-shadow: inset 0 -2px var(--accent); }
-.check-tabs span { margin-left: 8px; font-size: 11px; }
-.check-runbar { justify-content: space-between; margin-bottom: 14px; }
+.check-help > button { display: flex; padding: 6px; border: 0; border-radius: 8px; color: var(--muted); background: transparent; box-shadow: none; }
+.check-help > button svg, .check-open svg { width: 17px; height: 17px; }
+.check-help > div { position: absolute; right: 0; top: 100%; z-index: 10; width: min(248px, 70vw); padding: 12px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 24px #0002; font-size: 12px; line-height: 1.65; color: var(--muted); pointer-events: none; }
+.check-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; padding: 4px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--border); }
+.check-tabs button { justify-content: center; min-width: 0; gap: 6px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--muted); padding: 7px 6px; box-shadow: none; font-weight: 500; }
+.check-tabs button[aria-selected='true'] { color: var(--accent-text); background: var(--surface); border-color: var(--border); box-shadow: 0 1px 3px #0000000a; }
+.check-tabs span { min-width: 18px; padding: 1px 5px; border-radius: 6px; background: var(--surface-2); font-size: 10px; line-height: 16px; }
+.check-runbar { justify-content: space-between; gap: 6px; margin-bottom: 14px; }
+.check-restart { color: var(--muted); background: transparent; border-color: transparent; box-shadow: none; }
+.check-live-note { margin: 0 0 12px; font-size: 12px; color: var(--muted); }
+.check-notice { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.check-notice button { flex-shrink: 0; }
 .check-progress { display: flex; gap: 12px; align-items: center; margin: 8px 0; color: var(--muted); font-size: 12px; }
 .check-progress progress { width: 100px; height: 5px; accent-color: var(--accent); }
 .check-results { border-radius: 10px; overflow: hidden; }

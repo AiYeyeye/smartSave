@@ -49,7 +49,7 @@ Screenshots use demonstration bookmarks.
 
 You need **Chrome / Edge 127+**.
 
-1. Download **zhilan-0.1.0-candidate.zip** from the [download page](https://github.com/AiYeyeye/smartSave/releases/tag/v0.1.0-preview.20261024.2) and extract it to a permanent folder.
+1. Download **zhilan-0.1.0-candidate.zip** from the [download page](https://github.com/AiYeyeye/smartSave/releases/tag/v0.1.0-preview.20261025.1) and extract it to a permanent folder.
 2. Open `chrome://extensions` or `edge://extensions` and enable **Developer mode**.
 3. Choose **Load unpacked** and select the extracted folder containing `manifest.json`.
 4. Pin Zhilan to the toolbar and click its icon to open your bookmarks.

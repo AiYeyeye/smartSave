@@ -27,6 +27,7 @@ function fixture() {
     probe: vi.fn<(url: string, signal: AbortSignal) => Promise<LinkResult>>(async () => ok),
     now: () => 1000,
     batchDelayMs: 0,
+    scheduleTimeoutMs: 40,
     lifetime: { acquire: vi.fn(() => vi.fn()) },
   };
   const create = () => {
@@ -50,6 +51,178 @@ async function settled(owner: BookmarkCheckOwner, status: string) {
   await vi.waitFor(async () => expect((await get(owner)).job?.status).toBe(status));
   return get(owner);
 }
+
+it('retries a failed initial read instead of permanently rejecting every later command', async () => {
+  const f = fixture();
+  f.options.store.read.mockRejectedValueOnce(Error('storage-unavailable'));
+  const owner = f.create();
+  await expect(get(owner)).rejects.toThrow('storage-unavailable');
+  expect(await get(owner)).toEqual(emptyBookmarkCheck());
+  await start(owner);
+  await settled(owner, 'completed');
+  expect(f.options.store.read).toHaveBeenCalledTimes(2);
+});
+
+it('keeps manual controls usable after alarm restoration fails and retries the alarm separately', async () => {
+  const f = fixture();
+  f.options.schedule.mockRejectedValue(Error('alarms unavailable'));
+  const owner = f.create();
+  expect((await get(owner)).notice).toBe('schedule-unavailable');
+  await start(owner);
+  await settled(owner, 'completed');
+  f.options.schedule.mockResolvedValue(undefined);
+  await get(owner);
+  await vi.waitFor(async () => expect((await get(owner)).notice).toBeUndefined());
+  expect(f.options.store.read).toHaveBeenCalledTimes(1);
+});
+
+it('bounds a hung alarm restoration so initialization and later commands remain usable', async () => {
+  const f = fixture();
+  let finishSchedule!: () => void;
+  f.options.schedule.mockImplementationOnce(
+    () =>
+      new Promise(resolve => {
+        finishSchedule = resolve;
+      }),
+  );
+  const owner = f.create();
+  expect((await get(owner)).notice).toBe('schedule-unavailable');
+  await start(owner);
+  const completed = await settled(owner, 'completed');
+  finishSchedule();
+  await vi.waitFor(async () => expect((await get(owner)).job).toEqual(completed.job));
+  await vi.waitFor(() => expect(f.options.schedule).toHaveBeenCalledTimes(3));
+});
+
+it.each(['resolve', 'reject'] as const)(
+  'restarts even when an old probe ignores cancellation; its late %s cannot alter the new job',
+  async outcome => {
+    const f = fixture(),
+      owner = f.create();
+    const originalTree = structuredClone(f.tree);
+    await owner.handle({
+      type: 'bookmarkCheck',
+      action: 'verify',
+      installationId: 'install',
+      nativeId: 'a',
+      url: 'https://x.test/?a#b',
+      available: true,
+    });
+    let finish!: () => void;
+    let oldSignal!: AbortSignal;
+    f.options.probe.mockImplementationOnce(
+      (_url, signal) =>
+        new Promise((resolve, reject) => {
+          oldSignal = signal;
+          finish = () =>
+            outcome === 'resolve'
+              ? resolve({ status: 'broken', reason: 'http', code: 404, at: 20 })
+              : reject(Error('late old failure'));
+        }),
+    );
+    const previous = await start(owner);
+    await vi.waitFor(() => expect(finish).toBeTypeOf('function'));
+    const restarted = await owner.handle({
+      type: 'bookmarkCheck',
+      action: 'restart',
+      installationId: 'install',
+      scopeId: null,
+    });
+    expect(oldSignal.aborted).toBe(true);
+    expect(restarted.job!.id).not.toBe(previous.job!.id);
+    const completed = await settled(owner, 'completed');
+    expect(completed.job!.items.find(item => item.nativeId === 'a')!.result?.reason).toBe('manual');
+    expect(completed.job!.items.find(item => item.nativeId === 'b')!.result).toEqual(ok);
+    finish();
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect(await get(owner)).toEqual(completed);
+    expect(f.tree).toEqual(originalTree);
+  },
+);
+
+it('stops old traffic when restart scope validation fails and leaves the previous report resumable', async () => {
+  const f = fixture(),
+    owner = f.create();
+  let signal!: AbortSignal;
+  f.options.probe.mockImplementationOnce(
+    (_url, current) =>
+      new Promise((_resolve, reject) => {
+        signal = current;
+        current.addEventListener('abort', () => reject(Error('cancelled')));
+      }),
+  );
+  const prior = await start(owner);
+  await vi.waitFor(() => expect(signal).toBeDefined());
+  await expect(
+    owner.handle({ type: 'bookmarkCheck', action: 'restart', installationId: 'install', scopeId: 'missing' }),
+  ).rejects.toThrow('invalid-scope');
+  expect(signal.aborted).toBe(true);
+  expect((await get(owner)).job).toMatchObject({ id: prior.job!.id, status: 'paused' });
+  await owner.handle({ type: 'bookmarkCheck', action: 'resume' });
+  await settled(owner, 'completed');
+});
+
+it('does not begin old URL requests after a cancelled scope read finally resolves', async () => {
+  const f = fixture(),
+    owner = f.create();
+  let finishScope!: () => void;
+  f.options.projection.fresh.mockResolvedValueOnce(structuredClone(f.tree)).mockImplementationOnce(
+    () =>
+      new Promise(resolve => {
+        finishScope = () => resolve(structuredClone(f.tree));
+      }),
+  );
+  await start(owner);
+  await vi.waitFor(() => expect(finishScope).toBeTypeOf('function'));
+  await owner.handle({ type: 'bookmarkCheck', action: 'restart', installationId: 'install', scopeId: null });
+  const completed = await settled(owner, 'completed');
+  expect(f.options.probe).toHaveBeenCalledTimes(1);
+  finishScope();
+  await new Promise(resolve => setTimeout(resolve, 20));
+  expect(f.options.probe).toHaveBeenCalledTimes(1);
+  expect(await get(owner)).toEqual(completed);
+});
+
+it('publishes a newer error revision when both progress and failure checkpoints fail, then permits restart', async () => {
+  const f = fixture(),
+    owner = f.create();
+  f.options.probe.mockImplementationOnce(async () => {
+    f.options.store.write.mockRejectedValue(Error('storage-timeout'));
+    return ok;
+  });
+  const prior = await start(owner);
+  const failed = await settled(owner, 'error');
+  expect(failed.notice).toBe('storage-timeout');
+  expect(failed.revision).toBeGreaterThan(prior.revision);
+  f.options.store.write.mockResolvedValue(undefined);
+  await owner.handle({ type: 'bookmarkCheck', action: 'restart', installationId: 'install', scopeId: null });
+  await settled(owner, 'completed');
+});
+
+it('aborts a pause immediately while the prior progress checkpoint is pending', async () => {
+  const f = fixture(),
+    owner = f.create();
+  let signal!: AbortSignal;
+  let rejectCheckpoint!: (error: Error) => void;
+  f.options.probe.mockImplementationOnce(async (_url, current) => {
+    signal = current;
+    f.options.store.write.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectCheckpoint = reject;
+        }),
+    );
+    return ok;
+  });
+  await start(owner);
+  await vi.waitFor(() => expect(rejectCheckpoint).toBeTypeOf('function'));
+  const pause = owner.handle({ type: 'bookmarkCheck', action: 'pause' });
+  await vi.waitFor(() => expect(signal.aborted).toBe(true));
+  rejectCheckpoint(Error('storage-timeout'));
+  expect((await pause).job?.status).toBe('paused');
+  await owner.handle({ type: 'bookmarkCheck', action: 'resume' });
+  await settled(owner, 'completed');
+});
 
 it('preserves per-bookmark manual confirmation through weekly scans and restart, never across URL changes', async () => {
   const f = fixture(),

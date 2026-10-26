@@ -91,6 +91,12 @@ export const bookmarkCheckMessageSchema = z.discriminatedUnion('action', [
   z.strictObject({ type: z.literal('bookmarkCheck'), action: z.literal('start'), installationId: id, scopeId: scope }),
   z.strictObject({
     type: z.literal('bookmarkCheck'),
+    action: z.literal('restart'),
+    installationId: id,
+    scopeId: scope,
+  }),
+  z.strictObject({
+    type: z.literal('bookmarkCheck'),
     action: z.literal('configure'),
     installationId: id,
     scopeId: scope,
@@ -109,7 +115,7 @@ export const bookmarkCheckMessageSchema = z.discriminatedUnion('action', [
 ]);
 export type BookmarkCheckMessage = z.infer<typeof bookmarkCheckMessageSchema>;
 export const bookmarkCheckResponseSchema = z.discriminatedUnion('status', [
-  z.strictObject({ status: z.literal('ok'), state: bookmarkCheckStateSchema }),
+  z.strictObject({ status: z.literal('ok'), state: bookmarkCheckStateSchema, ownerId: id.optional() }),
   z.strictObject({ status: z.literal('error'), reason: z.string() }),
 ]);
 

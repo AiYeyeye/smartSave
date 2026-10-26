@@ -86,7 +86,16 @@ with sync_playwright() as playwright:
                 page.wait_for_timeout(100)
             raise AssertionError(state())
         expect(page.get_by_role('heading', name='书签检查', exact=True)).to_be_visible()
-        expect(page.locator('.check-help')).not_to_have_attribute('open', '')
+        expect(page.get_by_role('button', name='帮助', exact=True)).to_have_attribute('aria-expanded', 'false')
+        page.get_by_role('button', name='帮助', exact=True).hover()
+        expect(page.get_by_role('tooltip')).to_contain_text('不会自动删除')
+        assert len(page.get_by_role('tooltip').inner_text()) < 50
+        page.get_by_role('heading', name='书签检查', exact=True).hover()
+        expect(page.get_by_role('tooltip')).to_have_count(0)
+        page.get_by_role('button', name='帮助', exact=True).focus()
+        expect(page.get_by_role('tooltip')).to_be_visible()
+        page.keyboard.press('Escape')
+        expect(page.get_by_role('tooltip')).to_have_count(0)
         before=page.evaluate('()=>chrome.bookmarks.getTree()')
         page.get_by_role('button', name='立即检查', exact=True).click()
         checked=wait_state(lambda s:s.get('job',{}).get('status')=='completed')
@@ -198,6 +207,11 @@ with sync_playwright() as playwright:
         expect(page.get_by_role('button',name='继续检查',exact=True)).to_be_visible()
         page.get_by_role('button',name='继续检查',exact=True).click()
         wait_state(lambda s:s['job']['status']=='running')
+        old_job = state()['job']['id']
+        page.get_by_role('button', name='重新开始', exact=True).click()
+        restarted = wait_state(lambda s:s['job']['status']=='running' and s['job']['id'] != old_job)
+        assert restarted['job']['id'] != old_job
+        expect(page.get_by_role('button', name='暂停检查', exact=True)).to_be_enabled()
         # Stop the actual extension worker while its read-only job is unfinished.
         cdp=context.new_cdp_session(page)
         versions=[]
@@ -278,7 +292,13 @@ with sync_playwright() as playwright:
                 sidebar.screenshot(path=str(root/f'sidebar-check-{language}-{width}.png'),full_page=True)
         page.get_by_label('Language',exact=True).select_option('zh-CN')
         sidebar.set_viewport_size({'width':320,'height':700})
+        sidebar.get_by_role('button', name='帮助', exact=True).hover()
+        expect(sidebar.get_by_role('tooltip')).to_be_visible()
+        help_box = sidebar.get_by_role('tooltip').bounding_box()
+        assert help_box['x'] >= 0 and help_box['x'] + help_box['width'] <= 321
+        sidebar.screenshot(path=str(root/'sidebar-help.png'),full_page=True)
         sidebar.get_by_role('tab',name='重复收藏',exact=False).click()
+        expect(sidebar.get_by_text('打开即检查，收藏变化时更新',exact=True)).to_be_visible()
         expect(sidebar.get_by_label('快捷重复 保留或删除',exact=True)).to_be_visible()
         sidebar.get_by_role('button',name='一键处理',exact=True).click()
         dialog=sidebar.get_by_role('dialog')
@@ -341,7 +361,7 @@ with sync_playwright() as playwright:
         sidebar.reload()
         expect(sidebar.get_by_role('button',name='待确认 1 项',exact=True)).to_have_count(0)
         result={'status':'PASS','evidence':str(root),'browser':context.browser.version,'geometry':geometry,
-                'manualCheck':True,'weeklyAlarm':True,'pauseReloadResume':True,'viewClosure':True,'workerRestart':True,'crossRootDuplicates':True,
+                'manualCheck':True,'weeklyAlarm':True,'pauseReloadResume':True,'explicitRestart':True,'hoverAndKeyboardHelp':True,'liveDuplicateHint':True,'viewClosure':True,'workerRestart':True,'crossRootDuplicates':True,
                 'explicitDeletionAndUndo':True,'sidebarEntry':True,'inlineBulkCleanup':True,'equalWidthNavigation':True,'singleRowCheckTabs':True,'continuedSuspectedCleanup':True,'realCustomSelectClick':True,'manualAvailability':True,'siteAndPageSeparation':True,'pageIssueCategories':True,'durableReminderDismissal':True,'requests':requests,
                 'workerSHA256':hashlib.sha256((production/'service-worker.js').read_bytes()).hexdigest(),
                 'limit':'Production JS/CSS, disposable manifest pregrants optional website access; browser permission prompt and branded-browser release matrix not verified.'}

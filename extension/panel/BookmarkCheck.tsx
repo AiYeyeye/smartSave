@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { CircleHelp, ExternalLink, House } from 'lucide-react';
 import { useI18n, type MessageKey } from '../ui/i18n';
 import { Select } from '../ui/Select';
@@ -7,7 +7,12 @@ import { connectTree } from './tree-client';
 import { DuplicateReview } from './DuplicateReview';
 import { MutationFeedback } from './BookmarkActions';
 import { submitMutation, type SendMutation } from './mutation-client';
-import { sendBookmarkCheck, requestCheckPermission, type CheckClient } from './bookmark-check-client';
+import {
+  sendBookmarkCheck,
+  requestCheckPermission,
+  type CheckClient,
+  type CheckSnapshot,
+} from './bookmark-check-client';
 import {
   checkedDuplicateDeletions,
   CHECK_DELETE_LIMIT,
@@ -16,7 +21,6 @@ import {
   currentCheckResults,
   linkCategory,
   type LinkCategory,
-  type BookmarkCheckState,
   type BookmarkCheckMessage,
   type LinkResult,
 } from '../domain/bookmark-check';
@@ -36,7 +40,16 @@ import type { ConfirmMutation, MutationResult } from '../schemas/messages';
 
 const errors: Record<string, MessageKey> = {
   'permission-required': '请先允许访问网站，再开始检查。',
-  'storage-unavailable': '无法保存检查进度，已停止。',
+  'storage-unavailable': '无法读取或保存检查进度，请重试。',
+  'storage-timeout': '保存进度超时，请重试。',
+  'storage-invalid': '检查记录异常，请反馈问题。',
+  'tree-unavailable': '无法读取书签，请重试。',
+  'check-timeout': '后台响应超时，可重试或重新开始。',
+  'check-disconnected': '检查连接中断，可重试或重新开始。',
+  'check-response-invalid': '检查数据不兼容，请重新加载扩展。',
+  'extension-updated': '扩展已更新，请重新打开侧栏。',
+  'no-paused-check': '没有可继续的检查，请重新开始。',
+  'check-failed': '检查已中断，可继续或重新开始。',
   'invalid-scope': '目录已不存在，请重新选择范围。',
   'scope-too-large': '书签数量过多，请选择较小的目录。',
   'already-running': '已有检查正在运行。',
@@ -76,6 +89,60 @@ function resultReason(value: LinkResult): MessageKey {
 }
 type Filter = 'all' | LinkCategory;
 
+function CheckHelp() {
+  const { t } = useI18n();
+  const id = useId();
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const [pinned, setPinned] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+  const open = !dismissed && (hovered || focused || pinned);
+  return (
+    <div
+      className="check-help"
+      onMouseEnter={() => {
+        setHovered(true);
+        setDismissed(false);
+      }}
+      onMouseLeave={() => setHovered(false)}
+      onBlur={event => {
+        if (!event.currentTarget.contains(event.relatedTarget)) {
+          setFocused(false);
+          setPinned(false);
+        }
+      }}
+      onKeyDown={event => {
+        if (event.key === 'Escape') {
+          setDismissed(true);
+          setPinned(false);
+        }
+      }}
+    >
+      <button
+        type="button"
+        aria-label={t('帮助')}
+        aria-expanded={open}
+        aria-describedby={open ? id : undefined}
+        onFocus={() => {
+          setFocused(true);
+          setDismissed(false);
+        }}
+        onClick={() => {
+          setPinned(!pinned);
+          setDismissed(pinned);
+        }}
+      >
+        <CircleHelp aria-hidden="true" />
+      </button>
+      {open && (
+        <div id={id} role="tooltip">
+          {t('开启后每周检查链接，不会自动删除。重复收藏实时比对。')}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function BookmarkCheck({
   visible = true,
   client = sendBookmarkCheck,
@@ -94,7 +161,9 @@ export function BookmarkCheck({
   const [connected, setConnected] = useState(false);
   const [connectionError, setConnectionError] = useState(false);
   const [connectionAttempt, setConnectionAttempt] = useState(0);
-  const [state, setState] = useState<BookmarkCheckState>();
+  const [state, setState] = useState<CheckSnapshot>();
+  const retiredOwners = useRef(new Set<string | undefined>());
+  const currentOwner = useRef<string | undefined>(undefined);
   const [tab, setTab] = useState<'links' | 'duplicates'>('links');
   const [group, setGroup] = useState<'site' | 'pages' | 'all'>('site');
   const [filter, setFilter] = useState<Filter>('all');
@@ -102,6 +171,7 @@ export function BookmarkCheck({
   const [busy, setBusy] = useState(false);
   const [weeklyDraft, setWeeklyDraft] = useState<boolean>();
   const [error, setError] = useState<MessageKey>();
+  const [pollError, setPollError] = useState<MessageKey>();
   const [choices, setChoices] = useState<Record<string, DuplicateChoice>>({});
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const baselines = useRef(new Map<string, TreeSnapshot['nodes'][number]>());
@@ -119,8 +189,16 @@ export function BookmarkCheck({
       live.current = false;
     };
   }, []);
-  const accept = useCallback((next: BookmarkCheckState) => {
-    if (live.current) setState(old => (!old || next.revision >= old.revision ? next : old));
+  const accept = useCallback((next: CheckSnapshot) => {
+    if (!live.current || retiredOwners.current.has(next.ownerId)) return;
+    if (currentOwner.current !== next.ownerId) {
+      retiredOwners.current.add(currentOwner.current);
+      currentOwner.current = next.ownerId;
+      // A restarted worker may have an older durable revision after a failed checkpoint.
+      setState(next);
+    } else {
+      setState(old => (!old || next.revision >= old.revision ? next : old));
+    }
   }, []);
   useEffect(
     () =>
@@ -142,11 +220,11 @@ export function BookmarkCheck({
         .then(next => {
           if (active) {
             accept(next);
-            setError(old => (old === '检查暂不可用，请重试。' ? undefined : old));
+            setPollError(undefined);
           }
         })
-        .catch(() => {
-          if (active) setError('检查暂不可用，请重试。');
+        .catch(error => {
+          if (active) setPollError(errors[error instanceof Error ? error.message : ''] ?? '检查暂不可用，请重试。');
         })
         .finally(() => {
           pending = false;
@@ -235,6 +313,7 @@ export function BookmarkCheck({
       if (grant && !(await grant)) throw Error('permission-required');
       const next = await client(message);
       accept(next);
+      setPollError(undefined);
       if (message.action === 'verify')
         setSelected(old => {
           const next = new Set(old);
@@ -350,7 +429,7 @@ export function BookmarkCheck({
   const date = (value: number) =>
     new Intl.DateTimeFormat(language, { dateStyle: 'short', timeStyle: 'short' }).format(value);
   const scopeOptions = tree?.nodes.filter(node => node.ref.kind === 'folder' && node.parentId !== undefined) ?? [];
-  const notice = error ?? (state?.notice ? (errors[state.notice] ?? '检查暂不可用，请重试。') : undefined);
+  const notice = error ?? pollError ?? (state?.notice ? (errors[state.notice] ?? '检查暂不可用，请重试。') : undefined);
   return (
     <section className="bookmark-check" aria-label={t('书签检查')}>
       <div className="check-toolbar">
@@ -402,18 +481,7 @@ export function BookmarkCheck({
           />
           {t('每周自动检查')}
         </label>
-        <details className="check-help">
-          <summary title={t('帮助')} aria-label={t('帮助')}>
-            <CircleHelp aria-hidden="true" />
-          </summary>
-          <div>
-            <p>{t('优先检查整个网站是否有响应。收藏页异常单独分类，404、登录限制和跳转不代表网站失效。')}</p>
-            <p>{t('网站无法连接仍可能是临时网络问题；无法自动确认永久关闭或迁站。只读响应状态，不读取正文。')}</p>
-            <p>{t('能正常打开的链接可手动确认，后续检查会跳过；可在全部结果中恢复检查。')}</p>
-            <p>{t('每周检查所选范围；浏览器重新运行后补查。不会自动删除收藏。')}</p>
-            <p>{t('重复收藏在本机比较。疑似重复需核对原始链接，每组至少保留一项。')}</p>
-          </div>
-        </details>
+        <CheckHelp />
       </div>
       <div className="check-tabs" role="tablist" aria-label={t('书签检查')}>
         <button
@@ -441,9 +509,16 @@ export function BookmarkCheck({
         </button>
       </div>
       {notice && (
-        <p className="check-error" role="alert">
-          {t(notice)}
-        </p>
+        <div className="check-notice">
+          <p className="check-error" role="alert">
+            {t(notice)}
+          </p>
+          {(pollError || !state) && (
+            <button disabled={busy} onClick={() => void command({ type: 'bookmarkCheck', action: 'get' })}>
+              {t('重试')}
+            </button>
+          )}
+        </div>
       )}
       {connectionError && (
         <div className="check-error" role="alert">
@@ -520,6 +595,21 @@ export function BookmarkCheck({
                   {t(job ? '重新检查' : '立即检查')}
                 </button>
               )}
+              {job && ['running', 'paused', 'error'].includes(job.status) && (
+                <button
+                  className="check-restart"
+                  disabled={disabled || !tree}
+                  onClick={() => {
+                    if (tree)
+                      void command(
+                        { type: 'bookmarkCheck', action: 'restart', installationId: tree.installationId, scopeId },
+                        permission(),
+                      );
+                  }}
+                >
+                  {t('重新开始')}
+                </button>
+              )}
               {group !== 'pages' && (
                 <button
                   className="check-cleanup"
@@ -536,7 +626,9 @@ export function BookmarkCheck({
                 <span role="status">
                   {job.status === 'paused'
                     ? t('检查已暂停')
-                    : t('已检查 {done} / {total}', { done, total: job.items.length })}
+                    : job.status === 'error'
+                      ? t('检查已中断')
+                      : t('已检查 {done} / {total}', { done, total: job.items.length })}
                 </span>
                 {running && <progress aria-label={t('检查')} max={job.items.length || 1} value={done} />}
               </div>
@@ -644,6 +736,7 @@ export function BookmarkCheck({
         )}
         {tab === 'duplicates' && (
           <>
+            <p className="check-live-note">{t('打开即检查，收藏变化时更新')}</p>
             {!!groups.length && (
               <div className="check-runbar check-bulkbar">
                 <span className="check-bulk-count">

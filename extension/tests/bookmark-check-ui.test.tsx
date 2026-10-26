@@ -180,7 +180,7 @@ it('requests website permission directly from the click before scheduling, and e
   f.events.length = 0;
   fireEvent.click(screen.getByRole('checkbox', { name: '每周自动检查' }));
   await waitFor(() => expect(f.events).toEqual(['permission', 'configure']));
-  expect(screen.getByLabelText('帮助').closest('details')).not.toHaveAttribute('open');
+  expect(screen.getByLabelText('帮助')).toHaveAttribute('aria-expanded', 'false');
   const check = vi.fn();
   render(
     <LocaleProvider>
@@ -280,4 +280,158 @@ it('exposes reconnect when the native subscription fails, without replaying writ
   expect(screen.getByLabelText('a 保留或删除')).toBeEnabled();
   expect(screen.getByLabelText('a 保留或删除')).toHaveValue('keep');
   expect(f.send).not.toHaveBeenCalled();
+});
+
+it('shows short help on hover, focus and click, and dismisses it with Escape', async () => {
+  fixture();
+  await screen.findByRole('tab', { name: /重复收藏/ });
+  const help = screen.getByRole('button', { name: '帮助' });
+  expect(screen.queryByRole('tooltip')).toBeNull();
+  fireEvent.mouseEnter(help.parentElement!);
+  expect(screen.getByRole('tooltip')).toHaveTextContent('开启后每周检查链接，不会自动删除。重复收藏实时比对。');
+  fireEvent.mouseLeave(help.parentElement!);
+  expect(screen.queryByRole('tooltip')).toBeNull();
+  fireEvent.focus(help);
+  expect(screen.getByRole('tooltip')).toBeVisible();
+  fireEvent.keyDown(help, { key: 'Escape' });
+  expect(screen.queryByRole('tooltip')).toBeNull();
+  fireEvent.click(help);
+  expect(screen.getByRole('tooltip')).toBeVisible();
+  fireEvent.click(help);
+  expect(screen.queryByRole('tooltip')).toBeNull();
+});
+
+it('explains immediate duplicate detection and updates when native bookmarks change without starting a scan', async () => {
+  const f = fixture();
+  await waitFor(() => expect(screen.getByRole('button', { name: '立即检查' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('tab', { name: /重复收藏/ }));
+  expect(screen.getByText('打开即检查，收藏变化时更新')).toBeVisible();
+  expect(screen.getByRole('tab', { name: /重复收藏/ })).toHaveTextContent('1');
+  const tree = organizerTree();
+  tree.nodes
+    .filter(node => node.ref.kind === 'bookmark')
+    .forEach(node => {
+      node.url = `https://${node.ref.nativeId}.test/`;
+    });
+  act(() => publish({ status: 'ready', snapshot: tree }));
+  expect(screen.getByText('未发现重复收藏')).toBeVisible();
+  expect(f.events.every(event => event === 'get')).toBe(true);
+});
+
+it('keeps a failed pause reason through polling and offers restart while the last known job is running', async () => {
+  const tree = organizerTree();
+  let state: BookmarkCheckState = {
+    ...emptyBookmarkCheck(),
+    installationId: tree.installationId,
+    job: {
+      id: 'old',
+      installationId: tree.installationId,
+      scopeId: null,
+      status: 'running',
+      startedAt: 1,
+      updatedAt: 1,
+      duplicateGroups: 1,
+      items: [{ nativeId: 'a', url: 'https://x.test/' }],
+    },
+  };
+  const client = vi.fn<CheckClient>(async message => {
+    if (message.action === 'pause') throw Error('storage-unavailable');
+    if (message.action === 'restart')
+      state = { ...state, revision: state.revision + 1, job: { ...state.job!, id: 'new', status: 'running' } };
+    return state;
+  });
+  const permission = vi.fn(async () => true);
+  render(
+    <LocaleProvider>
+      <BookmarkCheck client={client} permission={permission} onRecovery={() => {}} />
+    </LocaleProvider>,
+  );
+  await screen.findByRole('button', { name: '暂停检查' });
+  fireEvent.click(screen.getByRole('button', { name: '暂停检查' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('无法读取或保存检查进度，请重试。');
+  await waitFor(
+    () => expect(client.mock.calls.filter(([message]) => message.action === 'get').length).toBeGreaterThan(1),
+    { timeout: 2500 },
+  );
+  expect(screen.getByRole('alert')).toHaveTextContent('无法读取或保存检查进度，请重试。');
+  fireEvent.click(screen.getByRole('button', { name: '重新开始' }));
+  await waitFor(() =>
+    expect(client).toHaveBeenCalledWith({
+      type: 'bookmarkCheck',
+      action: 'restart',
+      installationId: tree.installationId,
+      scopeId: null,
+    }),
+  );
+  expect(permission).toHaveBeenCalledTimes(1);
+  expect(screen.queryByRole('alert')).toBeNull();
+  expect(screen.getByRole('button', { name: '暂停检查' })).toBeEnabled();
+});
+
+it.each(['paused', 'error'] as const)('offers both resume and restart for a %s job', async status => {
+  const client = vi.fn<CheckClient>(async () => ({
+    ...emptyBookmarkCheck(),
+    installationId: 'install',
+    job: {
+      id: 'old',
+      installationId: 'install',
+      scopeId: null,
+      status,
+      startedAt: 1,
+      updatedAt: 1,
+      duplicateGroups: 0,
+      items: [],
+    },
+  }));
+  render(
+    <LocaleProvider>
+      <BookmarkCheck client={client} onRecovery={() => {}} />
+    </LocaleProvider>,
+  );
+  expect(await screen.findByRole('button', { name: '继续检查' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: '重新开始' })).toBeEnabled();
+  expect(screen.queryByRole('button', { name: '暂停检查' })).toBeNull();
+});
+
+it('accepts a restarted worker with a lower saved revision and ignores replies from retired workers', async () => {
+  vi.useFakeTimers();
+  try {
+    const base: BookmarkCheckState = {
+      ...emptyBookmarkCheck(),
+      revision: 50,
+      installationId: 'install',
+      job: {
+        id: 'job',
+        installationId: 'install',
+        scopeId: null,
+        status: 'paused',
+        startedAt: 1,
+        updatedAt: 1,
+        duplicateGroups: 0,
+        items: [],
+      },
+    };
+    let snapshot = { ...base, ownerId: 'worker-A' };
+    const client = vi.fn<CheckClient>(async () => snapshot);
+    render(
+      <LocaleProvider>
+        <BookmarkCheck client={client} onRecovery={() => {}} />
+      </LocaleProvider>,
+    );
+    await act(async () => {});
+    expect(screen.getByRole('button', { name: '继续检查' })).toBeVisible();
+    snapshot = { ...base, revision: 2, ownerId: 'worker-B', job: { ...base.job!, status: 'running' } };
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1500);
+    });
+    expect(screen.getByRole('button', { name: '暂停检查' })).toBeVisible();
+    snapshot = { ...base, revision: 99, ownerId: 'worker-A' };
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1500);
+    });
+    expect(screen.getByRole('button', { name: '暂停检查' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: '继续检查' })).toBeNull();
+  } finally {
+    vi.useRealTimers();
+  }
 });

@@ -1,6 +1,8 @@
 import { expect, it } from 'vitest';
 import { IDBFactory } from 'fake-indexeddb';
 import {
+  bookmarkCheckMessageSchema,
+  bookmarkCheckResponseSchema,
   checkScopeNodes,
   checkedDuplicateDeletions,
   compileCheckDeletion,
@@ -13,6 +15,19 @@ import { groupDuplicateNodes } from '../domain/suspected-duplicates';
 import { preflight } from '../domain/preflight';
 import { BookmarkCheckStore } from '../persistence/bookmark-check';
 import { organizerTree } from './fixtures/organizer-tree';
+
+it('validates restart scope and an optional worker owner identity without accepting arbitrary URLs', () => {
+  const restart = { type: 'bookmarkCheck', action: 'restart', installationId: 'install', scopeId: null };
+  expect(bookmarkCheckMessageSchema.parse(restart)).toEqual(restart);
+  expect(bookmarkCheckMessageSchema.safeParse({ ...restart, url: 'https://foreign.test/' }).success).toBe(false);
+  expect(bookmarkCheckMessageSchema.safeParse({ ...restart, installationId: '' }).success).toBe(false);
+  const response = { status: 'ok', state: emptyBookmarkCheck() };
+  expect(bookmarkCheckResponseSchema.parse(response)).toEqual(response);
+  expect(bookmarkCheckResponseSchema.parse({ ...response, ownerId: 'new-worker' })).toMatchObject({
+    ownerId: 'new-worker',
+  });
+  expect(bookmarkCheckResponseSchema.safeParse({ ...response, ownerId: '' }).success).toBe(false);
+});
 
 it('checks across protected roots without granting deletion authority to folders', () => {
   const tree = organizerTree(),
@@ -77,7 +92,7 @@ it('persists local settings/results through new store instances and rejects malf
     tx.objectStore('state').put({ version: 999 }, 'current');
     tx.oncomplete = () => resolve();
   });
-  await expect(store.read()).rejects.toThrow('storage-unavailable');
+  await expect(store.read()).rejects.toThrow('storage-invalid');
   db.close();
 });
 

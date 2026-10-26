@@ -19,7 +19,9 @@ Ordinary history search stays local, with no persistent history database. Browse
 
 ## Bookmark check (no AI required)
 
-Use **Directory / Recent / History / Check** below the sidebar search box. **Check** lets you inspect and clean up bookmarks directly in the sidebar; **Bookmark check** is also available in full settings. Select all bookmarks or a folder, then choose **Check now** under **Broken links**. **Duplicates** lists exact and possible matches locally.
+Use **Directory / Recent / History / Check** below the sidebar search box. **Check** lets you inspect and clean up bookmarks directly in the sidebar; **Bookmark check** is also available in full settings. Select all bookmarks or a folder, then choose **Check now** under **Broken links**. **Duplicates** compares bookmarks locally on opening and updates when bookmarks or scope change, without waiting for link checks or the weekly schedule. Hover, focus or click the help icon for a short explanation; press Escape to dismiss it.
+
+Use **Pause check / Resume check** for link checks, or **Restart** while a check is running, paused or interrupted. Restart checks the current scope again and retains **Works for me** confirmations. Errors distinguish a lost connection, a response timeout, progress storage failures and bookmark read failures; retry after a temporary issue clears. Restarting never deletes bookmarks.
 
 Both lists offer **Quick cleanup**, with one confirmation for a batch instead of selecting every item. Duplicate cleanup compares original URLs exactly, keeping a protected copy when available or the first copy in native tree order. Different URL variants still need manual review. Link cleanup includes only **Site unreachable**, excluding page issues, access restrictions and unverified results. The preview lists retained and deleted items; cancelling preserves manual selections. Each batch handles up to 500 bookmarks; continue for the remainder.
 
